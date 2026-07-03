@@ -82,19 +82,30 @@ base_host="${base_host#https://}"
 base_host="${base_host%%/*}"
 mode="${1:-auto}"
 
+as_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    echo "This installer must run as root or with sudo available." >&2
+    exit 77
+  fi
+}
+
 install_apt() {
-  echo "deb [trusted=yes] ${base_url}/apt ./" | sudo tee /etc/apt/sources.list.d/fling.list >/dev/null
-  sudo tee /etc/apt/preferences.d/fling >/dev/null <<EOF
+  echo "deb [trusted=yes] ${base_url}/apt ./" | as_root tee /etc/apt/sources.list.d/fling.list >/dev/null
+  as_root tee /etc/apt/preferences.d/fling >/dev/null <<EOF
 Package: fling
 Pin: origin ${base_host}
 Pin-Priority: 1001
 EOF
-  sudo apt-get update
-  sudo apt-get install -y fling
+  as_root apt-get update
+  as_root apt-get install -y fling
 }
 
 install_rpm() {
-  sudo tee /etc/yum.repos.d/fling.repo >/dev/null <<EOF
+  as_root tee /etc/yum.repos.d/fling.repo >/dev/null <<EOF
 [fling]
 name=Fling
 baseurl=${base_url}/rpm
@@ -102,9 +113,9 @@ enabled=1
 gpgcheck=0
 EOF
   if command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y fling
+    as_root dnf install -y fling
   else
-    sudo yum install -y fling
+    as_root yum install -y fling
   fi
 }
 
