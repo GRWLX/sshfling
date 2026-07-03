@@ -18,6 +18,7 @@ install -m 0755 "$repo_root/bin/fling" "$prefix/bin/fling"
 
 install -m 0644 \
   "$repo_root/.env.example" \
+  "$repo_root/LICENSE" \
   "$repo_root/README.md" \
   "$repo_root/compose.server.yml" \
   "$repo_root/compose.client.yml" \

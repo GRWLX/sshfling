@@ -22,6 +22,7 @@ New-Item -ItemType Directory -Force -Path $ProductDir, $TemplateDir, $Dist | Out
 
 Copy-Item -Force (Join-Path $RepoRoot "bin\fling") (Join-Path $ProductDir "fling.py")
 Copy-Item -Force (Join-Path $RepoRoot "packaging\policy.json") (Join-Path $ProductDir "policy.json")
+Copy-Item -Force (Join-Path $RepoRoot "LICENSE") (Join-Path $ProductDir "LICENSE")
 
 @"
 @echo off
@@ -30,6 +31,7 @@ python "%~dp0fling.py" %*
 
 $templateEntries = @(
   ".env.example",
+  "LICENSE",
   "README.md",
   "compose.server.yml",
   "compose.client.yml",

@@ -23,10 +23,11 @@ for tool in pkgbuild productbuild; do
 done
 
 rm -rf "$build_root"
-install -d "$payload/etc/fling" "$payload/usr/local/bin" "$payload/usr/local/share/fling/templates" "$dist_dir"
+install -d "$payload/etc/fling" "$payload/usr/local/bin" "$payload/usr/local/share/fling" "$payload/usr/local/share/fling/templates" "$dist_dir"
 
 install -m 0755 "$repo_root/bin/fling" "$payload/usr/local/bin/fling"
 install -m 0644 "$repo_root/packaging/policy.json" "$payload/etc/fling/policy.json"
+install -m 0644 "$repo_root/LICENSE" "$payload/usr/local/share/fling/LICENSE"
 
 # shellcheck source=packaging/copy-templates.sh
 source "$repo_root/packaging/copy-templates.sh"

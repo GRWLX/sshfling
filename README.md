@@ -201,6 +201,10 @@ For this tool, native packages are the right default for deployment fleets becau
 
 NPM would be good for developer-first distribution, especially `npm install -g fling`, but it would add a Node runtime expectation. NuGet is only a good fit if this becomes a .NET global tool. Homebrew is the best macOS developer path, winget/Intune are better Windows distribution paths, and APT/YUM are best for Linux fleets.
 
+## License
+
+Fling is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+
 ## Common Commands
 
 ```bash

@@ -8,6 +8,7 @@ copy_fling_templates() {
   install -d "$dest/scripts" "$dest/secrets" "$dest/ssh-client" "$dest/ssh-server" "$dest/production" "$dest/systemd"
 
   install -m 0644 "$src_root/.env.example" "$dest/.env.example"
+  install -m 0644 "$src_root/LICENSE" "$dest/LICENSE"
   install -m 0644 "$src_root/README.md" "$dest/README.md"
   install -m 0644 "$src_root/compose.server.yml" "$dest/compose.server.yml"
   install -m 0644 "$src_root/compose.client.yml" "$dest/compose.client.yml"

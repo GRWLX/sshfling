@@ -23,6 +23,7 @@ install -m 0644 "$repo_root/packaging/policy.json" "$payload/etc/fling/policy.js
 source "$repo_root/packaging/copy-templates.sh"
 copy_fling_templates "$repo_root" "$payload/usr/share/fling/templates"
 install -m 0644 "$repo_root/README.md" "$payload/usr/share/doc/fling/README.md"
+install -m 0644 "$repo_root/LICENSE" "$payload/usr/share/doc/fling/LICENSE"
 install -m 0644 "$repo_root/systemd/flingd.env.example" "$payload/usr/share/doc/fling/flingd.env.example"
 install -m 0644 "$repo_root/systemd/flingd.service" "$payload/usr/lib/systemd/system/flingd.service"
 
@@ -33,7 +34,7 @@ Name: fling
 Version: $version
 Release: 1%{?dist}
 Summary: Temporary SSH certificate issuer and access CLI
-License: MIT
+License: Apache-2.0
 BuildArch: noarch
 Requires: python3
 Requires: openssh-clients
@@ -59,6 +60,7 @@ tar -C %{buildroot} -xzf %{SOURCE0}
 %attr(0755,root,root) /usr/bin/fling
 /usr/share/fling/templates
 /usr/share/doc/fling/README.md
+/usr/share/doc/fling/LICENSE
 /usr/share/doc/fling/flingd.env.example
 /usr/lib/systemd/system/flingd.service
 

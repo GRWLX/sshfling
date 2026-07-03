@@ -31,6 +31,7 @@ install -d \
   "$public_dir/homebrew" \
   "$public_dir/macos" \
   "$public_dir/windows"
+touch "$public_dir/.nojekyll"
 
 cp "$package_dist"/*.deb "$public_dir/apt/"
 cp "$package_dist"/*.rpm "$public_dir/rpm/"
@@ -53,13 +54,13 @@ class Fling < Formula
   homepage "$base_url"
   url "$base_url/downloads/$source_tar"
   sha256 "$source_sha"
-  license "MIT"
+  license "Apache-2.0"
 
   depends_on "python@3"
 
   def install
     bin.install "bin/fling"
-    pkgshare.install ".env.example", "README.md", "compose.server.yml", "compose.client.yml"
+    pkgshare.install ".env.example", "LICENSE", "README.md", "compose.server.yml", "compose.client.yml"
     pkgshare.install "scripts", "secrets", "ssh-client", "ssh-server", "production", "systemd"
   end
 

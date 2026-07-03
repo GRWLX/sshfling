@@ -33,6 +33,7 @@ MAX_CONNECTIONS = 10
 
 TEMPLATE_ENTRIES = [
     ".env.example",
+    "LICENSE",
     "README.md",
     "compose.server.yml",
     "compose.client.yml",

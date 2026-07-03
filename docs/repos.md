@@ -146,14 +146,14 @@ class Fling < Formula
   homepage "https://example.com/fling"
   url "https://example.com/fling-0.1.0.tar.gz"
   sha256 "REPLACE_WITH_SHA256"
-  license "MIT"
+  license "Apache-2.0"
 
   depends_on "python@3"
   depends_on "docker" => :recommended
 
   def install
     bin.install "bin/fling"
-    pkgshare.install ".env.example", "README.md", "compose.server.yml", "compose.client.yml"
+    pkgshare.install ".env.example", "LICENSE", "README.md", "compose.server.yml", "compose.client.yml"
     pkgshare.install "scripts", "secrets", "ssh-client", "ssh-server"
   end
 

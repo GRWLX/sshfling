@@ -17,6 +17,7 @@ source "$repo_root/packaging/copy-templates.sh"
 copy_fling_templates "$repo_root" "$stage/usr/share/fling/templates"
 
 install -m 0644 "$repo_root/README.md" "$stage/usr/share/doc/fling/README.md"
+install -m 0644 "$repo_root/LICENSE" "$stage/usr/share/doc/fling/LICENSE"
 install -m 0644 "$repo_root/systemd/flingd.env.example" "$stage/usr/share/doc/fling/flingd.env.example"
 install -m 0644 "$repo_root/systemd/flingd.service" "$stage/lib/systemd/system/flingd.service"
 

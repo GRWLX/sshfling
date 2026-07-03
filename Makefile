@@ -7,7 +7,7 @@ TEMPLATE_DIR := $(PREFIX)/share/fling/templates
 install-local:
 	install -d "$(PREFIX)/bin" "$(TEMPLATE_DIR)/scripts" "$(TEMPLATE_DIR)/secrets" "$(TEMPLATE_DIR)/ssh-client" "$(TEMPLATE_DIR)/ssh-server" "$(TEMPLATE_DIR)/production" "$(TEMPLATE_DIR)/systemd"
 	install -m 0755 bin/fling "$(PREFIX)/bin/fling"
-	install -m 0644 .env.example README.md compose.server.yml compose.client.yml "$(TEMPLATE_DIR)/"
+	install -m 0644 .env.example LICENSE README.md compose.server.yml compose.client.yml "$(TEMPLATE_DIR)/"
 	install -m 0755 scripts/install-local.sh scripts/create-network.sh scripts/generate-ssh-key.sh "$(TEMPLATE_DIR)/scripts/"
 	install -m 0644 secrets/.gitkeep "$(TEMPLATE_DIR)/secrets/.gitkeep"
 	install -m 0644 ssh-client/Dockerfile "$(TEMPLATE_DIR)/ssh-client/Dockerfile"
