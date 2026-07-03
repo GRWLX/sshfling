@@ -11,6 +11,7 @@ Replace `OWNER` and `REPO` in the examples below with the GitHub organization/us
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
+BASE_HOST="OWNER.github.io"
 ```
 
 Automatic install on Linux or Homebrew hosts:
@@ -31,6 +32,11 @@ curl -fsSL "${BASE_URL}/install.sh" | bash -s -- brew
 
 ```bash
 echo "deb [trusted=yes] ${BASE_URL}/apt ./" | sudo tee /etc/apt/sources.list.d/fling.list
+sudo tee /etc/apt/preferences.d/fling >/dev/null <<EOF
+Package: fling
+Pin: origin ${BASE_HOST}
+Pin-Priority: 1001
+EOF
 sudo apt update
 sudo apt install -y fling
 ```

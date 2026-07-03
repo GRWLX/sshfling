@@ -8,7 +8,9 @@ version="${VERSION:?VERSION is required}"
 repository="${REPOSITORY:?REPOSITORY is required}"
 owner="${OWNER:?OWNER is required}"
 repo_name="${repository#*/}"
-base_url="https://${owner}.github.io/${repo_name}"
+owner_pages="$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')"
+base_host="${owner_pages}.github.io"
+base_url="https://${base_host}/${repo_name}"
 
 first_file() {
   local dir="$1"
@@ -75,10 +77,18 @@ cat >"$public_dir/install.sh" <<'SH'
 set -euo pipefail
 
 base_url="${FLING_BASE_URL:-__BASE_URL__}"
+base_host="${base_url#http://}"
+base_host="${base_host#https://}"
+base_host="${base_host%%/*}"
 mode="${1:-auto}"
 
 install_apt() {
   echo "deb [trusted=yes] ${base_url}/apt ./" | sudo tee /etc/apt/sources.list.d/fling.list >/dev/null
+  sudo tee /etc/apt/preferences.d/fling >/dev/null <<EOF
+Package: fling
+Pin: origin ${base_host}
+Pin-Priority: 1001
+EOF
   sudo apt-get update
   sudo apt-get install -y fling
 }
@@ -182,6 +192,11 @@ cat >"$public_dir/index.html" <<HTML
   <h1>Fling $version packages</h1>
   <h2>Debian / Ubuntu</h2>
   <pre><code>echo "deb [trusted=yes] $base_url/apt ./" | sudo tee /etc/apt/sources.list.d/fling.list
+sudo tee /etc/apt/preferences.d/fling &gt;/dev/null &lt;&lt;'EOF'
+Package: fling
+Pin: origin $base_host
+Pin-Priority: 1001
+EOF
 sudo apt update
 sudo apt install -y fling</code></pre>
   <h2>RHEL / Fedora / Rocky / Alma</h2>
