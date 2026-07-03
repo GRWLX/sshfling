@@ -1,0 +1,24 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    openssh-client \
+    openssh-server \
+    openssl \
+    procps \
+    python3 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/fling
+COPY . /opt/fling
+
+RUN chmod 0755 \
+    /opt/fling/bin/fling \
+    /opt/fling/production/fling-session \
+    /opt/fling/tests/docker/run-production-test.sh \
+  && mkdir -p /run/sshd
+
+CMD ["/opt/fling/tests/docker/run-production-test.sh"]

@@ -1,0 +1,33 @@
+name: timed-ssh-server
+
+services:
+  ssh-server:
+    build:
+      context: ./ssh-server
+    image: timed-ssh-server:latest
+    container_name: timed-ssh-server
+    environment:
+      SSH_SESSION_SECONDS: "${SSH_SESSION_SECONDS:-60}"
+      AUTHORIZED_KEYS_FILE: /run/secrets/ssh_authorized_keys
+    ports:
+      - "${SSH_PORT_ON_HOST:-2222}:22"
+    secrets:
+      - ssh_authorized_keys
+    networks:
+      timed-ssh-net:
+        aliases:
+          - ssh-server
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /home/deploy/.ssh/authorized_keys && pgrep -x sshd >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+secrets:
+  ssh_authorized_keys:
+    file: ./secrets/client_ed25519.pub
+
+networks:
+  timed-ssh-net:
+    external: true

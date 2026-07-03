@@ -1,0 +1,26 @@
+name: timed-ssh-client
+
+services:
+  ssh-client:
+    build:
+      context: ./ssh-client
+    image: timed-ssh-client:latest
+    container_name: timed-ssh-client
+    environment:
+      SSH_HOST: "${SSH_HOST:-ssh-server}"
+      SSH_PORT: "${SSH_PORT:-22}"
+      SSH_USER: "${SSH_USER:-deploy}"
+      SSH_PRIVATE_KEY: /run/secrets/ssh_private_key
+      SSH_COMMAND: "${SSH_COMMAND:-whoami && hostname && date -u}"
+    secrets:
+      - ssh_private_key
+    networks:
+      - timed-ssh-net
+
+secrets:
+  ssh_private_key:
+    file: ./secrets/client_ed25519
+
+networks:
+  timed-ssh-net:
+    external: true

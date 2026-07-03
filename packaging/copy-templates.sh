@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+copy_fling_templates() {
+  local src_root="$1"
+  local dest="$2"
+
+  install -d "$dest/scripts" "$dest/secrets" "$dest/ssh-client" "$dest/ssh-server" "$dest/production" "$dest/systemd"
+
+  install -m 0644 "$src_root/.env.example" "$dest/.env.example"
+  install -m 0644 "$src_root/README.md" "$dest/README.md"
+  install -m 0644 "$src_root/compose.server.yml" "$dest/compose.server.yml"
+  install -m 0644 "$src_root/compose.client.yml" "$dest/compose.client.yml"
+
+  install -m 0755 "$src_root/scripts/install-local.sh" "$dest/scripts/install-local.sh"
+  install -m 0755 "$src_root/scripts/create-network.sh" "$dest/scripts/create-network.sh"
+  install -m 0755 "$src_root/scripts/generate-ssh-key.sh" "$dest/scripts/generate-ssh-key.sh"
+  install -m 0644 "$src_root/secrets/.gitkeep" "$dest/secrets/.gitkeep"
+
+  install -m 0644 "$src_root/ssh-client/Dockerfile" "$dest/ssh-client/Dockerfile"
+  install -m 0755 "$src_root/ssh-client/entrypoint.sh" "$dest/ssh-client/entrypoint.sh"
+
+  install -m 0644 "$src_root/ssh-server/Dockerfile" "$dest/ssh-server/Dockerfile"
+  install -m 0755 "$src_root/ssh-server/entrypoint.sh" "$dest/ssh-server/entrypoint.sh"
+  install -m 0755 "$src_root/ssh-server/limited-session.sh" "$dest/ssh-server/limited-session.sh"
+  install -m 0644 "$src_root/ssh-server/sshd_config" "$dest/ssh-server/sshd_config"
+
+  install -m 0755 "$src_root/production/fling-session" "$dest/production/fling-session"
+  install -m 0644 "$src_root/systemd/flingd.service" "$dest/systemd/flingd.service"
+  install -m 0644 "$src_root/systemd/flingd.env.example" "$dest/systemd/flingd.env.example"
+}

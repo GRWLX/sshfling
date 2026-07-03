@@ -1,0 +1,1964 @@
+#!/usr/bin/env python3
+import argparse
+import base64
+import datetime as dt
+import getpass
+import hashlib
+import hmac
+import html
+import http.server
+import json
+import os
+import urllib.parse
+import shlex
+import re
+import secrets
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+VERSION = "0.1.0"
+DEFAULT_NETWORK = "timed-ssh-net"
+DEFAULT_SESSION_WRAPPER = "/usr/local/libexec/fling-session"
+DEFAULT_ISSUER_LISTEN = "127.0.0.1:8787"
+DEFAULT_SESSION_DIR = "/var/lib/fling/sessions"
+DEFAULT_POLICY_FILE = "/etc/fling/policy.json"
+DEFAULT_TEMP_USERNAME_PREFIX = "f"
+MAX_TIME_SECONDS = 3600
+MAX_CONNECTIONS = 10
+
+TEMPLATE_ENTRIES = [
+    ".env.example",
+    "README.md",
+    "compose.server.yml",
+    "compose.client.yml",
+    "scripts/install-local.sh",
+    "scripts/create-network.sh",
+    "scripts/generate-ssh-key.sh",
+    "secrets/.gitkeep",
+    "ssh-client/Dockerfile",
+    "ssh-client/entrypoint.sh",
+    "ssh-server/Dockerfile",
+    "ssh-server/entrypoint.sh",
+    "ssh-server/limited-session.sh",
+    "ssh-server/sshd_config",
+    "production/fling-session",
+    "systemd/flingd.service",
+    "systemd/flingd.env.example",
+]
+
+
+class FlingError(Exception):
+    def __init__(self, message, code=1, **details):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.details = details
+
+
+def eprint(*parts):
+    print(*parts, file=sys.stderr)
+
+
+def emit_json(payload):
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def command_path(name):
+    return shutil.which(name)
+
+
+def is_admin():
+    if hasattr(os, "geteuid"):
+        return os.geteuid() == 0
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
+            return False
+    return False
+
+
+def require_root(action):
+    if not is_admin():
+        raise FlingError(f"{action} requires root/admin privileges. Run it with sudo or from an elevated shell.", 77)
+
+
+def run(args, cwd=None, env=None, capture=False, check=True):
+    merged_env = os.environ.copy()
+    if env:
+        merged_env.update({k: str(v) for k, v in env.items() if v is not None})
+
+    try:
+        proc = subprocess.run(
+            args,
+            cwd=str(cwd) if cwd else None,
+            env=merged_env,
+            text=True,
+            stdout=subprocess.PIPE if capture else None,
+            stderr=subprocess.PIPE if capture else None,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise FlingError(f"Missing command: {args[0]}", 127) from exc
+
+    if check and proc.returncode != 0:
+        details = {}
+        if capture:
+            details = {"stdout": proc.stdout, "stderr": proc.stderr}
+        raise FlingError(
+            f"Command failed with exit code {proc.returncode}: {' '.join(args)}",
+            proc.returncode,
+            **details,
+        )
+
+    return proc
+
+
+def project_dir_from(args):
+    return Path(args.project_dir).expanduser().resolve()
+
+
+def source_root():
+    return Path(__file__).resolve().parents[1]
+
+
+def find_template_dir():
+    candidates = []
+
+    env_dir = os.environ.get("FLING_TEMPLATE_DIR")
+    if env_dir:
+        candidates.append(Path(env_dir).expanduser())
+
+    candidates.extend(
+        [
+            Path(__file__).resolve().parent / "templates",
+            Path(__file__).resolve().parents[1] / "share/fling/templates",
+            Path("/usr/share/fling/templates"),
+            Path.home() / ".local/share/fling/templates",
+            source_root(),
+        ]
+    )
+
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if (candidate / "compose.server.yml").exists() and (candidate / "ssh-server").is_dir():
+            return candidate
+
+    raise FlingError(
+        "Could not find fling templates. Set FLING_TEMPLATE_DIR or reinstall fling.",
+        2,
+        checked=[str(p) for p in candidates],
+    )
+
+
+def resource_file(relative):
+    base = find_template_dir()
+    path = base / relative
+    if not path.exists():
+        raise FlingError(f"Missing fling resource: {relative}", 2, path=str(path))
+    return path
+
+
+def is_same_path(a, b):
+    try:
+        return a.resolve().samefile(b.resolve())
+    except FileNotFoundError:
+        return False
+
+
+def copy_template_file(src, dst, force):
+    if dst.exists() and not force:
+        return "exists"
+
+    if src.exists() and dst.exists() and is_same_path(src, dst):
+        return "same"
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return "copied"
+
+
+def write_env(project_dir, force, session_seconds=None, host_port=None):
+    env_example = project_dir / ".env.example"
+    env_file = project_dir / ".env"
+
+    if env_file.exists() and not force:
+        status = "exists"
+        lines = env_file.read_text().splitlines()
+    else:
+        if env_example.exists():
+            lines = env_example.read_text().splitlines()
+        else:
+            lines = []
+        status = "written"
+
+    updates = {}
+    if session_seconds is not None:
+        updates["SSH_SESSION_SECONDS"] = str(session_seconds)
+    if host_port is not None:
+        updates["SSH_PORT_ON_HOST"] = str(host_port)
+
+    if updates:
+        seen = set()
+        new_lines = []
+        for line in lines:
+            key = line.split("=", 1)[0] if "=" in line and not line.startswith("#") else None
+            if key in updates:
+                new_lines.append(f"{key}={updates[key]}")
+                seen.add(key)
+            else:
+                new_lines.append(line)
+        for key, value in updates.items():
+            if key not in seen:
+                new_lines.append(f"{key}={value}")
+        lines = new_lines
+        status = "written"
+
+    if status == "written":
+        env_file.write_text("\n".join(lines).rstrip() + "\n")
+        env_file.chmod(0o600)
+
+    return {"path": str(env_file), "status": status}
+
+
+def require_project_file(project_dir, relative):
+    path = project_dir / relative
+    if not path.exists():
+        raise FlingError(
+            f"Missing {relative}. Run `fling init` in this directory first.",
+            2,
+            path=str(path),
+        )
+    return path
+
+
+def docker_compose_file(project_dir, kind):
+    if kind == "server":
+        return require_project_file(project_dir, "compose.server.yml")
+    if kind == "client":
+        return require_project_file(project_dir, "compose.client.yml")
+    raise FlingError(f"Unknown compose kind: {kind}", 2)
+
+
+def compose_command(project_dir, kind):
+    return ["docker", "compose", "-f", str(docker_compose_file(project_dir, kind))]
+
+
+def cmd_doctor(args):
+    project_dir = project_dir_from(args)
+    checks = []
+
+    def add_check(name, ok, **extra):
+        checks.append({"name": name, "ok": bool(ok), **extra})
+
+    add_check("python", True, path=sys.executable, version=sys.version.split()[0])
+
+    for name in ["docker", "ssh-keygen"]:
+        path = command_path(name)
+        add_check(name, path is not None, path=path)
+
+    docker_compose_ok = False
+    docker_compose_version = None
+    if command_path("docker"):
+        proc = run(["docker", "compose", "version"], capture=True, check=False)
+        docker_compose_ok = proc.returncode == 0
+        docker_compose_version = (proc.stdout or proc.stderr or "").strip()
+    add_check("docker compose", docker_compose_ok, version=docker_compose_version)
+
+    try:
+        template_dir = find_template_dir()
+        add_check("templates", True, path=str(template_dir))
+    except FlingError as exc:
+        add_check("templates", False, message=exc.message)
+
+    for rel in ["compose.server.yml", "compose.client.yml"]:
+        add_check(rel, (project_dir / rel).exists(), path=str(project_dir / rel))
+
+    add_check("public key", (project_dir / "secrets/client_ed25519.pub").exists())
+    add_check("private key", (project_dir / "secrets/client_ed25519").exists())
+
+    network_exists = False
+    if command_path("docker"):
+        proc = run(["docker", "network", "inspect", DEFAULT_NETWORK], capture=True, check=False)
+        network_exists = proc.returncode == 0
+    add_check("docker network", network_exists, network=DEFAULT_NETWORK)
+
+    ok = all(check["ok"] for check in checks if check["name"] in ["python", "docker", "docker compose", "ssh-keygen", "templates"])
+    payload = {"ok": ok, "command": "fling", "version": VERSION, "project_dir": str(project_dir), "checks": checks}
+
+    if args.json:
+        emit_json(payload)
+    else:
+        print(f"fling {VERSION}")
+        print(f"Project: {project_dir}")
+        for check in checks:
+            marker = "ok" if check["ok"] else "missing"
+            suffix = ""
+            if "path" in check and check["path"]:
+                suffix = f" ({check['path']})"
+            elif "version" in check and check["version"]:
+                suffix = f" ({check['version']})"
+            elif check["name"] == "docker network":
+                suffix = f" ({check.get('network', DEFAULT_NETWORK)})"
+            print(f"{marker:7} {check['name']}{suffix}")
+
+    return 0 if ok else 1
+
+
+def cmd_init(args):
+    project_dir = project_dir_from(args)
+    template_dir = find_template_dir()
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    results = []
+    for rel in TEMPLATE_ENTRIES:
+        src = template_dir / rel
+        dst = project_dir / rel
+        if not src.exists():
+            raise FlingError(f"Template is missing: {src}", 2)
+        status = copy_template_file(src, dst, args.force)
+        results.append({"path": rel, "status": status})
+
+    env_result = write_env(project_dir, args.force, args.session_seconds, args.host_port)
+
+    key_result = None
+    if args.with_key:
+        key_args = argparse.Namespace(
+            project_dir=str(project_dir),
+            path="secrets/client_ed25519",
+            force=args.force,
+            json=args.json,
+        )
+        key_result = generate_key(key_args, emit=False)
+
+    payload = {
+        "ok": True,
+        "project_dir": str(project_dir),
+        "template_dir": str(template_dir),
+        "files": results,
+        "env": env_result,
+        "key": key_result,
+    }
+
+    if args.json:
+        emit_json(payload)
+    else:
+        print(f"Initialized fling deployment in {project_dir}")
+        print(f"Templates: {template_dir}")
+        print(f"Env: {env_result['status']} {env_result['path']}")
+        if key_result:
+            print(f"Key: {key_result['status']} {key_result['private_key']}")
+
+    return 0
+
+
+def generate_key(args, emit=True):
+    project_dir = project_dir_from(args)
+    key_path = (project_dir / args.path).resolve()
+    pub_path = Path(str(key_path) + ".pub")
+
+    if (key_path.exists() or pub_path.exists()) and not args.force:
+        result = {
+            "ok": True,
+            "status": "exists",
+            "private_key": str(key_path),
+            "public_key": str(pub_path),
+        }
+        if emit:
+            if args.json:
+                emit_json(result)
+            else:
+                print(f"Key already exists: {key_path}")
+        return result
+
+    if args.force:
+        key_path.unlink(missing_ok=True)
+        pub_path.unlink(missing_ok=True)
+
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "fling-client", "-f", str(key_path)], capture=True)
+    key_path.chmod(0o600)
+    pub_path.chmod(0o644)
+
+    result = {
+        "ok": True,
+        "status": "created",
+        "private_key": str(key_path),
+        "public_key": str(pub_path),
+    }
+
+    if emit:
+        if args.json:
+            emit_json(result)
+        else:
+            print(f"Created key: {key_path}")
+            print(f"Created public key: {pub_path}")
+
+    return result
+
+
+def default_ca_key_path():
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        return Path("/etc/fling/ca_user_ed25519")
+    return Path.home() / ".fling/ca_user_ed25519"
+
+
+def default_policy():
+    return {
+        "version": 2,
+        "default": {"max_time_seconds": MAX_TIME_SECONDS, "max_connections": MAX_CONNECTIONS},
+        "users": {},
+    }
+
+
+def policy_file_path(value=None):
+    return Path(value or DEFAULT_POLICY_FILE).expanduser().resolve()
+
+
+def format_duration(seconds):
+    if seconds == 3600:
+        return "1 hour"
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600}h"
+    if seconds % 60 == 0:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def duration_input_value(seconds):
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600}h"
+    if seconds % 60 == 0:
+        return f"{seconds // 60}m"
+    return f"{seconds}s"
+
+
+def validate_policy_values(max_time_seconds, max_connections):
+    if max_time_seconds < 1:
+        raise FlingError("Maximum time must be positive.", 2)
+    if max_time_seconds > MAX_TIME_SECONDS:
+        raise FlingError(f"Maximum time cannot exceed {format_duration(MAX_TIME_SECONDS)}.", 2)
+    if max_connections < 1:
+        raise FlingError("Maximum connections must be positive.", 2)
+    if max_connections > MAX_CONNECTIONS:
+        raise FlingError(f"Maximum connections cannot exceed {MAX_CONNECTIONS}.", 2)
+    return {"max_time_seconds": max_time_seconds, "max_connections": max_connections}
+
+
+def normalize_policy(data):
+    policy = default_policy()
+    if "default" in data:
+        default_data = data.get("default") or {}
+        policy["default"] = validate_policy_values(
+            int(default_data.get("max_time_seconds", policy["default"]["max_time_seconds"])),
+            int(default_data.get("max_connections", policy["default"]["max_connections"])),
+        )
+    else:
+        policy["default"] = validate_policy_values(
+            int(data.get("max_time_seconds", policy["default"]["max_time_seconds"])),
+            int(data.get("max_connections", policy["default"]["max_connections"])),
+        )
+
+    users = {}
+    for username, user_policy in (data.get("users") or {}).items():
+        if not username:
+            continue
+        users[str(username)] = validate_policy_values(
+            int(user_policy.get("max_time_seconds", policy["default"]["max_time_seconds"])),
+            int(user_policy.get("max_connections", policy["default"]["max_connections"])),
+        )
+    policy["users"] = users
+    return policy
+
+
+def load_policy(policy_file=None):
+    path = policy_file_path(policy_file)
+    data = default_policy()
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except json.JSONDecodeError as exc:
+            raise FlingError(f"Invalid policy file: {path}", 2) from exc
+
+    policy = normalize_policy(data)
+    policy["path"] = str(path)
+    return policy
+
+
+def effective_policy(policy, username=None):
+    caps = policy["default"].copy()
+    if username and username in policy.get("users", {}):
+        caps.update(policy["users"][username])
+    caps["username"] = username
+    caps["path"] = policy.get("path")
+    return caps
+
+
+def write_policy(policy_file, max_time_seconds, max_connections, username=None):
+    existing = load_policy(policy_file)
+    caps = validate_policy_values(max_time_seconds, max_connections)
+    if username:
+        existing.setdefault("users", {})[username] = caps
+    else:
+        existing["default"] = caps
+    policy = normalize_policy(existing)
+    path = policy_file_path(policy_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n")
+    path.chmod(0o644)
+    policy["path"] = str(path)
+    return policy
+
+
+def read_text_source(value, file_path, label):
+    if value and file_path:
+        raise FlingError(f"Use either --{label} or --{label}-file, not both.", 2)
+    if value:
+        return value.strip()
+    if file_path:
+        return Path(file_path).expanduser().read_text().strip()
+    raise FlingError(f"Missing --{label} or --{label}-file.", 2)
+
+
+def sign_user_certificate(
+    ca_key,
+    public_key_text,
+    principal,
+    seconds,
+    key_id=None,
+    out_file=None,
+    serial=None,
+    source_address=None,
+    session_wrapper=DEFAULT_SESSION_WRAPPER,
+    policy_file=DEFAULT_POLICY_FILE,
+    login_user=None,
+    permit_pty=True,
+):
+    policy = load_policy(policy_file)
+    active_policy = effective_policy(policy, login_user or principal)
+    if seconds < 1:
+        raise FlingError("Certificate lifetime must be positive.", 2)
+    if seconds > active_policy["max_time_seconds"]:
+        raise FlingError(f"Certificate lifetime cannot exceed {format_duration(active_policy['max_time_seconds'])}.", 2)
+
+    ca_key_path = Path(ca_key).expanduser().resolve()
+    if not ca_key_path.exists():
+        raise FlingError(f"CA key does not exist: {ca_key_path}", 2)
+
+    key_id = key_id or f"fling-{principal}-{dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    serial = serial if serial is not None else secrets.randbits(63)
+    force_command = (
+        f"{shlex.quote(session_wrapper)} --max-seconds {seconds} "
+        f"--username {shlex.quote(principal)} --login-user {shlex.quote(login_user or principal)} "
+        f"--policy-file {shlex.quote(policy['path'])}"
+    )
+
+    with tempfile.TemporaryDirectory(prefix="fling-cert-") as tmp:
+        pub_path = Path(tmp) / "client.pub"
+        pub_path.write_text(public_key_text.rstrip() + "\n")
+        pub_path.chmod(0o600)
+
+        cmd = [
+            "ssh-keygen",
+            "-q",
+            "-s",
+            str(ca_key_path),
+            "-I",
+            key_id,
+            "-z",
+            str(serial),
+            "-n",
+            principal,
+            "-V",
+            f"+{seconds}s",
+            "-O",
+            "clear",
+            "-O",
+            f"force-command={force_command}",
+        ]
+        if permit_pty:
+            cmd += ["-O", "permit-pty"]
+        if source_address:
+            cmd += ["-O", f"source-address={source_address}"]
+        cmd.append(str(pub_path))
+
+        run(cmd, capture=True)
+
+        cert_path = Path(tmp) / "client-cert.pub"
+        certificate = cert_path.read_text().strip()
+
+    if out_file:
+        out_path = Path(out_file).expanduser().resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(certificate + "\n")
+        out_path.chmod(0o644)
+    else:
+        out_path = None
+
+    valid_before = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=seconds)
+    return {
+        "ok": True,
+        "certificate": certificate,
+        "username": principal,
+        "principal": principal,
+        "seconds": seconds,
+        "valid_before": valid_before.isoformat().replace("+00:00", "Z"),
+        "key_id": key_id,
+        "serial": serial,
+        "out": str(out_path) if out_path else None,
+        "force_command": force_command,
+        "policy": active_policy,
+    }
+
+
+def create_ca_key(args):
+    ca_key = Path(args.ca_key).expanduser().resolve()
+    ca_pub = Path(str(ca_key) + ".pub")
+
+    if (ca_key.exists() or ca_pub.exists()) and not args.force:
+        result = {"ok": True, "status": "exists", "ca_key": str(ca_key), "ca_public_key": str(ca_pub)}
+    else:
+        if args.force:
+            ca_key.unlink(missing_ok=True)
+            ca_pub.unlink(missing_ok=True)
+        ca_key.parent.mkdir(parents=True, exist_ok=True)
+        run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "fling-user-ca", "-f", str(ca_key)], capture=True)
+        ca_key.chmod(0o600)
+        ca_pub.chmod(0o644)
+        result = {"ok": True, "status": "created", "ca_key": str(ca_key), "ca_public_key": str(ca_pub)}
+    return result
+
+
+def cmd_ca_init(args):
+    require_root("ca init")
+    result = create_ca_key(args)
+    if args.json:
+        emit_json(result)
+    else:
+        print(f"{result['status']}: {result['ca_key']}")
+        print(f"public: {result['ca_public_key']}")
+    return 0
+
+
+def cmd_policy_show(args):
+    policy = load_policy(args.policy_file)
+    active = effective_policy(policy, getattr(args, "user", None))
+    if args.json:
+        emit_json({"ok": True, "policy": policy, "effective": active})
+    else:
+        print(f"policy: {policy['path']}")
+        if getattr(args, "user", None):
+            print(f"user: {args.user}")
+        print(f"max-time: {format_duration(active['max_time_seconds'])}")
+        print(f"max-connections: {active['max_connections']}")
+    return 0
+
+
+def cmd_policy_install(args):
+    require_root("policy install")
+    policy = write_policy(args.policy_file, args.max_time, args.max_connections, args.user)
+    active = effective_policy(policy, args.user)
+    if args.json:
+        emit_json({"ok": True, "policy": policy, "effective": active})
+    else:
+        print(f"policy: {policy['path']}")
+        if args.user:
+            print(f"user: {args.user}")
+        print(f"max-time: {format_duration(active['max_time_seconds'])}")
+        print(f"max-connections: {active['max_connections']}")
+    return 0
+
+
+def cmd_cert_issue(args):
+    require_root("cert issue")
+    public_key_text = read_text_source(args.public_key, args.public_key_file, "public-key")
+    seconds = lifetime_seconds(args)
+    principal = args.username or args.principal
+    if not principal:
+        raise FlingError("Missing --username.", 2)
+    result = sign_user_certificate(
+        ca_key=args.ca_key,
+        public_key_text=public_key_text,
+        principal=principal,
+        seconds=seconds,
+        key_id=args.key_id,
+        serial=args.serial,
+        out_file=args.out,
+        source_address=args.source_address,
+        session_wrapper=args.session_wrapper,
+        policy_file=args.policy_file,
+        login_user=args.login_user,
+        permit_pty=not args.no_pty,
+    )
+
+    if args.json:
+        emit_json(result)
+    else:
+        if result["out"]:
+            print(result["out"])
+        else:
+            print(result["certificate"])
+    return 0
+
+
+def default_cert_out(public_key_file):
+    if not public_key_file:
+        return None
+    path = Path(public_key_file).expanduser()
+    if path.name.endswith(".pub"):
+        return str(path.with_name(path.name[:-4] + "-cert.pub"))
+    return str(path.with_name(path.name + "-cert.pub"))
+
+
+def private_key_hint(public_key_file):
+    if not public_key_file:
+        return None
+    path = Path(public_key_file).expanduser()
+    if path.name.endswith(".pub"):
+        return str(path.with_name(path.name[:-4]))
+    return str(path)
+
+
+def create_temp_client_key(username, session_dir):
+    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    safe_username = re.sub(r"[^A-Za-z0-9_.-]+", "_", username).strip("._-") or random_username()
+    base_dir = Path(session_dir).expanduser().resolve() / f"{safe_username}-{stamp}-{secrets.token_hex(4)}"
+    base_dir.mkdir(parents=True, exist_ok=False)
+    key_path = base_dir / "id_ed25519"
+    run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", f"fling-{safe_username}", "-f", str(key_path)], capture=True)
+    key_path.chmod(0o600)
+    Path(str(key_path) + ".pub").chmod(0o644)
+    return {"private_key": str(key_path), "public_key": str(key_path) + ".pub", "generated_key": True}
+
+
+def random_username(prefix=DEFAULT_TEMP_USERNAME_PREFIX):
+    return f"{prefix}{secrets.randbelow(1000):03d}"
+
+
+def cmd_setup(args):
+    require_root("temporary SSH access")
+    if not args.username:
+        args.username = random_username()
+    ca_key = Path(args.ca_key).expanduser().resolve()
+    ca_pub = Path(str(ca_key) + ".pub")
+    if not ca_key.exists() or not ca_pub.exists():
+        ca_result = create_ca_key(argparse.Namespace(ca_key=str(ca_key), force=False))
+    else:
+        ca_result = {"ok": True, "status": "exists", "ca_key": str(ca_key), "ca_public_key": str(ca_pub)}
+
+    key_material = {"generated_key": False, "private_key": None, "public_key": args.public_key_file}
+    public_key_file = args.public_key_file
+    if not args.public_key and not public_key_file:
+        key_material = create_temp_client_key(args.username, args.session_dir)
+        public_key_file = key_material["public_key"]
+    public_key_text = read_text_source(args.public_key, public_key_file, "public-key")
+    out_file = args.out if args.out else default_cert_out(public_key_file)
+    seconds = lifetime_seconds(args)
+    login_user = args.login_user or args.username
+
+    result = sign_user_certificate(
+        ca_key=str(ca_key),
+        public_key_text=public_key_text,
+        principal=args.username,
+        seconds=seconds,
+        key_id=args.key_id,
+        out_file=out_file,
+        source_address=args.source_address,
+        session_wrapper=args.session_wrapper,
+        policy_file=args.policy_file,
+        login_user=login_user,
+        permit_pty=not args.no_pty,
+    )
+    result["ca"] = ca_result
+    result.update(key_material)
+
+    key_hint = key_material["private_key"] or private_key_hint(public_key_file)
+    if args.remote and key_hint:
+        result["ssh_command"] = f"ssh -i {key_hint} {login_user}@{args.remote}"
+    elif args.remote:
+        result["ssh_command"] = f"ssh {login_user}@{args.remote}"
+    else:
+        result["ssh_command"] = f"ssh {login_user}@REMOTE_HOST"
+
+    if args.json:
+        emit_json(result)
+    else:
+        print(f"username: {args.username}")
+        print(f"time: {seconds}s")
+        if result.get("private_key"):
+            print(f"private-key: {result['private_key']}")
+        if result["out"]:
+            print(f"cert: {result['out']}")
+        else:
+            print(result["certificate"])
+        print(f"ssh: {result['ssh_command']}")
+    return 0
+
+
+def process_exists(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def child_pids(pid):
+    if not command_path("pgrep"):
+        return []
+    proc = run(["pgrep", "-P", str(pid)], capture=True, check=False)
+    if proc.returncode not in (0, 1):
+        return []
+    pids = []
+    for line in proc.stdout.splitlines():
+        try:
+            pids.append(int(line.strip()))
+        except ValueError:
+            pass
+    return pids
+
+
+def kill_process_tree(pid, sig):
+    for child in child_pids(pid):
+        kill_process_tree(child, sig)
+    try:
+        os.kill(pid, sig)
+    except ProcessLookupError:
+        pass
+
+
+def user_uid(username):
+    proc = run(["id", "-u", username], capture=True, check=False)
+    if proc.returncode != 0:
+        raise FlingError(f"Unknown login user: {username}", 2, stderr=proc.stderr)
+    return proc.stdout.strip()
+
+
+def find_fling_sessions(login_user=None, session_username=None):
+    if not command_path("ps"):
+        raise FlingError("ps is required to inspect active fling sessions.", 127)
+
+    target_uid = None
+    if login_user:
+        target_uid = user_uid(login_user)
+
+    proc = run(["ps", "-eo", "pid=,ppid=,uid=,etimes=,args="], capture=True, check=False)
+    if proc.returncode != 0:
+        raise FlingError("Could not find active fling sessions.", proc.returncode, stderr=proc.stderr)
+
+    self_pid = os.getpid()
+    matches = {}
+    for line in proc.stdout.splitlines():
+        parts = line.strip().split(None, 4)
+        if len(parts) < 5:
+            continue
+        try:
+            pid = int(parts[0])
+            ppid = int(parts[1])
+            age_seconds = int(parts[3])
+        except ValueError:
+            continue
+        uid = parts[2]
+        command = parts[4]
+        if pid == self_pid:
+            continue
+        if target_uid is not None and uid != target_uid:
+            continue
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            tokens = command.split()
+        if not tokens:
+            continue
+        first = Path(tokens[0]).name
+        second = Path(tokens[1]).name if len(tokens) > 1 else ""
+        is_session_wrapper = first == "fling-session" or (first in {"bash", "sh"} and second == "fling-session")
+        if is_session_wrapper:
+            username = None
+            max_seconds = None
+            for index, token in enumerate(tokens):
+                if token == "--username" and index + 1 < len(tokens):
+                    username = tokens[index + 1]
+                elif token.startswith("--username="):
+                    username = token.split("=", 1)[1]
+                elif token == "--max-seconds" and index + 1 < len(tokens):
+                    max_seconds = tokens[index + 1]
+                elif token.startswith("--max-seconds="):
+                    max_seconds = token.split("=", 1)[1]
+            matches[pid] = {
+                "pid": pid,
+                "ppid": ppid,
+                "uid": uid,
+                "username": username,
+                "age_seconds": age_seconds,
+                "max_seconds": int(max_seconds) if max_seconds and max_seconds.isdigit() else None,
+                "command": command,
+            }
+
+    sessions = [item for pid, item in matches.items() if item["ppid"] not in matches]
+    if session_username:
+        sessions = [item for item in sessions if item["username"] == session_username]
+    return sorted(sessions, key=lambda item: (item["username"] or "", item["pid"]))
+
+
+def find_fling_session_pids(login_user=None, session_username=None):
+    return [session["pid"] for session in find_fling_sessions(login_user, session_username)]
+
+
+def cmd_list(args):
+    require_root("list")
+    sessions = find_fling_sessions(getattr(args, "login_user", None), getattr(args, "username", None))
+    payload = {"ok": True, "sessions": sessions, "count": len(sessions)}
+    if args.json:
+        emit_json(payload)
+    else:
+        if not sessions:
+            print("no active fling sessions")
+        else:
+            print("username pid uid age max")
+            for session in sessions:
+                username = session["username"] or "-"
+                max_seconds = session["max_seconds"] if session["max_seconds"] is not None else "-"
+                print(f"{username} {session['pid']} {session['uid']} {session['age_seconds']}s {max_seconds}")
+    return 0
+
+
+def cmd_kill(args):
+    require_root("kill")
+    login_user = getattr(args, "login_user", None)
+    session_username = getattr(args, "session_username", None) or getattr(args, "username", None)
+    kill_value = getattr(args, "kill", None)
+    if isinstance(kill_value, str):
+        session_username = kill_value
+        login_user = getattr(args, "login_user", None)
+    payload = kill_fling_sessions(login_user, session_username)
+    if args.json:
+        emit_json(payload)
+    else:
+        print(f"killed {payload['killed']} active fling session(s)")
+    return 0
+
+
+def kill_fling_sessions(login_user=None, session_username=None):
+    pids = find_fling_session_pids(login_user, session_username)
+
+    for pid in pids:
+        kill_process_tree(pid, signal.SIGTERM)
+
+    deadline = time.time() + 2
+    while time.time() < deadline and any(process_exists(pid) for pid in pids):
+        time.sleep(0.1)
+
+    remaining = [pid for pid in pids if process_exists(pid)]
+    for pid in remaining:
+        kill_process_tree(pid, signal.SIGKILL)
+
+    return {"ok": True, "killed": len(pids), "pids": pids, "login_user": login_user, "username": session_username}
+
+
+def write_if_changed(path, content, mode=0o644, dry_run=False):
+    path = Path(path)
+    if dry_run:
+        return {"path": str(path), "changed": not path.exists() or path.read_text() != content, "dry_run": True}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    changed = not path.exists() or path.read_text() != content
+    path.write_text(content)
+    path.chmod(mode)
+    return {"path": str(path), "changed": changed}
+
+
+def install_file(src, dst, mode=0o755, dry_run=False):
+    src = Path(src)
+    dst = Path(dst)
+    if dry_run:
+        return {"path": str(dst), "source": str(src), "dry_run": True}
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    dst.chmod(mode)
+    return {"path": str(dst), "source": str(src)}
+
+
+def cmd_host_install(args):
+    require_root("host install")
+    ca_pub = Path(args.ca_pub).expanduser().resolve()
+    if not ca_pub.exists():
+        raise FlingError(f"CA public key does not exist: {ca_pub}", 2)
+
+    trusted_ca = Path(args.trusted_ca).expanduser()
+    principals_dir = Path(args.principals_dir).expanduser()
+    principals_file = principals_dir / args.user
+    wrapper_path = Path(args.session_wrapper).expanduser()
+    sshd_config = Path(args.sshd_config).expanduser()
+    principals = args.principal or [args.user]
+    principal_lines = "\n".join(dict.fromkeys(principals)) + "\n"
+
+    config = f"""# Managed by fling.
+TrustedUserCAKeys {trusted_ca}
+ExposeAuthInfo yes
+
+Match User {args.user}
+    AuthorizedPrincipalsFile {principals_dir}/%u
+    AuthorizedKeysFile none
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    AuthenticationMethods publickey
+    AllowTcpForwarding no
+    X11Forwarding no
+    PermitTunnel no
+"""
+
+    results = []
+    results.append(install_file(resource_file("production/fling-session"), wrapper_path, 0o755, args.dry_run))
+    results.append(write_if_changed(trusted_ca, ca_pub.read_text(), 0o644, args.dry_run))
+    results.append(write_if_changed(principals_file, principal_lines, 0o644, args.dry_run))
+    results.append(write_if_changed(sshd_config, config, 0o644, args.dry_run))
+    if args.max_time or args.max_connections:
+        current = load_policy(args.policy_file)
+        current_user_policy = effective_policy(current, args.user)
+        max_time = args.max_time if args.max_time else current_user_policy["max_time_seconds"]
+        max_connections = args.max_connections if args.max_connections else current_user_policy["max_connections"]
+        if args.dry_run:
+            results.append({"path": str(policy_file_path(args.policy_file)), "dry_run": True, "user": args.user, "max_time_seconds": max_time, "max_connections": max_connections})
+        else:
+            results.append(write_policy(args.policy_file, max_time, max_connections, args.user))
+
+    if args.create_user and not args.dry_run:
+        if run(["id", "-u", args.user], capture=True, check=False).returncode != 0:
+            run(["useradd", "--create-home", "--shell", "/bin/bash", args.user])
+            if command_path("openssl"):
+                password = run(["openssl", "rand", "-base64", "32"], capture=True).stdout.strip()
+                password_hash = run(["openssl", "passwd", "-6", password], capture=True).stdout.strip()
+                run(["usermod", "--password", password_hash, args.user])
+            results.append({"created_user": args.user})
+
+    if not args.dry_run and args.validate:
+        run(["sshd", "-t"], capture=True)
+        results.append({"validated": "sshd -t"})
+
+    if not args.dry_run and args.reload:
+        if command_path("systemctl"):
+            proc = run(["systemctl", "reload", "sshd"], capture=True, check=False)
+            if proc.returncode != 0:
+                proc = run(["systemctl", "reload", "ssh"], capture=True, check=False)
+            if proc.returncode != 0:
+                raise FlingError("Could not reload sshd with systemctl.", proc.returncode, stderr=proc.stderr)
+            results.append({"reloaded": "sshd"})
+        else:
+            raise FlingError("systemctl is not available; reload sshd manually.", 127)
+
+    payload = {"ok": True, "results": results}
+    if args.json:
+        emit_json(payload)
+    else:
+        for item in results:
+            print(json.dumps(item, sort_keys=True))
+    return 0
+
+
+class IssuerHandler(http.server.BaseHTTPRequestHandler):
+    server_version = "flingd/0.1"
+
+    def send_json(self, status, payload):
+        body = json.dumps(payload, sort_keys=True).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path == "/healthz":
+            self.send_json(200, {"ok": True, "service": "flingd", "version": VERSION})
+            return
+        self.send_json(404, {"ok": False, "error": "not found"})
+
+    def do_POST(self):
+        if self.path != "/v1/certificates":
+            self.send_json(404, {"ok": False, "error": "not found"})
+            return
+
+        expected = self.server.auth_token
+        actual = self.headers.get("Authorization", "")
+        if actual != f"Bearer {expected}":
+            self.send_json(401, {"ok": False, "error": "unauthorized"})
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length).decode("utf-8")
+            request = json.loads(body)
+            principal = request.get("principal")
+            seconds = int(request.get("seconds", self.server.default_seconds))
+            if principal not in self.server.allowed_principals:
+                raise FlingError(f"Principal is not allowed: {principal}", 403)
+            if seconds > self.server.max_seconds:
+                raise FlingError(f"Requested seconds exceeds max_seconds={self.server.max_seconds}", 400)
+            public_key = request.get("public_key", "").strip()
+            if not public_key:
+                raise FlingError("Missing public_key.", 400)
+
+            result = sign_user_certificate(
+                ca_key=self.server.ca_key,
+                public_key_text=public_key,
+                principal=principal,
+                seconds=seconds,
+                key_id=request.get("key_id"),
+                source_address=request.get("source_address"),
+                session_wrapper=self.server.session_wrapper,
+                policy_file=self.server.policy_file,
+                login_user=request.get("login_user") or principal,
+                permit_pty=bool(request.get("permit_pty", True)),
+            )
+            self.send_json(200, result)
+        except FlingError as exc:
+            self.send_json(exc.code if exc.code >= 100 else 400, {"ok": False, "error": exc.message})
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": str(exc)})
+
+    def log_message(self, fmt, *args):
+        eprint(f"{self.address_string()} - {fmt % args}")
+
+
+def cmd_serve(args):
+    require_root("serve")
+    policy = load_policy(args.policy_file)
+    default_policy_caps = effective_policy(policy)
+    token = args.token or os.environ.get(args.token_env)
+    if not token:
+        raise FlingError(f"Set {args.token_env} or pass --token before starting the issuer service.", 2)
+    if args.max_seconds > default_policy_caps["max_time_seconds"]:
+        raise FlingError(f"Maximum issuer lifetime cannot exceed {format_duration(default_policy_caps['max_time_seconds'])}.", 2)
+    if args.default_seconds > args.max_seconds:
+        raise FlingError("--default-seconds cannot exceed --max-seconds.", 2)
+
+    if ":" not in args.listen:
+        raise FlingError("--listen must be host:port.", 2)
+    host, port_text = args.listen.rsplit(":", 1)
+    port = int(port_text)
+
+    allowed = set()
+    for raw in args.allowed_principal:
+        allowed.update(part.strip() for part in raw.split(",") if part.strip())
+    if not allowed:
+        raise FlingError("At least one --allowed-principal is required.", 2)
+
+    server = http.server.ThreadingHTTPServer((host, port), IssuerHandler)
+    server.auth_token = token
+    server.ca_key = str(Path(args.ca_key).expanduser().resolve())
+    server.allowed_principals = allowed
+    server.max_seconds = args.max_seconds
+    server.default_seconds = args.default_seconds
+    server.session_wrapper = args.session_wrapper
+    server.policy_file = policy["path"]
+
+    eprint(f"flingd listening on {host}:{port}; allowed principals: {', '.join(sorted(allowed))}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        return 130
+    return 0
+
+
+def b64url(data):
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def b64url_decode(value):
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
+
+
+def make_password_hash(password, iterations=260000):
+    salt = secrets.token_urlsafe(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations)
+    return f"pbkdf2_sha256${iterations}${salt}${b64url(digest)}"
+
+
+def verify_web_password(password, password_hash=None, plain_password=None):
+    if password_hash:
+        try:
+            scheme, iterations, salt, expected = password_hash.split("$", 3)
+            if scheme != "pbkdf2_sha256":
+                return False
+            digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), int(iterations))
+            return hmac.compare_digest(b64url(digest), expected)
+        except Exception:
+            return False
+    if plain_password is not None:
+        return hmac.compare_digest(password, plain_password)
+    return False
+
+
+def make_web_session(user, secret, max_age=28800):
+    payload = {
+        "user": user,
+        "exp": int(time.time()) + max_age,
+        "csrf": secrets.token_urlsafe(24),
+    }
+    body = b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    sig = b64url(hmac.new(secret, body.encode("ascii"), hashlib.sha256).digest())
+    return f"{body}.{sig}"
+
+
+def verify_web_session(token, secret):
+    try:
+        body, sig = token.split(".", 1)
+        expected = b64url(hmac.new(secret, body.encode("ascii"), hashlib.sha256).digest())
+        if not hmac.compare_digest(sig, expected):
+            return None
+        payload = json.loads(b64url_decode(body).decode("utf-8"))
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        return payload
+    except Exception:
+        return None
+
+
+def parse_cookie(header):
+    cookies = {}
+    for part in (header or "").split(";"):
+        if "=" in part:
+            key, value = part.strip().split("=", 1)
+            cookies[key] = value
+    return cookies
+
+
+def render_web_page(title, body):
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(title)}</title>
+  <style>
+    body {{ margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; color: #172026; background: #f5f7f8; }}
+    header {{ display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; background: #172026; color: white; }}
+    main {{ max-width: 1040px; margin: 0 auto; padding: 20px; }}
+    h1 {{ margin: 0; font-size: 18px; font-weight: 650; }}
+    h2 {{ margin: 0 0 12px; font-size: 15px; }}
+    section, .login {{ background: white; border: 1px solid #d8e0e5; border-radius: 6px; padding: 16px; margin-bottom: 16px; }}
+    label {{ display: block; font-weight: 600; margin: 10px 0 4px; }}
+    input {{ box-sizing: border-box; width: 100%; max-width: 320px; padding: 8px 10px; border: 1px solid #b8c4cc; border-radius: 4px; font: inherit; }}
+    button {{ padding: 8px 12px; border: 1px solid #172026; border-radius: 4px; background: #172026; color: white; font: inherit; cursor: pointer; }}
+    button.secondary {{ background: white; color: #172026; }}
+    table {{ width: 100%; border-collapse: collapse; }}
+    th, td {{ padding: 8px; border-bottom: 1px solid #e4eaee; text-align: left; }}
+    th {{ font-size: 12px; color: #4d5c66; text-transform: uppercase; }}
+    .row {{ display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }}
+    .notice {{ color: #31516b; margin-bottom: 12px; }}
+    .error {{ color: #9b1c1c; margin-bottom: 12px; }}
+    .inline {{ display: inline; }}
+    .inline input {{ width: auto; }}
+  </style>
+</head>
+<body>
+  <header><h1>Fling</h1></header>
+  <main>{body}</main>
+</body>
+</html>
+"""
+
+
+def render_login(error=""):
+    error_html = f"<div class=\"error\">{html.escape(error)}</div>" if error else ""
+    return render_web_page(
+        "Fling Login",
+        f"""<div class="login">
+  <h2>Login</h2>
+  {error_html}
+  <form method="post" action="/login">
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" required>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <p><button type="submit">Login</button></p>
+  </form>
+</div>""",
+    )
+
+
+def render_dashboard(policy, sessions, csrf, message=""):
+    default_caps = effective_policy(policy)
+    user_rows = []
+    for username, caps in sorted(policy.get("users", {}).items()):
+        user_rows.append(
+            f"<tr><td>{html.escape(username)}</td><td>{format_duration(caps['max_time_seconds'])}</td><td>{caps['max_connections']}</td></tr>"
+        )
+    user_table = "".join(user_rows) or "<tr><td colspan=\"3\">No user overrides</td></tr>"
+
+    session_rows = []
+    for session in sessions:
+        username = html.escape(session.get("username") or "-")
+        max_seconds = session["max_seconds"] if session["max_seconds"] is not None else "-"
+        session_rows.append(
+            f"""<tr>
+  <td>{username}</td><td>{session['pid']}</td><td>{session['uid']}</td><td>{session['age_seconds']}s</td><td>{max_seconds}</td>
+  <td><form class="inline" method="post" action="/kill"><input type="hidden" name="csrf" value="{html.escape(csrf)}"><input type="hidden" name="username" value="{username}"><button type="submit">Kill</button></form></td>
+</tr>"""
+        )
+    sessions_table = "".join(session_rows) or "<tr><td colspan=\"6\">No active sessions</td></tr>"
+    message_html = f"<div class=\"notice\">{html.escape(message)}</div>" if message else ""
+
+    return render_web_page(
+        "Fling",
+        f"""{message_html}
+<section>
+  <h2>Policy</h2>
+  <table>
+    <tr><th>User</th><th>Max Time</th><th>Max Connections</th></tr>
+    <tr><td>default</td><td>{format_duration(default_caps['max_time_seconds'])}</td><td>{default_caps['max_connections']}</td></tr>
+    {user_table}
+  </table>
+</section>
+<section>
+  <h2>Set Policy</h2>
+  <form method="post" action="/policy">
+    <input type="hidden" name="csrf" value="{html.escape(csrf)}">
+    <div class="row">
+      <div><label for="user">User</label><input id="user" name="user" placeholder="default"></div>
+      <div><label for="max_time">Max Time</label><input id="max_time" name="max_time" value="{duration_input_value(default_caps['max_time_seconds'])}" required></div>
+      <div><label for="max_connections">Max Connections</label><input id="max_connections" name="max_connections" type="number" min="1" max="10" value="{default_caps['max_connections']}" required></div>
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</section>
+<section>
+  <h2>Sessions</h2>
+  <table>
+    <tr><th>Name</th><th>PID</th><th>UID</th><th>Age</th><th>Max</th><th></th></tr>
+    {sessions_table}
+  </table>
+</section>
+<section>
+  <h2>Kill Session</h2>
+  <form method="post" action="/kill">
+    <input type="hidden" name="csrf" value="{html.escape(csrf)}">
+    <div class="row">
+      <div><label for="kill_username">Name</label><input id="kill_username" name="username" placeholder="f432"></div>
+      <button type="submit">Kill</button>
+    </div>
+  </form>
+</section>
+<form method="post" action="/logout">
+  <input type="hidden" name="csrf" value="{html.escape(csrf)}">
+  <button class="secondary" type="submit">Logout</button>
+</form>""",
+    )
+
+
+class WebHandler(http.server.BaseHTTPRequestHandler):
+    server_version = "fling-web/0.1"
+
+    def send_html(self, status, body, headers=None):
+        data = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(data)
+
+    def redirect(self, location, headers=None):
+        self.send_response(303)
+        self.send_header("Location", location)
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+
+    def read_form(self):
+        length = min(int(self.headers.get("Content-Length", "0")), 16384)
+        raw = self.rfile.read(length).decode("utf-8")
+        parsed = urllib.parse.parse_qs(raw, keep_blank_values=True)
+        return {key: values[-1] for key, values in parsed.items()}
+
+    def session_payload(self):
+        token = parse_cookie(self.headers.get("Cookie")).get("fling_web")
+        return verify_web_session(token, self.server.session_secret) if token else None
+
+    def require_session(self):
+        payload = self.session_payload()
+        if not payload:
+            self.redirect("/login")
+            return None
+        return payload
+
+    def check_csrf(self, payload, form):
+        return hmac.compare_digest(str(payload.get("csrf", "")), str(form.get("csrf", "")))
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/healthz":
+            body = json.dumps({"ok": True, "service": "fling-web", "version": VERSION}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if parsed.path == "/login":
+            if self.session_payload():
+                self.redirect("/")
+            else:
+                self.send_html(200, render_login())
+            return
+        if parsed.path != "/":
+            self.send_html(404, render_web_page("Not Found", "<section>Not found</section>"))
+            return
+
+        payload = self.require_session()
+        if not payload:
+            return
+        query = urllib.parse.parse_qs(parsed.query)
+        message = query.get("message", [""])[-1]
+        policy = load_policy(self.server.policy_file)
+        sessions = find_fling_sessions()
+        self.send_html(200, render_dashboard(policy, sessions, payload["csrf"], message))
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        form = self.read_form()
+        if parsed.path == "/login":
+            username = form.get("username", "")
+            password = form.get("password", "")
+            if username == self.server.web_user and verify_web_password(password, self.server.password_hash, self.server.plain_password):
+                token = make_web_session(username, self.server.session_secret)
+                self.redirect("/", {"Set-Cookie": f"fling_web={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800"})
+            else:
+                self.send_html(401, render_login("Invalid login."))
+            return
+
+        payload = self.require_session()
+        if not payload:
+            return
+        if not self.check_csrf(payload, form):
+            self.send_html(403, render_web_page("Forbidden", "<section>Invalid request</section>"))
+            return
+
+        try:
+            if parsed.path == "/logout":
+                self.redirect("/login", {"Set-Cookie": "fling_web=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"})
+                return
+            if parsed.path == "/policy":
+                user = form.get("user", "").strip() or None
+                max_time = duration_seconds(form.get("max_time", ""))
+                max_connections = positive_int(form.get("max_connections", ""))
+                write_policy(self.server.policy_file, max_time, max_connections, user)
+                self.redirect("/?message=policy+saved")
+                return
+            if parsed.path == "/kill":
+                username = form.get("username", "").strip() or None
+                result = kill_fling_sessions(session_username=username)
+                self.redirect(f"/?message=killed+{result['killed']}+session(s)")
+                return
+            self.send_html(404, render_web_page("Not Found", "<section>Not found</section>"))
+        except (FlingError, argparse.ArgumentTypeError, ValueError) as exc:
+            policy = load_policy(self.server.policy_file)
+            sessions = find_fling_sessions()
+            self.send_html(400, render_dashboard(policy, sessions, payload["csrf"], str(exc)))
+
+    def log_message(self, fmt, *args):
+        eprint(f"{self.address_string()} - {fmt % args}")
+
+
+def cmd_web_hash(args):
+    password = os.environ.get(args.password_env)
+    if password is None:
+        password = getpass.getpass("Web password: ")
+    print(make_password_hash(password))
+    return 0
+
+
+def cmd_web(args):
+    require_root("web")
+    password_hash = args.password_hash or os.environ.get(args.password_hash_env)
+    plain_password = os.environ.get(args.password_env)
+    if not password_hash and plain_password is None:
+        raise FlingError(f"Set {args.password_hash_env}, set {args.password_env}, or pass --password-hash.", 2)
+
+    if ":" not in args.listen:
+        raise FlingError("--listen must be host:port.", 2)
+    host, port_text = args.listen.rsplit(":", 1)
+    if host not in {"127.0.0.1", "localhost", "::1"} and not args.allow_remote:
+        raise FlingError("Refusing non-local web bind without --allow-remote.", 2)
+    port = int(port_text)
+
+    session_secret_text = os.environ.get(args.session_secret_env) or secrets.token_urlsafe(32)
+    server = http.server.ThreadingHTTPServer((host, port), WebHandler)
+    server.web_user = args.user
+    server.password_hash = password_hash
+    server.plain_password = plain_password
+    server.session_secret = session_secret_text.encode("utf-8")
+    server.policy_file = str(policy_file_path(args.policy_file))
+
+    eprint(f"fling web listening on http://{host}:{port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        return 130
+    return 0
+
+
+def cmd_key_generate(args):
+    generate_key(args)
+    return 0
+
+
+def cmd_network_create(args):
+    name = args.name
+    proc = run(["docker", "network", "inspect", name], capture=True, check=False)
+    created = False
+    if proc.returncode != 0:
+        run(["docker", "network", "create", name])
+        created = True
+
+    payload = {"ok": True, "name": name, "created": created}
+    if args.json:
+        emit_json(payload)
+    else:
+        print(("Created" if created else "Exists") + f": {name}")
+    return 0
+
+
+def cmd_server(args):
+    project_dir = project_dir_from(args)
+    env = {}
+    if getattr(args, "session_seconds", None):
+        env["SSH_SESSION_SECONDS"] = args.session_seconds
+
+    if args.server_command == "up":
+        cmd = compose_command(project_dir, "server") + ["up", "-d"]
+        if args.build:
+            cmd.append("--build")
+        if args.force_recreate:
+            cmd.append("--force-recreate")
+        run(cmd, cwd=project_dir, env=env)
+        return 0
+
+    if args.server_command == "down":
+        run(compose_command(project_dir, "server") + ["down"], cwd=project_dir)
+        return 0
+
+    if args.server_command == "restart":
+        run(compose_command(project_dir, "server") + ["restart"], cwd=project_dir)
+        return 0
+
+    if args.server_command == "status":
+        run(compose_command(project_dir, "server") + ["ps"], cwd=project_dir)
+        return 0
+
+    if args.server_command == "logs":
+        cmd = compose_command(project_dir, "server") + ["logs"]
+        if args.follow:
+            cmd.append("--follow")
+        if args.tail:
+            cmd += ["--tail", str(args.tail)]
+        run(cmd, cwd=project_dir)
+        return 0
+
+    raise FlingError(f"Unknown server command: {args.server_command}", 2)
+
+
+def cmd_client_run(args):
+    project_dir = project_dir_from(args)
+    remote_command = args.remote_command
+    if remote_command and remote_command[0] == "--":
+        remote_command = remote_command[1:]
+
+    cmd = compose_command(project_dir, "client") + ["run", "--rm", "ssh-client"] + remote_command
+    run(cmd, cwd=project_dir)
+    return 0
+
+
+def cmd_test_timeout(args):
+    require_root("test-timeout")
+    project_dir = project_dir_from(args)
+    env = {"SSH_SESSION_SECONDS": args.seconds}
+    run(
+        compose_command(project_dir, "server") + ["up", "-d", "--build", "--force-recreate"],
+        cwd=project_dir,
+        env=env,
+    )
+    remote = f"echo start; date -u; sleep {args.sleep}; echo should-not-print"
+    proc = run(
+        compose_command(project_dir, "client") + ["run", "--rm", "ssh-client", remote],
+        cwd=project_dir,
+        check=False,
+    )
+    if proc.returncode != 124:
+        raise FlingError(
+            f"Timeout test expected exit code 124, got {proc.returncode}",
+            proc.returncode or 1,
+        )
+    return 0
+
+
+def cmd_compose(args):
+    project_dir = project_dir_from(args)
+    compose_args = args.compose_args
+    if compose_args and compose_args[0] == "--":
+        compose_args = compose_args[1:]
+    if not compose_args:
+        raise FlingError("Pass docker compose arguments after --.", 2)
+    run(compose_command(project_dir, args.kind) + compose_args, cwd=project_dir)
+    return 0
+
+
+def cmd_package_build(args):
+    root = source_root()
+    package_types = ["deb", "rpm", "msi", "pkg"] if args.type == "all" else [args.type]
+    results = []
+
+    for package_type in package_types:
+        if package_type == "deb":
+            script = root / "packaging/build-deb.sh"
+            cmd = ["bash", str(script)]
+        elif package_type == "rpm":
+            script = root / "packaging/build-rpm.sh"
+            cmd = ["bash", str(script)]
+        elif package_type == "msi":
+            script = root / "packaging/build-msi.ps1"
+            pwsh = command_path("pwsh") or command_path("powershell")
+            if not pwsh:
+                results.append(
+                    {
+                        "type": "msi",
+                        "ok": False,
+                        "message": "PowerShell is required to run packaging/build-msi.ps1.",
+                    }
+                )
+                continue
+            cmd = [pwsh, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
+        elif package_type == "pkg":
+            script = root / "packaging/build-pkg.sh"
+            cmd = ["bash", str(script)]
+        else:
+            raise FlingError(f"Unknown package type: {package_type}", 2)
+
+        proc = run(cmd, cwd=root, capture=True, check=False)
+        results.append(
+            {
+                "type": package_type,
+                "ok": proc.returncode == 0,
+                "exit_code": proc.returncode,
+                "stdout": proc.stdout.strip(),
+                "stderr": proc.stderr.strip(),
+            }
+        )
+
+        if proc.returncode != 0 and args.type != "all":
+            if args.json:
+                emit_json({"ok": False, "results": results})
+            else:
+                sys.stdout.write(proc.stdout)
+                sys.stderr.write(proc.stderr)
+            return proc.returncode
+
+    ok = all(result["ok"] for result in results)
+    if args.json:
+        emit_json({"ok": ok, "results": results})
+    else:
+        for result in results:
+            status = "built" if result["ok"] else "skipped/failed"
+            print(f"{status}: {result['type']}")
+            if result.get("stdout"):
+                print(result["stdout"])
+            if result.get("stderr"):
+                eprint(result["stderr"])
+
+    return 0 if ok else 1
+
+
+def positive_int(value):
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be positive")
+    return parsed
+
+
+def duration_seconds(value):
+    raw = str(value).strip().lower()
+    match = re.fullmatch(r"([1-9][0-9]*)([smhd]?)", raw)
+    if not match:
+        raise argparse.ArgumentTypeError("use seconds or a duration like 30s, 5m, 2h, or 1d")
+    number = int(match.group(1))
+    unit = match.group(2) or "s"
+    return number * {"s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
+
+
+def lifetime_seconds(args, default=300):
+    if getattr(args, "time", None) is not None:
+        return args.time
+    if getattr(args, "seconds", None) is not None:
+        return args.seconds
+    return default
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="fling",
+        usage="fling [-t TIME] [--username USERNAME] [-k] [command ...]",
+        description="Grant or kill temporary SSH access.",
+        epilog="""examples:
+  sudo fling
+  sudo fling -t 10m
+  sudo fling -t 5m --username temp-remote
+  sudo fling list
+  sudo fling -k f432
+  sudo fling web
+  sudo fling shutdown
+  sudo fling -k
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--version", action="version", version=f"fling {VERSION}")
+    parser.add_argument("--json", action="store_true", help="Emit stable JSON where supported.")
+    parser.add_argument("-t", "--time", type=duration_seconds, help="Grant access for this long, for example 30s, 5m, or 1h.")
+    parser.add_argument("--username", help="Temporary SSH username. Defaults to a random name like f123.")
+    parser.add_argument("--login-user", help="Actual Unix login account if different from --username.")
+    parser.add_argument("--remote", help="Remote host to print in the suggested ssh command.")
+    parser.add_argument("-k", "--kill", nargs="?", const=True, metavar="USERNAME", help="Kill active fling SSH session(s), optionally by name like f432.")
+    parser.add_argument(
+        "--project-dir",
+        default=".",
+        help="Deployment directory. Defaults to the current directory.",
+    )
+    parser.add_argument("--ca-key", default=str(default_ca_key_path()), help=argparse.SUPPRESS)
+    parser.add_argument("--public-key", help=argparse.SUPPRESS)
+    parser.add_argument("--public-key-file", help=argparse.SUPPRESS)
+    parser.add_argument("--out", help=argparse.SUPPRESS)
+    parser.add_argument("--session-dir", default=DEFAULT_SESSION_DIR, help=argparse.SUPPRESS)
+    parser.add_argument("--key-id", help=argparse.SUPPRESS)
+    parser.add_argument("--source-address", help=argparse.SUPPRESS)
+    parser.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help=argparse.SUPPRESS)
+    parser.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help=argparse.SUPPRESS)
+    parser.add_argument("--no-pty", action="store_true", help=argparse.SUPPRESS)
+
+    subparsers = parser.add_subparsers(dest="command", required=False)
+
+    doctor = subparsers.add_parser("doctor", help="Check local tooling and deployment files.")
+    doctor.set_defaults(func=cmd_doctor)
+
+    setup = subparsers.add_parser("setup", help="Create a temporary SSH login. Normal use only needs --time and optionally --username.")
+    setup.add_argument("-t", "--time", type=duration_seconds, required=True, help="Access lifetime, for example 30s, 5m, or 1h.")
+    setup.add_argument("--username", help="Temporary SSH username. Defaults to a random name like f123.")
+    setup.add_argument("--login-user", help="Actual Unix login account if different from --username.")
+    setup.add_argument("--remote", help="Remote host to print in the suggested ssh command.")
+    setup.add_argument("--ca-key", default=str(default_ca_key_path()), help="CA private key path.")
+    setup.add_argument("--public-key", help="Public key text to sign.")
+    setup.add_argument("--public-key-file", help="Public key file to sign. If omitted, fling generates a temporary keypair.")
+    setup.add_argument("--out", help="Certificate output path. Defaults beside the public key.")
+    setup.add_argument("--session-dir", default=DEFAULT_SESSION_DIR, help=argparse.SUPPRESS)
+    setup.add_argument("--key-id", help="Audit identifier stored in the certificate.")
+    setup.add_argument("--source-address", help="Optional CIDR source-address certificate restriction.")
+    setup.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help="Forced command wrapper path on target hosts.")
+    setup.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help=argparse.SUPPRESS)
+    setup.add_argument("--no-pty", action="store_true", help="Do not permit interactive PTY sessions.")
+    setup.set_defaults(func=cmd_setup)
+
+    shutdown = subparsers.add_parser("shutdown", help="Kill active fling SSH session(s).")
+    shutdown.add_argument("session_username", nargs="?", help="Fling session name to kill, for example f432.")
+    shutdown.add_argument("--username", help="Fling session name to kill, for example f432.")
+    shutdown.add_argument("--login-user", help="Login user whose fling sessions should be killed.")
+    shutdown.set_defaults(func=cmd_kill)
+
+    list_cmd = subparsers.add_parser("list", help="List active fling SSH sessions.")
+    list_cmd.add_argument("--username", help="Only list this fling session name.")
+    list_cmd.add_argument("--login-user", help="Only list sessions for this Unix login user.")
+    list_cmd.set_defaults(func=cmd_list)
+
+    ca = subparsers.add_parser("ca", help="Manage the SSH user certificate authority.")
+    ca_sub = ca.add_subparsers(dest="ca_command", required=True)
+    ca_init = ca_sub.add_parser("init", help="Create the SSH user CA keypair.")
+    ca_init.add_argument("--ca-key", default=str(default_ca_key_path()), help="CA private key path.")
+    ca_init.add_argument("--force", action="store_true", help="Replace an existing CA keypair.")
+    ca_init.set_defaults(func=cmd_ca_init)
+
+    cert = subparsers.add_parser("cert", help="Issue temporary SSH user certificates.")
+    cert_sub = cert.add_subparsers(dest="cert_command", required=True)
+    cert_issue = cert_sub.add_parser("issue", help="Sign a public key for temporary SSH access.")
+    cert_issue.add_argument("--ca-key", default=str(default_ca_key_path()), help="CA private key path.")
+    cert_issue.add_argument("--public-key", help="Public key text to sign.")
+    cert_issue.add_argument("--public-key-file", help="Public key file to sign.")
+    cert_issue.add_argument("--username", help="Temporary SSH username/certificate principal.")
+    cert_issue.add_argument("--login-user", help="Unix login user for policy lookup and forced-command metadata.")
+    cert_issue.add_argument("--principal", help=argparse.SUPPRESS)
+    cert_issue.add_argument("-t", "--time", type=duration_seconds, help="Access lifetime, for example 30s, 5m, or 1h.")
+    cert_issue.add_argument("--seconds", type=positive_int, default=300, help="Certificate and session lifetime.")
+    cert_issue.add_argument("--key-id", help="Audit identifier stored in the certificate.")
+    cert_issue.add_argument("--serial", type=positive_int, help=argparse.SUPPRESS)
+    cert_issue.add_argument("--source-address", help="Optional CIDR source-address certificate restriction.")
+    cert_issue.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help="Forced command wrapper path on target hosts.")
+    cert_issue.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help=argparse.SUPPRESS)
+    cert_issue.add_argument("--no-pty", action="store_true", help="Do not permit interactive PTY sessions.")
+    cert_issue.add_argument("--out", help="Write certificate to this path instead of stdout.")
+    cert_issue.set_defaults(func=cmd_cert_issue)
+
+    policy = subparsers.add_parser("policy", help="Show or install max time and connection limits.")
+    policy_sub = policy.add_subparsers(dest="policy_command", required=True)
+    policy_show = policy_sub.add_parser("show", help="Show the active policy.")
+    policy_show.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help="Policy file path.")
+    policy_show.add_argument("--user", help="Show the effective policy for this Unix login user.")
+    policy_show.set_defaults(func=cmd_policy_show)
+    policy_install = policy_sub.add_parser("install", help="Install the host policy.")
+    policy_install.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help="Policy file path.")
+    policy_install.add_argument("--user", help="Set policy for this Unix login user. Omit to set the default policy.")
+    policy_install.add_argument("--max-time", type=duration_seconds, default=MAX_TIME_SECONDS, help="Maximum SSH lifetime. Hard cap is 1h.")
+    policy_install.add_argument("--max-connections", type=positive_int, default=MAX_CONNECTIONS, help="Maximum active sessions. Hard cap is 10.")
+    policy_install.set_defaults(func=cmd_policy_install)
+
+    host = subparsers.add_parser("host", help="Configure a production SSH host for temporary access.")
+    host_sub = host.add_subparsers(dest="host_command", required=True)
+    host_install = host_sub.add_parser("install", help="Trust the CA and install the forced session wrapper.")
+    host_install.add_argument("--ca-pub", required=True, help="CA public key to trust.")
+    host_install.add_argument("--username", "--user", dest="user", default="deploy", help="Unix account that may receive temporary SSH access.")
+    host_install.add_argument("--principal", action="append", help="Allowed certificate principal. Defaults to --user. Repeatable.")
+    host_install.add_argument("--trusted-ca", default="/etc/ssh/fling_user_ca.pub", help="Installed CA public key path.")
+    host_install.add_argument("--principals-dir", default="/etc/ssh/auth_principals", help="Authorized principals directory.")
+    host_install.add_argument("--sshd-config", default="/etc/ssh/sshd_config.d/90-fling-temp-access.conf", help="Managed sshd config snippet.")
+    host_install.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help="Installed session wrapper path.")
+    host_install.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help="Installed policy file path.")
+    host_install.add_argument("--max-time", type=duration_seconds, help="Install a maximum SSH lifetime policy. Hard cap is 1h.")
+    host_install.add_argument("--max-connections", type=positive_int, help="Install a maximum active session policy. Hard cap is 10.")
+    host_install.add_argument("--create-user", action="store_true", help="Create the Unix user if missing.")
+    host_install.add_argument("--no-validate", dest="validate", action="store_false", help="Skip sshd -t validation.")
+    host_install.add_argument("--reload", action="store_true", help="Reload sshd after writing config.")
+    host_install.add_argument("--dry-run", action="store_true", help="Show intended changes without writing files.")
+    host_install.set_defaults(func=cmd_host_install, validate=True)
+
+    serve = subparsers.add_parser("serve", help="Run the temporary SSH certificate issuer service.")
+    serve.add_argument("--listen", default=DEFAULT_ISSUER_LISTEN, help="Issuer listen address as host:port.")
+    serve.add_argument("--ca-key", default=str(default_ca_key_path()), help="CA private key path.")
+    serve.add_argument("--allowed-principal", action="append", default=["deploy"], help="Allowed principal or comma list. Repeatable.")
+    serve.add_argument("--default-seconds", type=positive_int, default=300, help="Default certificate lifetime.")
+    serve.add_argument("--max-seconds", type=positive_int, default=3600, help="Maximum certificate lifetime.")
+    serve.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help="Forced command wrapper path on target hosts.")
+    serve.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help=argparse.SUPPRESS)
+    serve.add_argument("--token-env", default="FLING_ISSUER_TOKEN", help="Environment variable containing the bearer token.")
+    serve.add_argument("--token", help="Bearer token. Prefer --token-env for production.")
+    serve.set_defaults(func=cmd_serve)
+
+    web = subparsers.add_parser("web", help="Run the local admin web console.")
+    web.add_argument("--listen", default="127.0.0.1:8790", help="Web listen address as host:port.")
+    web.add_argument("--user", default=os.environ.get("FLING_WEB_USER", "admin"), help="Login username.")
+    web.add_argument("--password-hash", help="PBKDF2 password hash. Prefer FLING_WEB_PASSWORD_HASH.")
+    web.add_argument("--password-hash-env", default="FLING_WEB_PASSWORD_HASH", help="Environment variable containing the password hash.")
+    web.add_argument("--password-env", default="FLING_WEB_PASSWORD", help="Environment variable containing a plaintext password.")
+    web.add_argument("--session-secret-env", default="FLING_WEB_SESSION_SECRET", help="Environment variable containing the cookie signing secret.")
+    web.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help="Policy file path.")
+    web.add_argument("--allow-remote", action="store_true", help="Allow binding to a non-local address.")
+    web.set_defaults(func=cmd_web)
+
+    web_hash = subparsers.add_parser("web-hash", help="Hash a web login password.")
+    web_hash.add_argument("--password-env", default="FLING_WEB_PASSWORD", help="Environment variable containing the password.")
+    web_hash.set_defaults(func=cmd_web_hash)
+
+    init = subparsers.add_parser("init", help="Copy deployment templates into a directory.")
+    init.add_argument("path", nargs="?", default=None, help="Target directory. Defaults to --project-dir.")
+    init.add_argument("--force", action="store_true", help="Overwrite existing template files.")
+    init.add_argument("--with-key", action="store_true", help="Generate the client SSH keypair.")
+    init.add_argument("--session-seconds", type=positive_int, help="Write SSH_SESSION_SECONDS to .env.")
+    init.add_argument("--host-port", type=positive_int, help="Write SSH_PORT_ON_HOST to .env.")
+    init.set_defaults(func=lambda args: cmd_init(normalize_init_path(args)))
+
+    key = subparsers.add_parser("key", help="Manage the client SSH keypair.")
+    key_sub = key.add_subparsers(dest="key_command", required=True)
+    key_generate = key_sub.add_parser("generate", help="Generate an ed25519 client keypair.")
+    key_generate.add_argument("--path", default="secrets/client_ed25519", help="Private key path.")
+    key_generate.add_argument("--force", action="store_true", help="Replace an existing keypair.")
+    key_generate.set_defaults(func=cmd_key_generate)
+
+    network = subparsers.add_parser("network", help="Manage the shared Docker network.")
+    network_sub = network.add_subparsers(dest="network_command", required=True)
+    network_create = network_sub.add_parser("create", help="Create the shared Docker network.")
+    network_create.add_argument("--name", default=DEFAULT_NETWORK)
+    network_create.set_defaults(func=cmd_network_create)
+
+    server = subparsers.add_parser("server", help="Manage the SSH server Compose deployment.")
+    server_sub = server.add_subparsers(dest="server_command", required=True)
+    server_up = server_sub.add_parser("up", help="Start the SSH server.")
+    server_up.add_argument("--build", action="store_true", help="Build the server image first.")
+    server_up.add_argument("--force-recreate", action="store_true", help="Recreate the container.")
+    server_up.add_argument("--session-seconds", type=positive_int, help="Override SSH_SESSION_SECONDS.")
+    server_up.set_defaults(func=cmd_server)
+    server_sub.add_parser("down", help="Stop and remove the SSH server.").set_defaults(func=cmd_server)
+    server_sub.add_parser("restart", help="Restart the SSH server.").set_defaults(func=cmd_server)
+    server_sub.add_parser("status", help="Show server container status.").set_defaults(func=cmd_server)
+    server_logs = server_sub.add_parser("logs", help="Show server logs.")
+    server_logs.add_argument("--follow", "-f", action="store_true")
+    server_logs.add_argument("--tail", type=positive_int)
+    server_logs.set_defaults(func=cmd_server)
+
+    client = subparsers.add_parser("client", help="Run SSH client commands.")
+    client_sub = client.add_subparsers(dest="client_command", required=True)
+    client_run = client_sub.add_parser("run", help="Run a remote command through the SSH client container.")
+    client_run.add_argument("remote_command", nargs=argparse.REMAINDER)
+    client_run.set_defaults(func=cmd_client_run)
+
+    test_timeout = subparsers.add_parser("test-timeout", help="Run a server-side timeout smoke test.")
+    test_timeout.add_argument("--seconds", type=positive_int, default=5, help="Session limit for the test.")
+    test_timeout.add_argument("--sleep", type=positive_int, default=20, help="Remote sleep duration.")
+    test_timeout.set_defaults(func=cmd_test_timeout)
+
+    compose = subparsers.add_parser("compose", help="Raw docker compose escape hatch.")
+    compose.add_argument("kind", choices=["server", "client"])
+    compose.add_argument("compose_args", nargs=argparse.REMAINDER)
+    compose.set_defaults(func=cmd_compose)
+
+    package = subparsers.add_parser("package", help="Build OS packages.")
+    package_sub = package.add_subparsers(dest="package_command", required=True)
+    package_build = package_sub.add_parser("build", help="Build deb, rpm, msi, or all packages.")
+    package_build.add_argument("--type", choices=["deb", "rpm", "msi", "pkg", "all"], default="all")
+    package_build.set_defaults(func=cmd_package_build)
+
+    return parser
+
+
+def normalize_init_path(args):
+    if args.path:
+        args.project_dir = args.path
+    return args
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        if args.kill:
+            if args.command:
+                parser.error("-k/--kill cannot be combined with a subcommand")
+            if args.time is not None:
+                parser.error("-k/--kill cannot be combined with -t/--time")
+            return cmd_kill(args)
+
+        if not args.command:
+            if args.time is None:
+                args.time = effective_policy(load_policy(args.policy_file), args.login_user or args.username)["max_time_seconds"]
+            return cmd_setup(args)
+
+        return args.func(args)
+    except FlingError as exc:
+        if getattr(args, "json", False):
+            emit_json({"ok": False, "error": {"message": exc.message, "details": exc.details}})
+        else:
+            eprint(f"fling: {exc.message}")
+            if exc.details.get("stderr"):
+                eprint(exc.details["stderr"].rstrip())
+        return exc.code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
