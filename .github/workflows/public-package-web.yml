@@ -165,6 +165,7 @@ jobs:
 
       - name: Publish gh-pages branch
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.linux.outputs.version }}
         run: |
           set -euo pipefail
