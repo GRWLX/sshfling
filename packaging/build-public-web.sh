@@ -146,7 +146,10 @@ Invoke-WebRequest -Uri "$base_url/downloads/$msi_name" -OutFile \$installer
 Start-Process msiexec.exe -Wait -ArgumentList "/i", \$installer, "/qn"
 SH
 
-sha256sum "$public_dir"/downloads/* > "$public_dir/downloads/SHA256SUMS"
+(
+  cd "$public_dir/downloads"
+  sha256sum -- * > SHA256SUMS
+)
 
 {
   echo '<!doctype html>'
