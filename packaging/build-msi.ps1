@@ -1,5 +1,5 @@
 param(
-  [string]$Version = $(if ($env:SSHFLING_VERSION) { $env:SSHFLING_VERSION } else { "0.1.3" })
+  [string]$Version = $(if ($env:SSHFLING_VERSION) { $env:SSHFLING_VERSION } else { "0.1.4" })
 )
 
 $ErrorActionPreference = "Stop"
@@ -95,6 +95,13 @@ heat.exe dir $ProductDir -nologo -cg SSHFlingFiles -dr INSTALLFOLDER -srd -sreg 
 
 candle.exe -nologo -dProductDir="$ProductDir" -out $WixObj $Wxs
 candle.exe -nologo -dProductDir="$ProductDir" -out $HarvestedObj $HarvestedWxs
-light.exe -nologo -out (Join-Path $Dist "sshfling-$Version.msi") $WixObj $HarvestedObj
+$MsiPath = Join-Path $Dist "sshfling-$Version.msi"
+$ZipPath = Join-Path $Dist "sshfling-$Version-windows.zip"
 
-Write-Output (Join-Path $Dist "sshfling-$Version.msi")
+light.exe -nologo -out $MsiPath $WixObj $HarvestedObj
+
+Remove-Item -Force $ZipPath -ErrorAction SilentlyContinue
+Compress-Archive -Path (Join-Path $ProductDir "*") -DestinationPath $ZipPath
+
+Write-Output $MsiPath
+Write-Output $ZipPath

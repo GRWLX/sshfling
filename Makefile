@@ -1,5 +1,5 @@
 PREFIX ?= $(HOME)/.local
-VERSION ?= 0.1.3
+VERSION ?= 0.1.4
 TEMPLATE_DIR := $(PREFIX)/share/sshfling/templates
 
 .PHONY: install-local uninstall-local test package package-deb package-rpm package-msi package-pkg clean

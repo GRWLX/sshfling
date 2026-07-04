@@ -17,5 +17,6 @@ release-dist/
 *.rpm
 *.msi
 *.pkg
+*.zip
 __pycache__/
 *.pyc

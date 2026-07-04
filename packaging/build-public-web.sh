@@ -40,6 +40,9 @@ cp "$package_dist"/*.rpm "$public_dir/rpm/"
 cp "$package_dist"/*.tar.gz "$public_dir/downloads/"
 cp "$package_dist"/*.pkg "$public_dir/downloads/"
 cp "$package_dist"/*.msi "$public_dir/downloads/"
+if compgen -G "$package_dist/*.zip" >/dev/null; then
+  cp "$package_dist"/*.zip "$public_dir/downloads/"
+fi
 
 (
   cd "$public_dir/apt"
@@ -163,6 +166,8 @@ SH
   sha256sum -- * > SHA256SUMS
 )
 
+bash "$(dirname "${BASH_SOURCE[0]}")/build-community-manifests.sh" "$package_dist" "$public_dir" "$base_url" "$version" "$repository"
+
 {
   echo '<!doctype html>'
   echo '<html lang="en">'
@@ -218,6 +223,8 @@ sudo dnf install -y sshfling</code></pre>
   <pre><code>curl -fsSL $base_url/macos/install-pkg.sh | sudo bash</code></pre>
   <h2>Windows MSI</h2>
   <pre><code>irm $base_url/windows/install.ps1 | iex</code></pre>
+  <h2>More ecosystems</h2>
+  <p>Arch/AUR, Alpine, FreeBSD, OpenBSD, pkgsrc, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey manifests are under <a href="$base_url/community.html">community package manifests</a>.</p>
   <h2>Downloads</h2>
   <p>Raw packages and checksums are under <a href="$base_url/downloads/">downloads</a>.</p>
 </body>

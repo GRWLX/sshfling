@@ -193,7 +193,13 @@ Repo registration instructions are in [docs/repos.md](docs/repos.md).
 GitHub Actions workflows are included for public distribution:
 
 - `Release packages without web` builds release artifacts only.
-- `Release packages with public web` publishes a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, macOS `.pkg`, and Windows MSI installs.
+- `Release packages with public web` publishes a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, macOS `.pkg`, Windows MSI installs, and community package manifests for BSDs, Arch/AUR, Alpine, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey.
+
+Nix users can also run from the repository:
+
+```bash
+nix run github:GRWLX/sshfling
+```
 
 ## Package Ecosystem Choice
 
