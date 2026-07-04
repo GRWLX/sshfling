@@ -20,6 +20,7 @@ function Fail([string]$Message) {
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sshfling-cross-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+$sleep30Command = @("powershell", "-NoProfile", "-Command", "Start-Sleep -Seconds 30")
 
 try {
   $versionOutput = (& $CommandPath --version | Out-String).Trim()
@@ -93,7 +94,11 @@ try {
   if (-not [regex]::IsMatch($plainKillOutput, "^killed [1-9][0-9]* detached process\(es\)$")) {
     Fail "plain detached kill output was not stable: $plainKillOutput"
   }
-  $null = (& $CommandPath --json detached start --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "import time; time.sleep(30)" | Out-String)
+  $replaceActiveStartJson = (& $CommandPath --json detached start --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- @sleep30Command | Out-String)
+  $replaceActiveStart = $replaceActiveStartJson | ConvertFrom-Json
+  if (-not $replaceActiveStart.ok -or $replaceActiveStart.job.status -ne "processing") {
+    Fail "active detached replacement setup was not processing: $($replaceActiveStartJson.Trim())"
+  }
   $replaceActiveRaw = & $CommandPath --json detached start --replace --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" 2>&1
   $replaceActiveCode = $LASTEXITCODE
   $replaceActiveJson = ($replaceActiveRaw | Out-String)
