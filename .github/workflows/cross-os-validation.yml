@@ -325,18 +325,18 @@ jobs:
           usesh: true
           prepare: |
             set -eu
-            if freebsd-version | grep -q '^12\.'; then
+            if freebsd-version | grep -q "^12[.]"; then
               archive="https://pkg.opnsense.org/FreeBSD:12:amd64/snapshots/latest"
               export ASSUME_ALWAYS_YES=yes
               export PACKAGESITE="$archive"
               mkdir -p /usr/local/etc/pkg/repos
-              printf '%s\n' 'FreeBSD: { enabled: no }' >/usr/local/etc/pkg/repos/FreeBSD.conf
+              printf "%s\n" "FreeBSD: { enabled: no }" >/usr/local/etc/pkg/repos/FreeBSD.conf
               {
-                printf '%s\n' 'OPNsenseArchive: {'
-                printf '%s\n' '  url: "pkg+https://pkg.opnsense.org/FreeBSD:12:amd64/snapshots/latest",'
-                printf '%s\n' '  signature_type: "none",'
-                printf '%s\n' '  enabled: yes'
-                printf '%s\n' '}'
+                printf "%s\n" "OPNsenseArchive: {"
+                printf "%s\n" "  url: \"https://pkg.opnsense.org/FreeBSD:12:amd64/snapshots/latest\","
+                printf "%s\n" "  signature_type: \"none\","
+                printf "%s\n" "  enabled: yes"
+                printf "%s\n" "}"
               } >/usr/local/etc/pkg/repos/OPNsenseArchive.conf
               if ! pkg bootstrap -f; then
                 fetch -o /tmp/pkg.txz "$archive/Latest/pkg.txz"
