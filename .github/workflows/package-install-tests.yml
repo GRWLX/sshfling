@@ -110,11 +110,12 @@ jobs:
   opensuse-spec:
     name: openSUSE OBS spec build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Build and install generated openSUSE spec
         run: |
           set -euo pipefail
-          docker run --rm opensuse/leap:15.6 bash -lc 'set -euo pipefail
+          docker run --rm opensuse/tumbleweed bash -lc 'set -euo pipefail
           zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks refresh >/dev/null
           zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks install rpm-build curl tar gzip python3 openssh shadow procps util-linux >/dev/null
           mkdir -p /root/rpmbuild/SOURCES /root/rpmbuild/SPECS
