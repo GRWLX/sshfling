@@ -11,13 +11,14 @@
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          runtimePath = [ pkgs.openssh pkgs.procps pkgs.util-linux ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.shadow ];
+          runtimePath = [ pkgs.python3 pkgs.openssh pkgs.procps pkgs.util-linux ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.shadow ];
         in {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "sshfling";
-            version = "0.1.7";
+            version = "0.1.8";
             src = self;
             nativeBuildInputs = [ pkgs.makeWrapper ];
+            dontBuild = true;
             installPhase = ''
               runHook preInstall
               install -Dm755 bin/sshfling $out/bin/sshfling

@@ -1,0 +1,321 @@
+name: Package install tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to install-test."
+        required: true
+        default: "0.1.8"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  linux-public-repos:
+    name: Linux public repo installs
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: debian
+            image: debian:bookworm-slim
+            command: |
+              apt-get update >/dev/null
+              apt-get install -y --no-install-recommends ca-certificates curl >/dev/null
+              echo "deb [trusted=yes] https://grwlx.github.io/sshfling/apt ./" >/etc/apt/sources.list.d/sshfling.list
+              apt-get update >/dev/null
+              apt-get install -y --no-install-recommends sshfling >/dev/null
+          - name: ubuntu
+            image: ubuntu:24.04
+            command: |
+              apt-get update >/dev/null
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl >/dev/null
+              echo "deb [trusted=yes] https://grwlx.github.io/sshfling/apt ./" >/etc/apt/sources.list.d/sshfling.list
+              apt-get update >/dev/null
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends sshfling >/dev/null
+          - name: fedora
+            image: fedora:latest
+            command: |
+              printf '%s\n' '[sshfling]' 'name=SSHFling' 'baseurl=https://grwlx.github.io/sshfling/rpm' 'enabled=1' 'gpgcheck=0' >/etc/yum.repos.d/sshfling.repo
+              dnf install -y sshfling >/dev/null
+          - name: rocky
+            image: rockylinux:9
+            command: |
+              printf '%s\n' '[sshfling]' 'name=SSHFling' 'baseurl=https://grwlx.github.io/sshfling/rpm' 'enabled=1' 'gpgcheck=0' >/etc/yum.repos.d/sshfling.repo
+              dnf install -y sshfling >/dev/null
+          - name: alma
+            image: almalinux:9
+            command: |
+              printf '%s\n' '[sshfling]' 'name=SSHFling' 'baseurl=https://grwlx.github.io/sshfling/rpm' 'enabled=1' 'gpgcheck=0' >/etc/yum.repos.d/sshfling.repo
+              dnf install -y sshfling >/dev/null
+          - name: ubi
+            image: registry.access.redhat.com/ubi9/ubi
+            command: |
+              printf '%s\n' '[sshfling]' 'name=SSHFling' 'baseurl=https://grwlx.github.io/sshfling/rpm' 'enabled=1' 'gpgcheck=0' >/etc/yum.repos.d/sshfling.repo
+              dnf install -y sshfling >/dev/null
+    steps:
+      - name: Install and check ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          docker run --rm "${{ matrix.image }}" bash -lc 'set -euo pipefail
+          ${{ matrix.command }}
+          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          sshfling --version'
+
+  linux-community-builds:
+    name: Linux community package builds
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: arch
+            image: archlinux:latest
+            command: |
+              pacman -Sy --noconfirm --needed base-devel curl sudo >/dev/null
+              useradd -m builder
+              echo "builder ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/builder
+              install -d -o builder -g builder /build
+              cd /build
+              sudo -u builder curl -fsSLO https://grwlx.github.io/sshfling/arch/PKGBUILD
+              sudo -u builder makepkg -si --noconfirm --needed >/dev/null
+          - name: alpine
+            image: alpine:3.20
+            command: |
+              apk add --no-cache alpine-sdk curl python3 openssh-client shadow procps util-linux >/dev/null
+              adduser -D builder
+              addgroup builder abuild
+              install -d -o builder -g builder /build
+              cd /build
+              su builder -c "curl -fsSLO https://grwlx.github.io/sshfling/alpine/APKBUILD"
+              su builder -c "abuild-keygen -a -n"
+              cp /home/builder/.abuild/*.rsa.pub /etc/apk/keys/
+              chown -R builder:builder /build
+              su builder -c "cd /build && abuild checksum && abuild -r" >/tmp/alpine-build.log
+              apk_file="$(find /home/builder/packages -name "sshfling-${{ inputs.version }}-r0.apk" -print -quit)"
+              test -n "$apk_file"
+              apk add --allow-untrusted "$apk_file" >/dev/null
+    steps:
+      - name: Build/install ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          docker run --rm "${{ matrix.image }}" sh -lc 'set -eu
+          ${{ matrix.command }}
+          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          sshfling --version'
+
+  opensuse-spec:
+    name: openSUSE OBS spec build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build and install generated openSUSE spec
+        run: |
+          set -euo pipefail
+          docker run --rm opensuse/leap:15.6 bash -lc 'set -euo pipefail
+          zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks refresh >/dev/null
+          zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks install rpm-build curl tar gzip python3 openssh shadow procps util-linux >/dev/null
+          mkdir -p /root/rpmbuild/SOURCES /root/rpmbuild/SPECS
+          curl -fsSL https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz -o /root/rpmbuild/SOURCES/sshfling-${{ inputs.version }}.tar.gz
+          curl -fsSL https://grwlx.github.io/sshfling/opensuse/sshfling.spec -o /root/rpmbuild/SPECS/sshfling.spec
+          rpmbuild --define "_topdir /root/rpmbuild" -ba /root/rpmbuild/SPECS/sshfling.spec >/tmp/opensuse-rpmbuild.log
+          zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks install /root/rpmbuild/RPMS/noarch/sshfling-${{ inputs.version }}-1.noarch.rpm >/dev/null
+          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          sshfling --version'
+
+  nix-flake:
+    name: Nix flake build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build generated Nix flake
+        run: |
+          set -euo pipefail
+          mkdir -p nix-test
+          curl -fsSL https://grwlx.github.io/sshfling/nix/flake.nix -o nix-test/flake.nix
+          docker run --rm -v "$PWD/nix-test:/work" nixos/nix:2.24.9 sh -lc 'set -eu
+          cd /work
+          nix --extra-experimental-features "nix-command flakes" build .#default -o result
+          ./result/bin/sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          ./result/bin/sshfling --version'
+
+  slackware-slackbuild:
+    name: Slackware SlackBuild
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build/install generated SlackBuild
+        run: |
+          set -euo pipefail
+          docker run --rm vbatts/slackware:15.0 /bin/sh -lc 'set -eu
+          wget --no-check-certificate -qO /tmp/python3.txz https://mirrors.slackware.com/slackware/slackware64-15.0/slackware64/d/python3-3.9.10-x86_64-1.txz
+          installpkg /tmp/python3.txz >/tmp/install-python3.log
+          mkdir -p /tmp/slacktest
+          cd /tmp/slacktest
+          wget --no-check-certificate -qO sshfling.SlackBuild https://grwlx.github.io/sshfling/slackware/sshfling.SlackBuild
+          wget --no-check-certificate -qO slack-desc https://grwlx.github.io/sshfling/slackware/slack-desc
+          wget --no-check-certificate -qO sshfling-${{ inputs.version }}.tar.gz https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz
+          chmod +x sshfling.SlackBuild
+          ./sshfling.SlackBuild >/tmp/slackbuild.log
+          installpkg /tmp/sshfling-${{ inputs.version }}-noarch-1_SBo.txz >/tmp/installpkg.log
+          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          sshfling --version'
+
+  void-template:
+    name: Void xbps-src template
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build/install generated Void template
+        run: |
+          set -euo pipefail
+          docker run --rm --privileged -v /dev:/dev ghcr.io/void-linux/void-glibc-full:latest sh -lc 'set -eu
+          xbps-install -Syu -y xbps >/dev/null || true
+          xbps-install -Syu -y git curl base-devel python3 openssh bash sudo >/dev/null
+          useradd -G xbuilder -M builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/builder
+          git clone --depth 1 https://github.com/void-linux/void-packages.git /void-packages >/dev/null
+          mkdir -p /void-packages/srcpkgs/sshfling
+          curl -fsSL https://grwlx.github.io/sshfling/void/template -o /void-packages/srcpkgs/sshfling/template
+          chown -R builder:builder /void-packages
+          sudo -Eu builder sh -lc "cd /void-packages && common/travis/prepare.sh >/tmp/void-bootstrap.log && ./xbps-src pkg sshfling >/tmp/void-build.log" || {
+            cat /tmp/void-bootstrap.log || true
+            cat /tmp/void-build.log || true
+            exit 1
+          }
+          xbps-install -y --repository=/void-packages/hostdir/binpkgs sshfling >/dev/null
+          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          sshfling --version'
+
+  freebsd-source-smoke:
+    name: FreeBSD source runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.4"
+          usesh: true
+          prepare: |
+            pkg install -y curl python3 openssh-portable
+          run: |
+            set -eu
+            tmp="$(mktemp -d)"
+            cd "$tmp"
+            curl -fsSLO https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz
+            tar -xzf sshfling-${{ inputs.version }}.tar.gz
+            install -m 0755 sshfling-${{ inputs.version }}/bin/sshfling /usr/local/bin/sshfling
+            sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+            sshfling --version
+
+  openbsd-source-smoke:
+    name: OpenBSD source runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          release: "7.9"
+          usesh: true
+          prepare: |
+            pkg_add curl python%3
+          run: |
+            set -eu
+            export PATH="/usr/local/bin:$PATH"
+            if ! command -v python3 >/dev/null 2>&1; then
+              py="$(ls /usr/local/bin/python3.* | head -n 1)"
+              ln -sf "$py" /usr/local/bin/python3
+            fi
+            tmp="$(mktemp -d)"
+            cd "$tmp"
+            curl -fsSLO https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz
+            tar -xzf sshfling-${{ inputs.version }}.tar.gz
+            install -m 0755 sshfling-${{ inputs.version }}/bin/sshfling /usr/local/bin/sshfling
+            sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+            sshfling --version
+
+  netbsd-source-smoke:
+    name: NetBSD source runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          release: "10.1"
+          usesh: true
+          prepare: |
+            /usr/sbin/pkg_add -u curl || true
+            /usr/sbin/pkg_add -u python313 || /usr/sbin/pkg_add -u python312 || /usr/sbin/pkg_add -u python311
+          run: |
+            set -eu
+            export PATH="/usr/pkg/bin:$PATH"
+            if ! command -v python3 >/dev/null 2>&1; then
+              py="$(ls /usr/pkg/bin/python3.* | head -n 1)"
+              ln -sf "$py" /usr/pkg/bin/python3
+            fi
+            tmp="$(mktemp -d)"
+            cd "$tmp"
+            curl -fsSLO https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz
+            tar -xzf sshfling-${{ inputs.version }}.tar.gz
+            install -m 0755 sshfling-${{ inputs.version }}/bin/sshfling /usr/pkg/bin/sshfling
+            sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+            sshfling --version
+
+  macos-pkg:
+    name: macOS pkg install
+    runs-on: macos-latest
+    steps:
+      - name: Install published pkg
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/GRWLX/sshfling/releases/download/v${{ inputs.version }}/sshfling-${{ inputs.version }}.pkg" -o /tmp/sshfling.pkg
+          sudo installer -pkg /tmp/sshfling.pkg -target /
+          /usr/local/bin/sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          /usr/local/bin/sshfling --version
+
+  macos-homebrew:
+    name: Homebrew formula install
+    runs-on: macos-latest
+    steps:
+      - name: Install published formula
+        run: |
+          set -euo pipefail
+          curl -fsSL https://grwlx.github.io/sshfling/homebrew/sshfling.rb -o /tmp/sshfling.rb
+          brew install --formula /tmp/sshfling.rb
+          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          sshfling --version
+
+  windows-msi:
+    name: Windows MSI install
+    runs-on: windows-latest
+    steps:
+      - name: Install published MSI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "${{ inputs.version }}"
+          $msi = Join-Path $env:TEMP "sshfling-$version.msi"
+          Invoke-WebRequest -Uri "https://github.com/GRWLX/sshfling/releases/download/v$version/sshfling-$version.msi" -OutFile $msi
+          Start-Process msiexec.exe -Wait -ArgumentList "/i", $msi, "/qn", "/norestart"
+          $cmd = Join-Path $env:ProgramFiles "SSHFling\sshfling.cmd"
+          $output = & $cmd --version
+          if ($output -ne "sshfling $version") {
+            throw "Unexpected version output: $output"
+          }
+          $output
+
+  windows-zip:
+    name: Windows zip run
+    runs-on: windows-latest
+    steps:
+      - name: Run published Windows zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "${{ inputs.version }}"
+          $zip = Join-Path $env:TEMP "sshfling-$version-windows.zip"
+          $dest = Join-Path $env:TEMP "sshfling-zip"
+          Invoke-WebRequest -Uri "https://github.com/GRWLX/sshfling/releases/download/v$version/sshfling-$version-windows.zip" -OutFile $zip
+          Expand-Archive -Force $zip -DestinationPath $dest
+          $cmd = Join-Path $dest "sshfling.cmd"
+          $output = & $cmd --version
+          if ($output -ne "sshfling $version") {
+            throw "Unexpected version output: $output"
+          }
+          $output

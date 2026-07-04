@@ -44,8 +44,20 @@ These files are generated into the public package site. Some can be used directl
 | winget | `winget/manifests/.../SSHFling/...` |
 | Chocolatey | `chocolatey/sshfling.VERSION.nupkg`, `chocolatey/sshfling.nuspec` |
 
-## Verification
+## Automated Verification
 
 `packaging/verify-public-web.sh` checks the generated package site for every target above. The public web release workflow runs this verifier before publishing `gh-pages`.
+
+`.github/workflows/package-install-tests.yml` is a manual post-release workflow that installs or builds the published package outputs on:
+
+- Debian bookworm, Ubuntu 24.04, Fedora latest, Rocky Linux 9, AlmaLinux 9, and UBI 9 from the public APT/RPM repos.
+- Arch Linux and Alpine Linux from the generated `PKGBUILD` and `APKBUILD`.
+- openSUSE Leap 15.6 from the generated OBS spec.
+- Nix from the generated flake.
+- Slackware 15.0 from the generated SlackBuild.
+- Void Linux from the generated `xbps-src` template.
+- FreeBSD 14.4, OpenBSD 7.9, and NetBSD 10.1 source-runtime smoke tests.
+- macOS from the published `.pkg` and generated Homebrew formula.
+- Windows from the published MSI and portable zip.
 
 Client mode only needs Python and OpenSSH client tools. Server-side certificate grants need OpenSSH server tooling on the target host. Server-side password grants are Linux-oriented because they need account-management tools such as `useradd`, `chpasswd`, `usermod`, and `chage`.

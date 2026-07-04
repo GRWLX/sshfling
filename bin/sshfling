@@ -22,7 +22,7 @@ import tempfile
 import time
 from pathlib import Path
 
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 DEFAULT_NETWORK = "timed-ssh-net"
 DEFAULT_SESSION_WRAPPER = "/usr/local/libexec/sshfling-session"
 DEFAULT_ISSUER_LISTEN = "127.0.0.1:8787"
@@ -2254,7 +2254,7 @@ def build_parser():
     parser.add_argument("--no-pty", action="store_true", help=argparse.SUPPRESS)
     parser.set_defaults(validate=True)
 
-    subparsers = parser.add_subparsers(dest="command", required=False)
+    subparsers = parser.add_subparsers(dest="command")
 
     doctor = subparsers.add_parser("doctor", help="Check local tooling and deployment files.")
     doctor.set_defaults(func=cmd_doctor)
@@ -2281,7 +2281,7 @@ def build_parser():
     setup.set_defaults(func=cmd_setup, validate=True)
 
     password = subparsers.add_parser("password", help="Manage temporary password grants.")
-    password_sub = password.add_subparsers(dest="password_command", required=True)
+    password_sub = password.add_subparsers(dest="password_command")
     password_prune = password_sub.add_parser("prune", help="Remove expired temporary password grants.")
     password_prune.add_argument("--username", help="Only prune this temporary password username.")
     password_prune.add_argument("--password-grant-dir", default=DEFAULT_PASSWORD_GRANT_DIR, help=argparse.SUPPRESS)
@@ -2302,14 +2302,14 @@ def build_parser():
     list_cmd.set_defaults(func=cmd_list)
 
     ca = subparsers.add_parser("ca", help="Manage the SSH user certificate authority.")
-    ca_sub = ca.add_subparsers(dest="ca_command", required=True)
+    ca_sub = ca.add_subparsers(dest="ca_command")
     ca_init = ca_sub.add_parser("init", help="Create the SSH user CA keypair.")
     ca_init.add_argument("--ca-key", default=str(default_ca_key_path()), help="CA private key path.")
     ca_init.add_argument("--force", action="store_true", help="Replace an existing CA keypair.")
     ca_init.set_defaults(func=cmd_ca_init)
 
     cert = subparsers.add_parser("cert", help="Issue temporary SSH user certificates.")
-    cert_sub = cert.add_subparsers(dest="cert_command", required=True)
+    cert_sub = cert.add_subparsers(dest="cert_command")
     cert_issue = cert_sub.add_parser("issue", help="Sign a public key for temporary SSH access.")
     cert_issue.add_argument("--ca-key", default=str(default_ca_key_path()), help="CA private key path.")
     cert_issue.add_argument("--public-key", help="Public key text to sign.")
@@ -2329,7 +2329,7 @@ def build_parser():
     cert_issue.set_defaults(func=cmd_cert_issue)
 
     policy = subparsers.add_parser("policy", help="Show or install max time and connection limits.")
-    policy_sub = policy.add_subparsers(dest="policy_command", required=True)
+    policy_sub = policy.add_subparsers(dest="policy_command")
     policy_show = policy_sub.add_parser("show", help="Show the active policy.")
     policy_show.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help="Policy file path.")
     policy_show.add_argument("--user", help="Show the effective policy for this Unix login user.")
@@ -2342,7 +2342,7 @@ def build_parser():
     policy_install.set_defaults(func=cmd_policy_install)
 
     host = subparsers.add_parser("host", help="Configure a production SSH host for temporary access.")
-    host_sub = host.add_subparsers(dest="host_command", required=True)
+    host_sub = host.add_subparsers(dest="host_command")
     host_install = host_sub.add_parser("install", help="Trust the CA and install the forced session wrapper.")
     host_install.add_argument("--ca-pub", required=True, help="CA public key to trust.")
     host_install.add_argument("--username", "--user", dest="user", default="deploy", help="Unix account that may receive temporary SSH access.")
@@ -2396,20 +2396,20 @@ def build_parser():
     init.set_defaults(func=lambda args: cmd_init(normalize_init_path(args)))
 
     key = subparsers.add_parser("key", help="Manage the client SSH keypair.")
-    key_sub = key.add_subparsers(dest="key_command", required=True)
+    key_sub = key.add_subparsers(dest="key_command")
     key_generate = key_sub.add_parser("generate", help="Generate an ed25519 client keypair.")
     key_generate.add_argument("--path", default="secrets/client_ed25519", help="Private key path.")
     key_generate.add_argument("--force", action="store_true", help="Replace an existing keypair.")
     key_generate.set_defaults(func=cmd_key_generate)
 
     network = subparsers.add_parser("network", help="Manage the shared Docker network.")
-    network_sub = network.add_subparsers(dest="network_command", required=True)
+    network_sub = network.add_subparsers(dest="network_command")
     network_create = network_sub.add_parser("create", help="Create the shared Docker network.")
     network_create.add_argument("--name", default=DEFAULT_NETWORK)
     network_create.set_defaults(func=cmd_network_create)
 
     server = subparsers.add_parser("server", help="Manage the SSH server Compose deployment.")
-    server_sub = server.add_subparsers(dest="server_command", required=True)
+    server_sub = server.add_subparsers(dest="server_command")
     server_up = server_sub.add_parser("up", help="Start the SSH server.")
     server_up.add_argument("--build", action="store_true", help="Build the server image first.")
     server_up.add_argument("--force-recreate", action="store_true", help="Recreate the container.")
@@ -2424,7 +2424,7 @@ def build_parser():
     server_logs.set_defaults(func=cmd_server)
 
     client = subparsers.add_parser("client", help="Run SSH client commands.")
-    client_sub = client.add_subparsers(dest="client_command", required=True)
+    client_sub = client.add_subparsers(dest="client_command")
     client_run = client_sub.add_parser("run", help="Run a remote command through the SSH client container.")
     client_run.add_argument("remote_command", nargs=argparse.REMAINDER)
     client_run.set_defaults(func=cmd_client_run)
@@ -2440,7 +2440,7 @@ def build_parser():
     compose.set_defaults(func=cmd_compose)
 
     package = subparsers.add_parser("package", help="Build OS packages.")
-    package_sub = package.add_subparsers(dest="package_command", required=True)
+    package_sub = package.add_subparsers(dest="package_command")
     package_build = package_sub.add_parser("build", help="Build deb, rpm, msi, or all packages.")
     package_build.add_argument("--type", choices=["deb", "rpm", "msi", "pkg", "all"], default="all")
     package_build.set_defaults(func=cmd_package_build)
@@ -2482,6 +2482,9 @@ def main(argv=None):
             if args.time is None:
                 args.time = effective_policy(load_policy(args.policy_file), args.login_user or args.username)["max_time_seconds"]
             return cmd_setup(args)
+
+        if not hasattr(args, "func"):
+            parser.error(f"missing subcommand for {args.command}")
 
         return args.func(args)
     except SSHFlingError as exc:

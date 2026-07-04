@@ -345,7 +345,7 @@ cat >"$public_dir/nix/flake.nix" <<NIX
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          runtimePath = [ pkgs.openssh pkgs.procps pkgs.util-linux ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.shadow ];
+          runtimePath = [ pkgs.python3 pkgs.openssh pkgs.procps pkgs.util-linux ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.shadow ];
         in {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "sshfling";
@@ -355,6 +355,7 @@ cat >"$public_dir/nix/flake.nix" <<NIX
               hash = "${source_sri}";
             };
             nativeBuildInputs = [ pkgs.makeWrapper ];
+            dontBuild = true;
             installPhase = ''
               runHook preInstall
               install -Dm755 bin/sshfling \$out/bin/sshfling
