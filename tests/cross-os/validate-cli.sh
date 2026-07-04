@@ -182,6 +182,7 @@ import importlib.util
 from pathlib import Path
 import shutil
 import sys
+import tempfile
 
 cmd = sys.argv[1]
 if "/" not in cmd:
@@ -228,6 +229,50 @@ assert session["pid"] == 100, session
 assert session["status"] == "processing", session
 assert session["process_pid"] == 101, session
 assert session["process_pids"] == [101, 102], session
+
+with tempfile.TemporaryDirectory() as detached_dir:
+    paths = sshfling.detached_paths(detached_dir, "active-race")
+    now = sshfling.utc_timestamp()
+    sshfling.write_json_atomic(paths["metadata"], {
+        "version": 1,
+        "managed_by": "sshfling",
+        "name": "active-race",
+        "status": "processing",
+        "pid": 987654,
+        "supervisor_pid": 987655,
+        "command": ["python3", "-c", "print('replacement should not start')"],
+        "cwd": detached_dir,
+        "seconds": 300,
+        "started_at": now,
+        "started_at_utc": sshfling.utc_iso(now),
+        "expires_at": now + 300,
+        "expires_at_utc": sshfling.utc_iso(now + 300),
+        "metadata_path": str(paths["metadata"]),
+        "stdout_path": str(paths["stdout"]),
+        "stderr_path": str(paths["stderr"]),
+    })
+
+    class Args:
+        name = "active-race"
+        time = 300
+        seconds = None
+        detached_dir = detached_dir
+        cwd = detached_dir
+        replace = True
+        detached_args = ["--", "python3", "-c", "print('bad')"]
+        json = True
+
+    original_process_exists = sshfling.process_exists
+    sshfling.process_exists = lambda pid: False
+    try:
+        try:
+            sshfling.cmd_detached_start(Args)
+        except sshfling.SSHFlingError as exc:
+            assert "already active" in exc.message, exc.message
+        else:
+            raise AssertionError("active detached metadata was replaced after process_exists returned false")
+    finally:
+        sshfling.process_exists = original_process_exists
 PY
 
 project="$tmp/project"

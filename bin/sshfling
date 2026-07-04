@@ -143,7 +143,7 @@ def require_root(action):
         raise SSHFlingError(f"{action} requires root/admin privileges. Run it with sudo or from an elevated shell.", 77)
 
 
-def run(args, cwd=None, env=None, capture=False, check=True):
+def run(args, cwd=None, env=None, capture=False, check=True, timeout=None):
     merged_env = os.environ.copy()
     if env:
         merged_env.update({k: str(v) for k, v in env.items() if v is not None})
@@ -157,9 +157,19 @@ def run(args, cwd=None, env=None, capture=False, check=True):
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.PIPE if capture else None,
             check=False,
+            timeout=timeout,
         )
     except FileNotFoundError as exc:
         raise SSHFlingError(f"Missing command: {args[0]}", 127) from exc
+    except subprocess.TimeoutExpired as exc:
+        if check:
+            raise SSHFlingError(f"Command timed out after {timeout}s: {' '.join(args)}", 124) from exc
+        return subprocess.CompletedProcess(
+            args,
+            124,
+            stdout=exc.stdout or "",
+            stderr=exc.stderr or f"timed out after {timeout}s",
+        )
 
     if check and proc.returncode != 0:
         details = {}
@@ -1145,6 +1155,31 @@ def process_exists(pid):
         return True
 
 
+def terminate_windows_process(pid):
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        access = 0x0001  # PROCESS_TERMINATE
+        kernel32 = ctypes.windll.kernel32
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel32.TerminateProcess.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        handle = kernel32.OpenProcess(access, False, int(pid))
+        if not handle:
+            return False
+        try:
+            return bool(kernel32.TerminateProcess(handle, 1))
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:
+        return False
+
+
 def child_pids(pid):
     if not command_path("pgrep"):
         return []
@@ -1393,11 +1428,11 @@ def start_new_process_kwargs(detached=False):
 def terminate_detached_process(pid, force=False):
     sig = signal.SIGKILL if force else signal.SIGTERM
     if os.name == "nt" and command_path("taskkill"):
-        cmd = ["taskkill", "/PID", str(pid), "/T"]
-        if force:
-            cmd.append("/F")
-        proc = run(cmd, capture=True, check=False)
-        return proc.returncode == 0
+        cmd = ["taskkill", "/PID", str(pid), "/T", "/F"]
+        proc = run(cmd, capture=True, check=False, timeout=5)
+        if proc.returncode == 0 or not process_exists(pid):
+            return True
+        return terminate_windows_process(pid)
     if os.name != "nt":
         try:
             os.killpg(pid, sig)
@@ -1424,6 +1459,18 @@ def refresh_detached_job(job):
             job.setdefault("completed_at", utc_timestamp())
             job.setdefault("completed_at_utc", utc_iso(job["completed_at"]))
     return job
+
+
+def detached_metadata_claims_active(job, now=None):
+    if job.get("status") not in {"starting", "processing"}:
+        return False
+    expires_at = job.get("expires_at")
+    if expires_at is None:
+        return True
+    try:
+        return int(expires_at) > (utc_timestamp() if now is None else int(now))
+    except (TypeError, ValueError):
+        return True
 
 
 def load_detached_jobs(root):
@@ -1455,6 +1502,8 @@ def cmd_detached_start(args):
     paths = detached_paths(args.detached_dir, args.name)
     existing = read_json_file(paths["metadata"]) if paths["metadata"].exists() else None
     if existing:
+        if detached_metadata_claims_active(existing):
+            raise SSHFlingError(f"Detached job is already active: {args.name}", 2, pid=existing.get("pid"))
         existing = refresh_detached_job(existing)
         if existing.get("status") in {"starting", "processing"}:
             raise SSHFlingError(f"Detached job is already active: {args.name}", 2, pid=existing.get("pid"))
