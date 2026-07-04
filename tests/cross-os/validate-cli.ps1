@@ -88,6 +88,11 @@ try {
   if (-not $detachedKill.ok -or $detachedKill.job.status -ne "killed" -or $detachedKill.killed -lt 1) {
     Fail "detached kill did not stop the started job: $($detachedKillJson.Trim())"
   }
+  $null = (& $CommandPath detached start --name plain --time 300s --cwd $tempRoot --detached-dir $detachedDir -- python -c "import time; time.sleep(300)" | Out-String).Trim()
+  $plainKillOutput = (& $CommandPath detached kill --detached-dir $detachedDir plain | Out-String).Trim()
+  if (-not [regex]::IsMatch($plainKillOutput, "^killed [1-9][0-9]* detached process\(es\)$")) {
+    Fail "plain detached kill output was not stable: $plainKillOutput"
+  }
   $tooLongJson = (& $CommandPath --json detached start --name too-long --time 25h --detached-dir $detachedDir -- python -c "print('no')" | Out-String)
   $tooLong = $tooLongJson | ConvertFrom-Json
   if ($tooLong.ok -ne $false -or -not $tooLong.error.message.Contains("cannot exceed 24 hours")) {

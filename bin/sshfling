@@ -1601,7 +1601,7 @@ def cmd_detached_kill(args):
     if args.json:
         emit_json(payload)
     else:
-        print(f"killed {len(killed)} detached process(es)")
+        print(f"killed {payload['killed']} detached process(es)")
     return 0
 
 

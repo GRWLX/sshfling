@@ -77,6 +77,9 @@ assert payload["job"]["status"] == "killed", payload
 assert payload["killed"] >= 1, payload
 assert payload["pids"], payload
 PY
+"$cmd" detached start --name plain --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(30)' >"$tmp/detached-plain-start.out"
+"$cmd" detached kill --detached-dir "$detached_dir" plain >"$tmp/detached-plain-kill.out"
+grep -Eq '^killed [1-9][0-9]* detached process\(es\)$' "$tmp/detached-plain-kill.out" || fail "plain detached kill output was not stable"
 "$cmd" --json detached start --name timeout --time 1s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(10)' >"$tmp/detached-timeout-start.json"
 timeout_seen=0
 timeout_attempts=0
