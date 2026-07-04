@@ -22,13 +22,7 @@ Password access:
 sudo sshfling -p -t 10m
 ```
 
-The server prints the temporary username, generated password when using `-p`, expiry, and the client command.
-
-Clean up expired password users:
-
-```bash
-sudo sshfling password prune
-```
+The server prints the temporary username, generated password when using `-p`, expiry, and the client command. Access expires automatically.
 
 See active sessions or cut them off:
 
@@ -68,12 +62,12 @@ The server-side grant prints the detected server address in the client command. 
 
 Rules:
 
-- Server-side grant, prune, shutdown, and kill commands require root/admin.
+- Server-side grant, shutdown, and kill commands require root/admin.
 - The maximum grant time is 1 hour.
 - `sshfling` with no `-t` uses the maximum: 1 hour.
 - Up to 10 active sshfling SSH sessions are allowed, depending on install policy.
 - If no SSH public key is provided, certificate mode creates a temporary keypair automatically.
-- Password mode creates a real Unix account password, tracks it for later pruning, and allows only one active session for that temporary username.
+- Password mode creates a real Unix account password, tracks the grant, auto-expires access, and allows only one active session for that temporary username.
 
 Under the hood, certificate mode uses OpenSSH user certificates and a host-side timeout wrapper. Password mode writes a temporary sshd `Match User` block that forces the same timeout wrapper.
 
@@ -125,11 +119,7 @@ sshfling s234@1.0.0.1
 
 On the client side, run the command, press Enter, then type the printed password when OpenSSH prompts for it. `sshfling s234@1.0.0.1` is a small wrapper around `ssh` that prefers password authentication and lets OpenSSH handle the password prompt.
 
-Password mode is intended for Linux SSH servers with `useradd`, `chpasswd`, and OpenSSH server tools installed. It creates a real local Unix password for the temporary user, writes a tracked sshd config snippet, and blocks expired logins through `ForceCommand`. After grants expire, remove stale snippets and lock sshfling-created users:
-
-```bash
-sudo sshfling password prune
-```
+Password mode is intended for Linux SSH servers with `useradd`, `chpasswd`, and OpenSSH server tools installed. It creates a real local Unix password for the temporary user, writes a tracked sshd config snippet, and blocks expired logins automatically through `ForceCommand`.
 
 Kill active sshfling SSH sessions:
 
