@@ -163,7 +163,9 @@ jobs:
           VERSION: ${{ needs.linux.outputs.version }}
           REPOSITORY: ${{ github.repository }}
           OWNER: ${{ github.repository_owner }}
-        run: bash packaging/build-public-web.sh package-dist public
+        run: |
+          bash packaging/build-public-web.sh package-dist public
+          bash packaging/verify-public-web.sh public
 
       - name: Publish gh-pages branch
         env:

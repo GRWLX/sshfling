@@ -250,6 +250,7 @@ Package outputs go to `dist/`.
 - `.pkg` needs macOS `pkgbuild` and `productbuild`.
 
 Repo registration instructions are in [docs/repos.md](docs/repos.md).
+The current OS/package target matrix is in [docs/build-targets.md](docs/build-targets.md).
 
 GitHub Actions workflows are included for public distribution:
 

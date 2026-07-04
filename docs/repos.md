@@ -5,7 +5,7 @@ The repo includes two GitHub Actions release paths:
 - `Release packages without web` builds `.deb`, `.rpm`, `.msi`, `.pkg`, a source tarball, and release checksums.
 - `Release packages with public web` builds the same package set and publishes a GitHub Pages package site with APT, RPM, Homebrew, macOS pkg, Windows MSI, and community package manifests for additional ecosystems.
 
-For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.6`.
+For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.7`.
 
 Replace `OWNER` and `REPO` in the examples below with the GitHub organization/user and repository name.
 
@@ -102,6 +102,8 @@ The Pages workflow also generates ready-to-use or ready-to-submit package defini
 
 Some of these can be installed directly from the generated URL, while official/community repositories still require a maintainer account, review, signing, or a pull request into the upstream repository.
 
+The full build target matrix is tracked in [build-targets.md](build-targets.md). The public package workflow runs `packaging/verify-public-web.sh` before publishing so every declared target has a generated package, repo file, or manifest.
+
 The generated public APT and RPM repo examples use unsigned metadata (`trusted=yes` and `gpgcheck=0`) so the command is simple. For production fleets, sign the repository metadata and packages, publish the public key, and change these examples to use `signed-by=` on APT and `gpgcheck=1` on RPM.
 
 Client mode only needs Python and OpenSSH client tools. Server-side certificate grants need OpenSSH server tooling on the target host. Server-side password grants are Linux-oriented and need account-management tools such as `useradd`, `chpasswd`, `usermod`, and `chage`; the generated Linux package metadata includes the matching `passwd`, `shadow`, or `shadow-utils` dependency where that ecosystem uses one.
@@ -169,7 +171,7 @@ For production, sign RPMs and enable `gpgcheck=1`.
 For direct `.pkg` distribution:
 
 ```bash
-sudo installer -pkg dist/sshfling-0.1.6.pkg -target /
+sudo installer -pkg dist/sshfling-0.1.7.pkg -target /
 ```
 
 For Homebrew distribution, publish a source tarball and add a formula to a tap:
@@ -178,7 +180,7 @@ For Homebrew distribution, publish a source tarball and add a formula to a tap:
 class Sshfling < Formula
   desc "Time-limited SSH Docker Compose deployment CLI"
   homepage "https://example.com/sshfling"
-  url "https://example.com/sshfling-0.1.6.tar.gz"
+  url "https://example.com/sshfling-0.1.7.tar.gz"
   sha256 "REPLACE_WITH_SHA256"
   license "Apache-2.0"
 
@@ -217,7 +219,7 @@ MSI files are not installed from APT/YUM-style repos. Common registration paths:
 Silent install:
 
 ```powershell
-msiexec /i sshfling-0.1.6.msi /qn
+msiexec /i sshfling-0.1.7.msi /qn
 ```
 
 For production, sign the MSI with an Authenticode certificate.
