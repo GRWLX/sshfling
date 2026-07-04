@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version="${SSHFLING_VERSION:-0.1.2}"
+version="${SSHFLING_VERSION:-0.1.3}"
 identifier="${SSHFLING_PKG_IDENTIFIER:-io.sshfling.cli}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dist_dir="$repo_root/dist"

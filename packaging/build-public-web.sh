@@ -193,7 +193,8 @@ cat >"$public_dir/index.html" <<HTML
 <body>
   <h1>SSHFling $version packages</h1>
   <h2>Debian / Ubuntu</h2>
-  <pre><code>echo "deb [trusted=yes] $base_url/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
+  <pre><code>sudo rm -f /etc/apt/sources.list.d/fling.list /etc/apt/preferences.d/fling
+echo "deb [trusted=yes] $base_url/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
 sudo tee /etc/apt/preferences.d/sshfling &gt;/dev/null &lt;&lt;'EOF'
 Package: sshfling
 Pin: origin $base_host
@@ -202,7 +203,8 @@ EOF
 sudo apt update
 sudo apt install -y sshfling</code></pre>
   <h2>RHEL / Fedora / Rocky / Alma</h2>
-  <pre><code>sudo tee /etc/yum.repos.d/sshfling.repo &gt;/dev/null &lt;&lt;'EOF'
+  <pre><code>sudo rm -f /etc/yum.repos.d/fling.repo
+sudo tee /etc/yum.repos.d/sshfling.repo &gt;/dev/null &lt;&lt;'EOF'
 [sshfling]
 name=SSHFling
 baseurl=$base_url/rpm

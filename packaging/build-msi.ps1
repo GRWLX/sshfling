@@ -1,5 +1,5 @@
 param(
-  [string]$Version = $(if ($env:SSHFLING_VERSION) { $env:SSHFLING_VERSION } else { "0.1.2" })
+  [string]$Version = $(if ($env:SSHFLING_VERSION) { $env:SSHFLING_VERSION } else { "0.1.3" })
 )
 
 $ErrorActionPreference = "Stop"
