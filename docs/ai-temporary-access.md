@@ -22,7 +22,7 @@ SSHFling avoids that pattern. It lets an administrator issue access for a narrow
 For clients that cannot receive or use an SSH key/certificate, an operator can use password fallback:
 
 ```bash
-sudo sshfling --password -t 10m --username s234 --remote 1.0.0.1 --reload
+sudo sshfling -p -t 10m --username s234
 ```
 
 That creates a tracked temporary Unix password grant and prints `sshfling s234@1.0.0.1`. The client still uses normal OpenSSH; `sshfling` only sets password-preferred SSH options and lets OpenSSH prompt for the generated password.
@@ -32,7 +32,7 @@ That creates a tracked temporary Unix password grant and prints `sshfling s234@1
 - No AI CLI, agent, model runtime, or vendor daemon needs to be installed on the target server.
 - No permanent private key is copied to the server for the AI tool.
 - Certificate mode does not require a shared password.
-- Password fallback creates a real local Unix password, tracks the grant on the server, and should be pruned after expiry with `sudo sshfling password prune --reload`.
+- Password fallback creates a real local Unix password, tracks the grant on the server, allows only one active session for that temporary username, and should be pruned after expiry with `sudo sshfling password prune`.
 - Access is time-bound by OpenSSH certificate validity or password-grant expiry, and by a server-side timeout wrapper.
 - Policy can cap maximum lifetime and concurrent sessions below SSHFling's hard limits.
 - Each grant can use a meaningful temporary username, such as a ticket number, for cleaner operational review.

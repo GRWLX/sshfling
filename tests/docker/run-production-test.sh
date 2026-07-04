@@ -163,8 +163,7 @@ grep -q "cannot exceed 1 hour" "$work/too-long.err"
 bin/sshfling --json -t 8s \
   --ca-key "$work/ca_user_ed25519" \
   --username temp-remote \
-  --login-user root \
-  --remote 127.0.0.1 >"$work/setup.json"
+  --login-user root >"$work/setup.json"
 
 python3 - "$work/setup.json" "$work/setup.env" <<'PY'
 import json
@@ -173,7 +172,9 @@ payload = json.load(open(sys.argv[1]))
 assert payload["ok"] is True
 assert payload["username"] == "temp-remote"
 assert payload["seconds"] == 8
-assert "root@127.0.0.1" in payload["ssh_command"]
+assert payload["server"]
+assert payload["server"] != "SERVER_IP"
+assert f"root@{payload['server']}" in payload["ssh_command"]
 assert payload["generated_key"] is True
 with open(sys.argv[2], "w") as out:
     out.write(f"CLIENT_KEY={payload['private_key']}\n")
@@ -202,9 +203,8 @@ log "ssh login succeeds before expiry"
 grep -q '^root$' "$work/whoami.out"
 
 log "password grant prints sshfling connect command and accepts password login"
-bin/sshfling --json -p -t 8s \
-  --username s234 \
-  --remote 127.0.0.1 >"$work/password-setup.json"
+bin/sshfling --json -p -t 20s \
+  --username s234 >"$work/password-setup.json"
 python3 - "$work/password-setup.json" "$work/password.env" <<'PY'
 import json
 import sys
@@ -212,8 +212,10 @@ payload = json.load(open(sys.argv[1]))
 assert payload["ok"] is True
 assert payload["auth"] == "password"
 assert payload["username"] == "s234"
-assert payload["seconds"] == 8
-assert payload["ssh_command"] == "sshfling s234@127.0.0.1"
+assert payload["seconds"] == 20
+assert payload["server"]
+assert payload["server"] != "SERVER_IP"
+assert payload["ssh_command"] == f"sshfling s234@{payload['server']}"
 assert payload["password"]
 with open(sys.argv[2], "w") as out:
     out.write(f"SSHPASS={payload['password']}\n")
@@ -221,7 +223,7 @@ PY
 # shellcheck source=/dev/null
 source "$work/password.env"
 grep -q "Match User s234" /etc/ssh/sshd_config.d/91-sshfling-password-s234.conf
-grep -q "ForceCommand /usr/local/libexec/sshfling-session --max-seconds 8 --username s234 --login-user s234 --policy-file /etc/sshfling/policy.json --expires-at" /etc/ssh/sshd_config.d/91-sshfling-password-s234.conf
+grep -q "ForceCommand /usr/local/libexec/sshfling-session --max-seconds 20 --max-connections 1 --username s234 --login-user s234 --policy-file /etc/sshfling/policy.json --expires-at" /etc/ssh/sshd_config.d/91-sshfling-password-s234.conf
 test -f /var/lib/sshfling/password-grants/s234.json
 grep -q '"created_user": true' /var/lib/sshfling/password-grants/s234.json
 
@@ -240,7 +242,47 @@ SSHPASS="$SSHPASS" sshpass -e bin/sshfling \
   'whoami' >"$work/password-whoami.out"
 grep -q '^s234$' "$work/password-whoami.out"
 
-sleep 9
+for _ in $(seq 1 50); do
+  if bin/sshfling --json list --username s234 | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)["count"] == 0 else 1)'; then
+    break
+  fi
+  sleep 0.1
+done
+bin/sshfling --json list --username s234 | python3 -c 'import json,sys; assert json.load(sys.stdin)["count"] == 0'
+
+SSHPASS="$SSHPASS" sshpass -e bin/sshfling \
+  -p 2222 \
+  -o "StrictHostKeyChecking=yes" \
+  -o "UserKnownHostsFile=$work/known_hosts" \
+  s234@127.0.0.1 \
+  'echo password-hold; sleep 5' >"$work/password-hold.out" 2>"$work/password-hold.err" &
+password_hold_pid="$!"
+for _ in $(seq 1 50); do
+  if grep -q '^password-hold$' "$work/password-hold.out" 2>/dev/null; then
+    break
+  fi
+  sleep 0.1
+done
+if ! grep -q '^password-hold$' "$work/password-hold.out"; then
+  fail "password hold session did not start"
+fi
+
+set +e
+SSHPASS="$SSHPASS" sshpass -e bin/sshfling \
+  -p 2222 \
+  -o "StrictHostKeyChecking=yes" \
+  -o "UserKnownHostsFile=$work/known_hosts" \
+  s234@127.0.0.1 \
+  'whoami' >"$work/password-second.out" 2>"$work/password-second.err"
+password_second_code="$?"
+set -e
+if [[ "$password_second_code" -eq 0 ]]; then
+  fail "expected second concurrent password session to be rejected"
+fi
+grep -q "Maximum active sshfling sessions reached" "$work/password-second.err"
+wait "$password_hold_pid" || true
+
+sleep 21
 set +e
 SSHPASS="$SSHPASS" sshpass -e bin/sshfling \
   -p 2222 \

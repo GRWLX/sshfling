@@ -4,28 +4,30 @@
 
 ## Server / Service Side
 
-Install the package, then run grants with `sudo`.
+Install:
 
 ```bash
 curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash
 ```
 
-Default certificate-based grant:
+Certificate access:
 
 ```bash
-sudo sshfling -t 10m --username ticket-1234 --remote 1.0.0.1
+sudo sshfling -t 10m
 ```
 
-Password fallback for clients that cannot use a generated key/certificate:
+Password access:
 
 ```bash
-sudo sshfling -p -t 10m --username s234 --remote 1.0.0.1 --reload
+sudo sshfling -p -t 10m
 ```
 
-Clean expired password grants:
+The server prints the temporary username, generated password when using `-p`, expiry, and the client command.
+
+Clean up expired password users:
 
 ```bash
-sudo sshfling password prune --reload
+sudo sshfling password prune
 ```
 
 See active sessions or cut them off:
@@ -38,19 +40,21 @@ sudo sshfling shutdown
 
 ## Client Side
 
-Use the command printed by the server-side grant.
+Install if using a password grant:
 
 ```bash
 curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash
 ```
 
-Certificate grant:
+Then run the command printed by the server.
+
+Certificate:
 
 ```bash
 ssh -i /path/to/generated/key user@1.0.0.1
 ```
 
-Password grant:
+Password:
 
 ```bash
 sshfling s234@1.0.0.1
@@ -60,6 +64,8 @@ Then type the generated password when OpenSSH prompts for it. Client mode does n
 
 On the server side, `-p` is short for `--password`. On the client side, `sshfling -p 2222 user@host` is passed through to OpenSSH as the SSH port option.
 
+The server-side grant prints the detected server address in the client command. If a host has multiple addresses and you need to override that detection, set `SSHFLING_SERVER_HOST` for the grant command.
+
 Rules:
 
 - Server-side grant, prune, shutdown, and kill commands require root/admin.
@@ -67,7 +73,7 @@ Rules:
 - `sshfling` with no `-t` uses the maximum: 1 hour.
 - Up to 10 active sshfling SSH sessions are allowed, depending on install policy.
 - If no SSH public key is provided, certificate mode creates a temporary keypair automatically.
-- Password mode creates a real Unix account password and tracks it for later pruning.
+- Password mode creates a real Unix account password, tracks it for later pruning, and allows only one active session for that temporary username.
 
 Under the hood, certificate mode uses OpenSSH user certificates and a host-side timeout wrapper. Password mode writes a temporary sshd `Match User` block that forces the same timeout wrapper.
 
@@ -108,7 +114,7 @@ sudo sshfling -t 10m --username ticket-1234
 Password-based temporary access:
 
 ```bash
-sudo sshfling --password -t 10m --username s234 --remote 1.0.0.1 --reload
+sudo sshfling -p -t 10m --username s234
 ```
 
 That prints a one-time grant with a generated password and this client command:
@@ -122,7 +128,7 @@ On the client side, run the command, press Enter, then type the printed password
 Password mode is intended for Linux SSH servers with `useradd`, `chpasswd`, and OpenSSH server tools installed. It creates a real local Unix password for the temporary user, writes a tracked sshd config snippet, and blocks expired logins through `ForceCommand`. After grants expire, remove stale snippets and lock sshfling-created users:
 
 ```bash
-sudo sshfling password prune --reload
+sudo sshfling password prune
 ```
 
 Kill active sshfling SSH sessions:
@@ -170,7 +176,6 @@ sudo sshfling host install \
   --ca-pub ./ca_user_ed25519.pub \
   --username temp-remote \
   --create-user \
-  --reload
 ```
 
 Issue a temporary certificate for a client public key:

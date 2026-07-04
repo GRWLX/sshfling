@@ -15,13 +15,14 @@ import re
 import secrets
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 
-VERSION = "0.1.5"
+VERSION = "0.1.6"
 DEFAULT_NETWORK = "timed-ssh-net"
 DEFAULT_SESSION_WRAPPER = "/usr/local/libexec/sshfling-session"
 DEFAULT_ISSUER_LISTEN = "127.0.0.1:8787"
@@ -72,6 +73,53 @@ def emit_json(payload):
 
 def command_path(name):
     return shutil.which(name)
+
+
+def is_usable_server_host(value):
+    value = (value or "").strip()
+    if not value or any(ch.isspace() for ch in value):
+        return False
+    lowered = value.lower()
+    if lowered in {"localhost", "localhost.localdomain", "::1"}:
+        return False
+    if lowered.startswith("127."):
+        return False
+    if lowered.startswith("169.254."):
+        return False
+    return True
+
+
+def detect_server_host():
+    override = os.environ.get("SSHFLING_SERVER_HOST")
+    if is_usable_server_host(override):
+        return override.strip()
+
+    candidates = []
+    if command_path("hostname"):
+        proc = run(["hostname", "-I"], capture=True, check=False)
+        if proc.returncode == 0:
+            candidates.extend((proc.stdout or "").split())
+
+    try:
+        candidates.append(socket.gethostbyname(socket.gethostname()))
+    except OSError:
+        pass
+
+    for candidate in candidates:
+        if is_usable_server_host(candidate) and "." in candidate:
+            return candidate.strip()
+    for candidate in candidates:
+        if is_usable_server_host(candidate):
+            return candidate.strip()
+
+    try:
+        fqdn = socket.getfqdn()
+    except OSError:
+        fqdn = ""
+    if is_usable_server_host(fqdn):
+        return fqdn
+
+    return "SERVER_IP"
 
 
 def is_admin():
@@ -879,7 +927,7 @@ def ensure_unix_user(username):
 
 
 def password_force_command(username, seconds, expires_at, session_wrapper, policy_file):
-    return f"{session_wrapper} --max-seconds {seconds} --username {username} --login-user {username} --policy-file {policy_file} --expires-at {expires_at}"
+    return f"{session_wrapper} --max-seconds {seconds} --max-connections 1 --username {username} --login-user {username} --policy-file {policy_file} --expires-at {expires_at}"
 
 
 def password_grant_config(username, force_command):
@@ -964,10 +1012,10 @@ def cmd_setup_password(args):
             )
         )
 
-    if not args.dry_run and args.reload:
+    if not args.dry_run:
         results.append(reload_sshd())
 
-    remote = args.remote or "REMOTE_HOST"
+    server_host = detect_server_host()
     payload = {
         "ok": True,
         "auth": "password",
@@ -976,7 +1024,8 @@ def cmd_setup_password(args):
         "seconds": seconds,
         "expires_at": expires_at,
         "expires_at_utc": dt.datetime.fromtimestamp(expires_at, dt.UTC).isoformat(),
-        "ssh_command": f"sshfling {args.username}@{remote}",
+        "server": server_host,
+        "ssh_command": f"sshfling {args.username}@{server_host}",
         "results": results,
     }
 
@@ -988,8 +1037,6 @@ def cmd_setup_password(args):
         print(f"time: {seconds}s")
         print(f"expires: {payload['expires_at_utc']}")
         print(f"connect: {payload['ssh_command']}")
-        if not args.reload:
-            print("reload: reload sshd before using this grant if it is not already reloaded")
     return 0
 
 
@@ -1033,12 +1080,12 @@ def cmd_setup(args):
     result.update(key_material)
 
     key_hint = key_material["private_key"] or private_key_hint(public_key_file)
-    if args.remote and key_hint:
-        result["ssh_command"] = f"ssh -i {key_hint} {login_user}@{args.remote}"
-    elif args.remote:
-        result["ssh_command"] = f"ssh {login_user}@{args.remote}"
+    server_host = detect_server_host()
+    result["server"] = server_host
+    if key_hint:
+        result["ssh_command"] = f"ssh -i {key_hint} {login_user}@{server_host}"
     else:
-        result["ssh_command"] = f"ssh {login_user}@REMOTE_HOST"
+        result["ssh_command"] = f"ssh {login_user}@{server_host}"
 
     if args.json:
         emit_json(result)
@@ -1418,23 +1465,24 @@ def prune_password_grants(grant_dir, username=None, all_grants=False, delete_use
 
 def cmd_password_prune(args):
     require_root("password prune")
-    results = prune_password_grants(
+    grant_results = prune_password_grants(
         args.password_grant_dir,
         username=args.username,
         all_grants=args.all,
         delete_users=args.delete_users,
         dry_run=args.dry_run,
     )
-    if args.reload and not args.dry_run and any(item.get("config", {}).get("removed") for item in results):
+    results = list(grant_results)
+    if not args.dry_run and any(item.get("config", {}).get("removed") for item in grant_results):
         results.append(reload_sshd())
 
-    payload = {"ok": True, "results": results, "count": len(results)}
+    payload = {"ok": True, "results": results, "count": len(grant_results)}
     if args.json:
         emit_json(payload)
     else:
-        if not results:
+        if not grant_results:
             print("no password grants to prune")
-        for item in results:
+        for item in grant_results:
             print(json.dumps(item, sort_keys=True))
     return 0
 
@@ -2183,7 +2231,6 @@ def build_parser():
     parser.add_argument("-t", "--time", type=duration_seconds, help="Grant access for this long, for example 30s, 5m, or 1h.")
     parser.add_argument("--username", help="Temporary SSH username. Defaults to a random name like s123.")
     parser.add_argument("--login-user", help="Actual Unix login account if different from --username.")
-    parser.add_argument("--remote", help="Remote host to print in the suggested ssh command.")
     parser.add_argument("-p", "--password", action="store_true", help="Create temporary password SSH access instead of certificate access.")
     parser.add_argument("-k", "--kill", nargs="?", const=True, metavar="USERNAME", help="Kill active sshfling SSH session(s), optionally by name like s432.")
     parser.add_argument(
@@ -2203,7 +2250,6 @@ def build_parser():
     parser.add_argument("--password-sshd-config-dir", default="/etc/ssh/sshd_config.d", help=argparse.SUPPRESS)
     parser.add_argument("--password-grant-dir", default=DEFAULT_PASSWORD_GRANT_DIR, help=argparse.SUPPRESS)
     parser.add_argument("--no-validate", dest="validate", action="store_false", help=argparse.SUPPRESS)
-    parser.add_argument("--reload", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--dry-run", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-pty", action="store_true", help=argparse.SUPPRESS)
     parser.set_defaults(validate=True)
@@ -2217,7 +2263,6 @@ def build_parser():
     setup.add_argument("-t", "--time", type=duration_seconds, required=True, help="Access lifetime, for example 30s, 5m, or 1h.")
     setup.add_argument("--username", help="Temporary SSH username. Defaults to a random name like s123.")
     setup.add_argument("--login-user", help="Actual Unix login account if different from --username.")
-    setup.add_argument("--remote", help="Remote host to print in the suggested ssh command.")
     setup.add_argument("-p", "--password", action="store_true", help="Create temporary password SSH access instead of certificate access.")
     setup.add_argument("--ca-key", default=str(default_ca_key_path()), help="CA private key path.")
     setup.add_argument("--public-key", help="Public key text to sign.")
@@ -2231,7 +2276,6 @@ def build_parser():
     setup.add_argument("--password-sshd-config-dir", default="/etc/ssh/sshd_config.d", help=argparse.SUPPRESS)
     setup.add_argument("--password-grant-dir", default=DEFAULT_PASSWORD_GRANT_DIR, help=argparse.SUPPRESS)
     setup.add_argument("--no-validate", dest="validate", action="store_false", help="Skip sshd -t validation in password mode.")
-    setup.add_argument("--reload", action="store_true", help="Reload sshd after writing password-mode config.")
     setup.add_argument("--dry-run", action="store_true", help="Show intended password-mode changes without writing files.")
     setup.add_argument("--no-pty", action="store_true", help="Do not permit interactive PTY sessions.")
     setup.set_defaults(func=cmd_setup, validate=True)
@@ -2243,7 +2287,6 @@ def build_parser():
     password_prune.add_argument("--password-grant-dir", default=DEFAULT_PASSWORD_GRANT_DIR, help=argparse.SUPPRESS)
     password_prune.add_argument("--all", action="store_true", help="Prune active and expired tracked password grants.")
     password_prune.add_argument("--delete-users", action="store_true", help="Delete sshfling-created Unix users instead of locking them.")
-    password_prune.add_argument("--reload", action="store_true", help="Reload sshd after removing grant config.")
     password_prune.add_argument("--dry-run", action="store_true", help="Show grants that would be pruned without changing files.")
     password_prune.set_defaults(func=cmd_password_prune)
 

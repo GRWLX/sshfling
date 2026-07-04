@@ -4,6 +4,7 @@ set -euo pipefail
 max_seconds=300
 max_allowed_seconds=3600
 max_allowed_connections=10
+grant_max_connections=""
 username="unknown"
 login_user=""
 policy_file="/etc/sshfling/policy.json"
@@ -29,6 +30,10 @@ while [[ "$#" -gt 0 ]]; do
       ;;
     --expires-at)
       expires_at="${2:-}"
+      shift 2
+      ;;
+    --max-connections)
+      grant_max_connections="${2:-}"
       shift 2
       ;;
     *)
@@ -62,6 +67,10 @@ PY
   )"
   max_allowed_seconds="$(printf '%s\n' "$policy_values" | sed -n '1p')"
   max_allowed_connections="$(printf '%s\n' "$policy_values" | sed -n '2p')"
+fi
+
+if [[ -n "$grant_max_connections" ]]; then
+  max_allowed_connections="$grant_max_connections"
 fi
 
 if [[ ! "$max_seconds" =~ ^[1-9][0-9]*$ ]]; then
@@ -102,8 +111,6 @@ fi
 
 status=0
 timed_out=0
-watchdog_pid=""
-timeout_marker=""
 max_sessions="$max_allowed_connections"
 uid="$(id -u)"
 slot_fd=""
@@ -125,7 +132,7 @@ if command -v flock >/dev/null 2>&1; then
 else
   active_sessions="$(pgrep -u "$uid" -f 'sshfling-session' 2>/dev/null | grep -cv "^$$$" || true)"
   active_sessions="${active_sessions:-0}"
-  if (( active_sessions > max_sessions )); then
+  if (( active_sessions >= max_sessions )); then
     echo "Maximum active sshfling sessions reached for ${USER:-uid-$uid}." >&2
     exit 75
   fi
@@ -145,38 +152,27 @@ kill_tree() {
 }
 
 run_limited() {
-  timeout_marker="$(mktemp)"
-  rm -f "$timeout_marker"
-
   "$@" &
   local command_pid="$!"
+  local deadline
+  deadline=$(( $(date +%s) + max_seconds ))
 
-  (
-    sleep "$max_seconds"
-    if kill -0 "$command_pid" 2>/dev/null; then
-      : >"$timeout_marker"
+  while kill -0 "$command_pid" 2>/dev/null; do
+    if (( $(date +%s) >= deadline )); then
+      timed_out=1
       kill_tree "$command_pid" TERM
       sleep 5
       kill_tree "$command_pid" KILL
+      break
     fi
-  ) &
-  watchdog_pid="$!"
+    sleep 1
+  done
 
   wait "$command_pid" || status=$?
 
-  if [[ -e "$timeout_marker" ]]; then
-    timed_out=1
+  if [[ "$timed_out" -eq 1 ]]; then
     status=124
-    if kill -0 "$watchdog_pid" 2>/dev/null; then
-      kill "$watchdog_pid" 2>/dev/null || true
-    fi
-    wait "$watchdog_pid" 2>/dev/null || true
-  elif kill -0 "$watchdog_pid" 2>/dev/null; then
-    kill "$watchdog_pid" 2>/dev/null || true
-    wait "$watchdog_pid" 2>/dev/null || true
   fi
-
-  rm -f "$timeout_marker"
 }
 
 if [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]]; then
