@@ -52,6 +52,24 @@ These files are generated into the public package site. Some can be used directl
 
 `packaging/verify-public-web.sh` checks the generated package site for every target above. The public web release workflow runs this verifier before publishing `gh-pages`.
 
+`.github/workflows/container-image-tests.yml` validates the Docker-based local
+install path with `make test-containers`. It builds the generated package
+artifacts into containers, installs them, and exercises the SSHFling server and
+client images against each other.
+
+For a manual public package validation pass, run the workflows in this order
+with the same version input:
+
+1. `Container image tests`
+2. `Release packages without web`
+3. `Release packages with public web`
+4. `pages-build-deployment`
+5. `Package install tests`
+6. `Cross OS validation`
+
+After `Release packages with public web` publishes `gh-pages`, the downstream
+install workflows validate the newly published package site.
+
 `.github/workflows/cross-os-validation.yml` is the broad manual post-release
 workflow that installs or builds the published package outputs on:
 
