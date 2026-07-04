@@ -47,6 +47,40 @@ printf '%s\n' "$connect_output" | grep -Fq -- "-p 2222" || fail "connect dry-run
 printf '%s\n' "$connect_output" | grep -Fq "s123@example.invalid" || fail "connect dry-run missing target"
 printf '%s\n' "$connect_output" | grep -Fq "whoami" || fail "connect dry-run missing remote command"
 
+python3 - "$cmd" <<'PY'
+import importlib.machinery
+import importlib.util
+import sys
+
+cmd = sys.argv[1]
+loader = importlib.machinery.SourceFileLoader("sshfling_under_test", cmd)
+spec = importlib.util.spec_from_loader(loader.name, loader)
+sshfling = importlib.util.module_from_spec(spec)
+loader.exec_module(sshfling)
+
+class Result:
+    returncode = 0
+    stderr = ""
+    stdout = """\
+ 100     1     0      9 /usr/local/libexec/sshfling-session --max-seconds 30 --username s123 --login-user root
+ 101   100     0      9 /bin/bash -lc sleep 30
+ 102   101     0      9 sleep 30
+ 200     1     0      9 unrelated
+"""
+
+sshfling.command_path = lambda name: "/bin/ps" if name == "ps" else None
+sshfling.run = lambda *args, **kwargs: Result()
+sshfling.os.getpid = lambda: 999
+
+sessions = sshfling.find_sshfling_sessions()
+assert len(sessions) == 1, sessions
+session = sessions[0]
+assert session["pid"] == 100, session
+assert session["status"] == "processing", session
+assert session["process_pid"] == 101, session
+assert session["process_pids"] == [101, 102], session
+PY
+
 project="$tmp/project"
 "$cmd" --json init "$project" --session-seconds 60 --host-port 2222 >"$tmp/init.json"
 python3 - "$tmp/init.json" "$project" <<'PY'

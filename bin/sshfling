@@ -1157,6 +1157,7 @@ def find_sshfling_sessions(login_user=None, session_username=None):
         raise SSHFlingError("Could not find active sshfling sessions.", proc.returncode, stderr=proc.stderr)
 
     self_pid = os.getpid()
+    process_rows = []
     matches = {}
     for line in proc.stdout.splitlines():
         parts = line.strip().split(None, 4)
@@ -1170,6 +1171,7 @@ def find_sshfling_sessions(login_user=None, session_username=None):
             continue
         uid = parts[2]
         command = parts[4]
+        process_rows.append({"pid": pid, "ppid": ppid, "uid": uid, "age_seconds": age_seconds, "command": command})
         if pid == self_pid:
             continue
         if target_uid is not None and uid != target_uid:
@@ -1202,10 +1204,34 @@ def find_sshfling_sessions(login_user=None, session_username=None):
                 "username": username,
                 "age_seconds": age_seconds,
                 "max_seconds": int(max_seconds) if max_seconds and max_seconds.isdigit() else None,
+                "status": "processing",
                 "command": command,
             }
 
+    children_by_ppid = {}
+    for row in process_rows:
+        children_by_ppid.setdefault(row["ppid"], []).append(row["pid"])
+    for children in children_by_ppid.values():
+        children.sort()
+
+    def descendant_pids(root_pid):
+        descendants = []
+        stack = list(children_by_ppid.get(root_pid, []))
+        seen = set()
+        while stack:
+            child = stack.pop(0)
+            if child in seen:
+                continue
+            seen.add(child)
+            descendants.append(child)
+            stack.extend(children_by_ppid.get(child, []))
+        return descendants
+
     sessions = [item for pid, item in matches.items() if item["ppid"] not in matches]
+    for session in sessions:
+        process_pids = descendant_pids(session["pid"])
+        session["process_pid"] = process_pids[0] if process_pids else None
+        session["process_pids"] = process_pids
     if session_username:
         sessions = [item for item in sessions if item["username"] == session_username]
     return sorted(sessions, key=lambda item: (item["username"] or "", item["pid"]))
@@ -1225,11 +1251,12 @@ def cmd_list(args):
         if not sessions:
             print("no active sshfling sessions")
         else:
-            print("username pid uid age max")
+            print("username pid process-pid uid age max")
             for session in sessions:
                 username = session["username"] or "-"
+                process_pid = session["process_pid"] if session["process_pid"] is not None else "-"
                 max_seconds = session["max_seconds"] if session["max_seconds"] is not None else "-"
-                print(f"{username} {session['pid']} {session['uid']} {session['age_seconds']}s {max_seconds}")
+                print(f"{username} {session['pid']} {process_pid} {session['uid']} {session['age_seconds']}s {max_seconds}")
     return 0
 
 
@@ -1916,14 +1943,16 @@ def render_dashboard(policy, sessions, csrf, message=""):
     session_rows = []
     for session in sessions:
         username = html.escape(session.get("username") or "-")
+        process_pid = session.get("process_pid")
+        process_pid = process_pid if process_pid is not None else "-"
         max_seconds = session["max_seconds"] if session["max_seconds"] is not None else "-"
         session_rows.append(
             f"""<tr>
-  <td>{username}</td><td>{session['pid']}</td><td>{session['uid']}</td><td>{session['age_seconds']}s</td><td>{max_seconds}</td>
+  <td>{username}</td><td>{session['pid']}</td><td>{process_pid}</td><td>{session['uid']}</td><td>{session['age_seconds']}s</td><td>{max_seconds}</td>
   <td><form class="inline" method="post" action="/kill"><input type="hidden" name="csrf" value="{html.escape(csrf)}"><input type="hidden" name="username" value="{username}"><button type="submit">Kill</button></form></td>
 </tr>"""
         )
-    sessions_table = "".join(session_rows) or "<tr><td colspan=\"6\">No active sessions</td></tr>"
+    sessions_table = "".join(session_rows) or "<tr><td colspan=\"7\">No active sessions</td></tr>"
     message_html = f"<div class=\"notice\">{html.escape(message)}</div>" if message else ""
 
     return render_web_page(
@@ -1952,7 +1981,7 @@ def render_dashboard(policy, sessions, csrf, message=""):
 <section>
   <h2>Sessions</h2>
   <table>
-    <tr><th>Name</th><th>PID</th><th>UID</th><th>Age</th><th>Max</th><th></th></tr>
+    <tr><th>Name</th><th>PID</th><th>Process PID</th><th>UID</th><th>Age</th><th>Max</th><th></th></tr>
     {sessions_table}
   </table>
 </section>
