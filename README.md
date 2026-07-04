@@ -34,21 +34,23 @@ sudo sshfling shutdown
 
 ## Client Side
 
-Install if using a password grant:
+Use the command printed by the server.
 
-```bash
-curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash
-```
-
-Then run the command printed by the server.
-
-Certificate:
+Certificate access:
 
 ```bash
 ssh -i /path/to/generated/key user@1.0.0.1
 ```
 
-Password:
+Or password access:
+
+Install `sshfling` on the client:
+
+```bash
+curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash
+```
+
+Run the server-printed command:
 
 ```bash
 sshfling s234@1.0.0.1
