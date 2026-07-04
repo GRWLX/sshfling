@@ -13,10 +13,16 @@ curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash
 Certificate access:
 
 ```bash
+sudo sshfling
+```
+
+Shorter certificate access:
+
+```bash
 sudo sshfling -t 10m
 ```
 
-Password access:
+Or password access:
 
 ```bash
 sudo sshfling -p -t 10m
