@@ -94,11 +94,12 @@ try {
     Fail "plain detached kill output was not stable: $plainKillOutput"
   }
   $null = (& $CommandPath --json detached start --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "import time; time.sleep(30)" | Out-String)
-  $replaceActiveJson = (& $CommandPath --json detached start --replace --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" | Out-String)
+  $replaceActiveRaw = & $CommandPath --json detached start --replace --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" 2>&1
   $replaceActiveCode = $LASTEXITCODE
+  $replaceActiveJson = ($replaceActiveRaw | Out-String)
   if ($replaceActiveCode -eq 0) {
     $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-active | Out-String)
-    Fail "active detached job was replaced"
+    Fail "active detached job was replaced: $($replaceActiveJson.Trim())"
   }
   if (-not $replaceActiveJson.Contains("already active")) {
     Fail "active detached replace did not explain the active job: $($replaceActiveJson.Trim())"
@@ -119,10 +120,11 @@ try {
   if (-not $replaceDoneSeen) {
     Fail "detached replacement setup did not reach completed status"
   }
-  $replaceDoneJson = (& $CommandPath --json detached start --name replace-done --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" | Out-String)
+  $replaceDoneRaw = & $CommandPath --json detached start --name replace-done --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" 2>&1
   $replaceDoneCode = $LASTEXITCODE
+  $replaceDoneJson = ($replaceDoneRaw | Out-String)
   if ($replaceDoneCode -eq 0) {
-    Fail "inactive detached job was replaced without --replace"
+    Fail "inactive detached job was replaced without --replace: $($replaceDoneJson.Trim())"
   }
   if (-not $replaceDoneJson.Contains("Use --replace after it is inactive")) {
     Fail "inactive detached replace did not require --replace: $($replaceDoneJson.Trim())"
