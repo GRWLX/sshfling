@@ -64,7 +64,9 @@ require_file "rpm/sshfling-${version}-1.noarch.rpm"
 require_file "rpm/repodata/repomd.xml"
 require_file "homebrew/sshfling.rb"
 require_file "macos/install-pkg.sh"
+require_file "macos/uninstall-pkg.sh"
 require_file "windows/install.ps1"
+require_file "windows/uninstall.ps1"
 require_file "downloads/SHA256SUMS"
 require_file "downloads/index.html"
 require_file "downloads/sshfling-${version}.tar.gz"
@@ -106,10 +108,21 @@ require_file "chocolatey/sshfling.${version}.nupkg"
 require_file "chocolatey/install.ps1"
 
 require_contains "index.html" "SSHFling ${version} packages"
+require_contains "index.html" "uninstall"
+require_contains "index.html" "proprietary commercial software"
 require_contains "community.html" "FreeBSD"
 require_contains "community.html" "OpenBSD"
 require_contains "community.html" "pkgsrc"
+require_contains "community.html" "proprietary commercial software"
 require_gzip_contains "apt/Packages.gz" "Version: ${version}"
+
+require_contains "homebrew/sshfling.rb" "license :cannot_represent"
+require_contains "arch/PKGBUILD" "LicenseRef-SSHFling-Commercial"
+require_contains "nix/flake.nix" "license = licenses.unfree;"
+require_contains "snap/snapcraft.yaml" "license: Proprietary"
+require_contains "scoop/sshfling.json" '"identifier": "Proprietary"'
+require_contains "chocolatey/sshfling.nuspec" "<requireLicenseAcceptance>true</requireLicenseAcceptance>"
+require_contains "winget/manifests/g/${owner}/SSHFling/${version}/${owner}.SSHFling.locale.en-US.yaml" "License: SSHFling Commercial License"
 
 if (( missing != 0 )); then
   echo "public package site verification failed" >&2

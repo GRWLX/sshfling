@@ -10,6 +10,14 @@ Install:
 curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash
 ```
 
+Uninstall the package/CLI:
+
+```bash
+curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall
+```
+
+See [Uninstall and cleanup](#uninstall-and-cleanup) for host SSH configuration and local state removal.
+
 Certificate access:
 
 ```bash
@@ -176,6 +184,12 @@ sudo sshfling host install \
   --create-user \
 ```
 
+Remove the host SSH configuration:
+
+```bash
+sudo sshfling host uninstall --username temp-remote --reload
+```
+
 Issue a temporary certificate for a client public key:
 
 ```bash
@@ -220,6 +234,79 @@ curl -sS \
   -H "Content-Type: application/json" \
   -d '{"public_key":"ssh-ed25519 AAAA... user@host","principal":"deploy","seconds":300}' \
   http://127.0.0.1:8787/v1/certificates
+```
+
+## Uninstall and Cleanup
+
+Package uninstall removes the `sshfling` command and packaged templates. It does not remove host SSH configuration that was created with `sshfling host install`, temporary password grant state, local CA keys, or `/etc/sshfling` policy/config files.
+
+Linux and Homebrew:
+
+```bash
+curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall
+```
+
+Force a specific uninstall path:
+
+```bash
+curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall apt
+curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall dnf
+curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall brew
+```
+
+macOS pkg:
+
+```bash
+curl -fsSL https://grwlx.github.io/sshfling/macos/uninstall-pkg.sh | sudo bash
+```
+
+Windows MSI:
+
+```powershell
+irm https://grwlx.github.io/sshfling/windows/uninstall.ps1 | iex
+```
+
+Remove host SSH configuration created by `sshfling host install`:
+
+```bash
+sudo sshfling host uninstall --username temp-remote --dry-run
+sudo sshfling host uninstall --username temp-remote --reload
+```
+
+By default, host uninstall removes the managed sshd snippet and that user's authorized-principals file. Shared files are opt-in:
+
+```bash
+sudo sshfling host uninstall \
+  --username temp-remote \
+  --remove-ca \
+  --remove-wrapper \
+  --remove-policy-user \
+  --reload
+```
+
+Only use `--delete-user` for Unix accounts created solely for SSHFling:
+
+```bash
+sudo sshfling host uninstall --username temp-remote --delete-user --reload
+```
+
+Clean up temporary password grants:
+
+```bash
+sudo sshfling password prune --all
+sudo sshfling password prune --all --delete-users
+```
+
+If you installed from a source checkout with `./scripts/install-local.sh`, remove that local install with:
+
+```bash
+./scripts/uninstall-local.sh
+```
+
+If you ran the issuer service with systemd, stop it before removing package files:
+
+```bash
+sudo systemctl disable --now sshflingd
 ```
 
 ## Docker Test Harness
@@ -268,7 +355,7 @@ GitHub Actions workflows are included for public distribution:
 Nix users can also run from the repository:
 
 ```bash
-nix run github:GRWLX/sshfling
+NIXPKGS_ALLOW_UNFREE=1 nix run --impure github:GRWLX/sshfling
 ```
 
 ## Package Ecosystem Choice
@@ -279,7 +366,9 @@ NPM would be good for developer-first distribution, especially `npm install -g s
 
 ## License
 
-SSHFling is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+SSHFling is proprietary software owned by GRWLX. Use requires a separate
+written commercial license and payment of any royalties or fees required by
+that agreement. See [LICENSE](LICENSE).
 
 ## Common Commands
 

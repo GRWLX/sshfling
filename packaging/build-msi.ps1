@@ -36,6 +36,7 @@ $templateEntries = @(
   "compose.server.yml",
   "compose.client.yml",
   "scripts\install-local.sh",
+  "scripts\uninstall-local.sh",
   "scripts\create-network.sh",
   "scripts\generate-ssh-key.sh",
   "secrets\.gitkeep",

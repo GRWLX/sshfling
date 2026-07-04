@@ -59,7 +59,7 @@ class Sshfling < Formula
   homepage "$base_url"
   url "$base_url/downloads/$source_tar"
   sha256 "$source_sha"
-  license "Apache-2.0"
+  license :cannot_represent
 
   depends_on "python@3"
 
@@ -83,7 +83,21 @@ base_url="${SSHFLING_BASE_URL:-__BASE_URL__}"
 base_host="${base_url#http://}"
 base_host="${base_host#https://}"
 base_host="${base_host%%/*}"
-mode="${1:-auto}"
+action="${1:-install}"
+mode="${2:-auto}"
+
+case "$action" in
+  install|uninstall) ;;
+  auto|apt|rpm|dnf|yum|brew|homebrew)
+    mode="$action"
+    action="install"
+    ;;
+  *)
+    echo "Usage: install.sh [install|uninstall] [auto|apt|rpm|dnf|yum|brew]" >&2
+    echo "       install.sh [auto|apt|rpm|dnf|yum|brew]" >&2
+    exit 2
+    ;;
+esac
 
 install_apt() {
   sudo rm -f /etc/apt/sources.list.d/fling.list /etc/apt/preferences.d/fling
@@ -95,6 +109,18 @@ Pin-Priority: 1001
 EOF
   sudo apt-get update
   sudo apt-get install -y sshfling
+}
+
+uninstall_apt() {
+  if dpkg -s sshfling >/dev/null 2>&1; then
+    sudo apt-get remove -y sshfling
+  fi
+  sudo rm -f \
+    /etc/apt/sources.list.d/sshfling.list \
+    /etc/apt/sources.list.d/fling.list \
+    /etc/apt/preferences.d/sshfling \
+    /etc/apt/preferences.d/fling
+  sudo apt-get update || true
 }
 
 install_rpm() {
@@ -113,30 +139,56 @@ EOF
   fi
 }
 
+uninstall_rpm() {
+  if command -v rpm >/dev/null 2>&1 && rpm -q sshfling >/dev/null 2>&1; then
+    if command -v dnf >/dev/null 2>&1; then
+      sudo dnf remove -y sshfling
+    else
+      sudo yum remove -y sshfling
+    fi
+  fi
+  sudo rm -f /etc/yum.repos.d/sshfling.repo /etc/yum.repos.d/fling.repo
+}
+
 install_brew() {
   brew install "${base_url}/homebrew/sshfling.rb"
 }
 
+uninstall_brew() {
+  if brew list --formula sshfling >/dev/null 2>&1; then
+    brew uninstall sshfling
+  fi
+}
+
+run_for_mode() {
+  local selected="$1"
+  case "$selected" in
+    apt) "${action}_apt" ;;
+    rpm|dnf|yum) "${action}_rpm" ;;
+    brew|homebrew) "${action}_brew" ;;
+    *)
+      echo "Usage: install.sh [install|uninstall] [auto|apt|rpm|dnf|yum|brew]" >&2
+      echo "       install.sh [auto|apt|rpm|dnf|yum|brew]" >&2
+      exit 2
+      ;;
+  esac
+}
+
 case "$mode" in
-  apt) install_apt ;;
-  rpm|dnf|yum) install_rpm ;;
-  brew|homebrew) install_brew ;;
   auto)
     if command -v apt-get >/dev/null 2>&1; then
-      install_apt
+      run_for_mode apt
     elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
-      install_rpm
+      run_for_mode rpm
     elif command -v brew >/dev/null 2>&1; then
-      install_brew
+      run_for_mode brew
     else
       echo "No supported package manager found. Use ${base_url}/downloads/ directly." >&2
       exit 2
     fi
     ;;
-  *)
-    echo "Usage: install.sh [auto|apt|rpm|dnf|yum|brew]" >&2
-    exit 2
-    ;;
+  apt|rpm|dnf|yum|brew|homebrew) run_for_mode "$mode" ;;
+  *) run_for_mode "$mode" ;;
 esac
 SH
 sed -i "s#__BASE_URL__#$base_url#g" "$public_dir/install.sh"
@@ -153,12 +205,52 @@ sudo installer -pkg "\$tmp/$pkg_name" -target /
 SH
 chmod 0755 "$public_dir/macos/install-pkg.sh"
 
+cat >"$public_dir/macos/uninstall-pkg.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+sudo rm -f /usr/local/bin/sshfling
+sudo rm -rf /usr/local/share/sshfling
+sudo pkgutil --forget io.sshfling.cli >/dev/null 2>&1 || true
+
+echo "Removed SSHFling package files."
+echo "Left /etc/sshfling in place for local policy or CA material."
+SH
+chmod 0755 "$public_dir/macos/uninstall-pkg.sh"
+
 msi_name="$(basename "$(first_file "$public_dir/downloads" "sshfling-*.msi")")"
 cat >"$public_dir/windows/install.ps1" <<SH
 \$ErrorActionPreference = "Stop"
 \$installer = Join-Path \$env:TEMP "$msi_name"
 Invoke-WebRequest -Uri "$base_url/downloads/$msi_name" -OutFile \$installer
 Start-Process msiexec.exe -Wait -ArgumentList "/i", \$installer, "/qn"
+SH
+
+cat >"$public_dir/windows/uninstall.ps1" <<'SH'
+$ErrorActionPreference = "Stop"
+
+$uninstallRoots = @(
+  "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+  "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+)
+
+$products = Get-ItemProperty -Path $uninstallRoots -ErrorAction SilentlyContinue |
+  Where-Object { $_.DisplayName -eq "SSHFling" }
+
+if (-not $products) {
+  Write-Output "SSHFling is not installed."
+  exit 0
+}
+
+foreach ($product in $products) {
+  $productCode = $product.PSChildName
+  if ($productCode -notmatch '^\{[0-9A-Fa-f-]{36}\}$') {
+    throw "Could not determine MSI product code for SSHFling."
+  }
+  Start-Process msiexec.exe -Wait -ArgumentList "/x", $productCode, "/qn", "/norestart"
+}
+
+Write-Output "Removed SSHFling."
 SH
 
 (
@@ -197,6 +289,7 @@ cat >"$public_dir/index.html" <<HTML
 </head>
 <body>
   <h1>SSHFling $version packages</h1>
+  <p>SSHFling is proprietary commercial software. Installing, running, or redistributing these packages requires the rights described in the project LICENSE or a separate written agreement from GRWLX.</p>
   <h2>Debian / Ubuntu</h2>
   <pre><code>sudo rm -f /etc/apt/sources.list.d/fling.list /etc/apt/preferences.d/fling
 echo "deb [trusted=yes] $base_url/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
@@ -207,6 +300,8 @@ Pin-Priority: 1001
 EOF
 sudo apt update
 sudo apt install -y sshfling</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>curl -fsSL $base_url/install.sh | bash -s -- uninstall apt</code></pre>
   <h2>RHEL / Fedora / Rocky / Alma</h2>
   <pre><code>sudo rm -f /etc/yum.repos.d/fling.repo
 sudo tee /etc/yum.repos.d/sshfling.repo &gt;/dev/null &lt;&lt;'EOF'
@@ -217,12 +312,20 @@ enabled=1
 gpgcheck=0
 EOF
 sudo dnf install -y sshfling</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>curl -fsSL $base_url/install.sh | bash -s -- uninstall dnf</code></pre>
   <h2>Homebrew</h2>
   <pre><code>brew install $base_url/homebrew/sshfling.rb</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>curl -fsSL $base_url/install.sh | bash -s -- uninstall brew</code></pre>
   <h2>macOS pkg</h2>
   <pre><code>curl -fsSL $base_url/macos/install-pkg.sh | sudo bash</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>curl -fsSL $base_url/macos/uninstall-pkg.sh | sudo bash</code></pre>
   <h2>Windows MSI</h2>
   <pre><code>irm $base_url/windows/install.ps1 | iex</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>irm $base_url/windows/uninstall.ps1 | iex</code></pre>
   <h2>More ecosystems</h2>
   <p>Arch/AUR, Alpine, FreeBSD, OpenBSD, pkgsrc, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey manifests are under <a href="$base_url/community.html">community package manifests</a>.</p>
   <h2>Downloads</h2>

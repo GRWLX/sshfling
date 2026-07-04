@@ -26,6 +26,7 @@ install -m 0644 \
 
 install -m 0755 \
   "$repo_root/scripts/install-local.sh" \
+  "$repo_root/scripts/uninstall-local.sh" \
   "$repo_root/scripts/create-network.sh" \
   "$repo_root/scripts/generate-ssh-key.sh" \
   "$template_dir/scripts/"

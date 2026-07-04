@@ -142,7 +142,7 @@ jobs:
           curl -fsSL https://grwlx.github.io/sshfling/nix/flake.nix -o nix-test/flake.nix
           docker run --rm -v "$PWD/nix-test:/work" -v "$PWD/tests/cross-os:/tests/cross-os:ro" nixos/nix:2.24.9 sh -lc 'set -eu
           cd /work
-          nix --extra-experimental-features "nix-command flakes" build .#default -o result
+          NIXPKGS_ALLOW_UNFREE=1 nix --extra-experimental-features "nix-command flakes" build --impure .#default -o result
           nix --extra-experimental-features "nix-command flakes" shell nixpkgs#python3 -c /tests/cross-os/validate-cli.sh ./result/bin/sshfling "${{ inputs.version }}"'
 
   slackware-slackbuild:

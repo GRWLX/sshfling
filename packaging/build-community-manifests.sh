@@ -110,7 +110,7 @@ pkgrel=1
 pkgdesc="Temporary SSH certificate issuer and access CLI"
 arch=('any')
 url="${base_url}"
-license=('Apache-2.0')
+license=('LicenseRef-SSHFling-Commercial')
 depends=('python' 'openssh' 'shadow' 'procps-ng' 'util-linux')
 optdepends=('docker: Docker Compose test harness')
 backup=('etc/sshfling/policy.json')
@@ -138,7 +138,7 @@ pkgbase = sshfling
 	pkgrel = 1
 	url = ${base_url}
 	arch = any
-	license = Apache-2.0
+	license = LicenseRef-SSHFling-Commercial
 	depends = python
 	depends = openssh
 	depends = shadow
@@ -161,7 +161,7 @@ pkgrel=0
 pkgdesc="Temporary SSH certificate issuer and access CLI"
 url="${base_url}"
 arch="noarch"
-license="Apache-2.0"
+license="LicenseRef-SSHFling-Commercial"
 depends="python3 openssh-client shadow procps util-linux"
 options="!check"
 source="\$pkgname-\$pkgver.tar.gz::${base_url}/downloads/${source_tar}"
@@ -194,7 +194,10 @@ MAINTAINER=	44076838+GRWLX@users.noreply.github.com
 COMMENT=	Temporary SSH certificate issuer and access CLI
 WWW=		${base_url}
 
-LICENSE=	APACHE20
+LICENSE=	SSHFLING_COMMERCIAL
+LICENSE_NAME=	SSHFling Commercial License
+LICENSE_FILE=	\${WRKSRC}/LICENSE
+LICENSE_PERMS=	no-dist-mirror no-dist-sell no-pkg-mirror no-pkg-sell no-auto-accept
 
 RUN_DEPENDS=	python3:lang/python3
 
@@ -221,6 +224,7 @@ do-install:
 	\${INSTALL_DATA} \${WRKSRC}/compose.server.yml \${STAGEDIR}\${PREFIX}/share/sshfling/templates/compose.server.yml
 	\${INSTALL_DATA} \${WRKSRC}/compose.client.yml \${STAGEDIR}\${PREFIX}/share/sshfling/templates/compose.client.yml
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/install-local.sh \${STAGEDIR}\${PREFIX}/share/sshfling/templates/scripts/install-local.sh
+	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/uninstall-local.sh \${STAGEDIR}\${PREFIX}/share/sshfling/templates/scripts/uninstall-local.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/create-network.sh \${STAGEDIR}\${PREFIX}/share/sshfling/templates/scripts/create-network.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/generate-ssh-key.sh \${STAGEDIR}\${PREFIX}/share/sshfling/templates/scripts/generate-ssh-key.sh
 	\${INSTALL_DATA} \${WRKSRC}/secrets/.gitkeep \${STAGEDIR}\${PREFIX}/share/sshfling/templates/secrets/.gitkeep
@@ -262,6 +266,7 @@ share/sshfling/templates/production/sshfling-session
 share/sshfling/templates/scripts/create-network.sh
 share/sshfling/templates/scripts/generate-ssh-key.sh
 share/sshfling/templates/scripts/install-local.sh
+share/sshfling/templates/scripts/uninstall-local.sh
 share/sshfling/templates/secrets/.gitkeep
 share/sshfling/templates/ssh-client/Dockerfile
 share/sshfling/templates/ssh-client/entrypoint.sh
@@ -284,8 +289,9 @@ CATEGORIES =	security sysutils
 HOMEPAGE =	${base_url}
 MAINTAINER =	${maintainer}
 
-# Apache-2.0
-PERMIT_PACKAGE =	Yes
+# SSHFling Commercial License: redistribution requires prior written permission.
+PERMIT_PACKAGE =	requires prior written permission from GRWLX
+PERMIT_DISTFILES =	requires prior written permission from GRWLX
 
 MASTER_SITES =	${base_url}/downloads/
 
@@ -311,6 +317,7 @@ do-install:
 	\${INSTALL_DATA} \${WRKSRC}/compose.server.yml \${PREFIX}/share/sshfling/templates/compose.server.yml
 	\${INSTALL_DATA} \${WRKSRC}/compose.client.yml \${PREFIX}/share/sshfling/templates/compose.client.yml
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/install-local.sh \${PREFIX}/share/sshfling/templates/scripts/install-local.sh
+	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/uninstall-local.sh \${PREFIX}/share/sshfling/templates/scripts/uninstall-local.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/create-network.sh \${PREFIX}/share/sshfling/templates/scripts/create-network.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/generate-ssh-key.sh \${PREFIX}/share/sshfling/templates/scripts/generate-ssh-key.sh
 	\${INSTALL_DATA} \${WRKSRC}/secrets/.gitkeep \${PREFIX}/share/sshfling/templates/secrets/.gitkeep
@@ -351,6 +358,7 @@ share/sshfling/templates/production/sshfling-session
 share/sshfling/templates/scripts/create-network.sh
 share/sshfling/templates/scripts/generate-ssh-key.sh
 share/sshfling/templates/scripts/install-local.sh
+share/sshfling/templates/scripts/uninstall-local.sh
 share/sshfling/templates/secrets/.gitkeep
 share/sshfling/templates/ssh-client/Dockerfile
 share/sshfling/templates/ssh-client/entrypoint.sh
@@ -374,7 +382,7 @@ MASTER_SITES=	${base_url}/downloads/
 MAINTAINER=	44076838+GRWLX@users.noreply.github.com
 HOMEPAGE=	${base_url}
 COMMENT=	Temporary SSH certificate issuer and access CLI
-LICENSE=	apache-2.0
+LICENSE=	sshfling-commercial-license
 
 USE_LANGUAGES=	# none
 NO_BUILD=	yes
@@ -393,6 +401,7 @@ do-install:
 	\${INSTALL_DATA} \${WRKSRC}/compose.server.yml \${DESTDIR}\${PREFIX}/share/sshfling/templates/compose.server.yml
 	\${INSTALL_DATA} \${WRKSRC}/compose.client.yml \${DESTDIR}\${PREFIX}/share/sshfling/templates/compose.client.yml
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/install-local.sh \${DESTDIR}\${PREFIX}/share/sshfling/templates/scripts/install-local.sh
+	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/uninstall-local.sh \${DESTDIR}\${PREFIX}/share/sshfling/templates/scripts/uninstall-local.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/create-network.sh \${DESTDIR}\${PREFIX}/share/sshfling/templates/scripts/create-network.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/generate-ssh-key.sh \${DESTDIR}\${PREFIX}/share/sshfling/templates/scripts/generate-ssh-key.sh
 	\${INSTALL_DATA} \${WRKSRC}/secrets/.gitkeep \${DESTDIR}\${PREFIX}/share/sshfling/templates/secrets/.gitkeep
@@ -429,6 +438,7 @@ share/sshfling/templates/production/sshfling-session
 share/sshfling/templates/scripts/create-network.sh
 share/sshfling/templates/scripts/generate-ssh-key.sh
 share/sshfling/templates/scripts/install-local.sh
+share/sshfling/templates/scripts/uninstall-local.sh
 share/sshfling/templates/secrets/.gitkeep
 share/sshfling/templates/ssh-client/Dockerfile
 share/sshfling/templates/ssh-client/entrypoint.sh
@@ -491,7 +501,7 @@ cat >"$public_dir/nix/flake.nix" <<NIX
             meta = with pkgs.lib; {
               description = "Temporary SSH certificate issuer and access CLI";
               homepage = "${base_url}";
-              license = licenses.asl20;
+              license = licenses.unfree;
               mainProgram = "sshfling";
               platforms = platforms.unix;
             };
@@ -550,7 +560,7 @@ cat >"$public_dir/guix/sshfling.scm" <<GUIX
     (synopsis "Temporary SSH certificate issuer and access CLI")
     (description
      "SSHFling issues short-lived OpenSSH user certificates and installs a forced session wrapper so temporary SSH sessions are capped by a server-side wall-clock timeout.")
-    (license license:asl2.0)))
+    (license #f)))
 GUIX
 
 cat >"$public_dir/void/template" <<VOID
@@ -561,7 +571,7 @@ revision=1
 depends="python3 openssh shadow procps-ng util-linux"
 short_desc="Temporary SSH certificate issuer and access CLI"
 maintainer="${maintainer}"
-license="Apache-2.0"
+license="LicenseRef-SSHFling-Commercial"
 homepage="${base_url}"
 distfiles="${base_url}/downloads/${source_tar}"
 checksum=${source_sha}
@@ -588,7 +598,7 @@ DESCRIPTION="Temporary SSH certificate issuer and access CLI"
 HOMEPAGE="${base_url}"
 SRC_URI="${base_url}/downloads/${source_tar}"
 
-LICENSE="Apache-2.0"
+LICENSE="LicenseRef-SSHFling-Commercial"
 SLOT="0"
 KEYWORDS="~amd64 ~arm64"
 REQUIRED_USE="\${PYTHON_REQUIRED_USE}"
@@ -668,7 +678,7 @@ Name:           sshfling
 Version:        ${version}
 Release:        1%{?dist}
 Summary:        Temporary SSH certificate issuer and access CLI
-License:        Apache-2.0
+License:        LicenseRef-SSHFling-Commercial
 URL:            ${base_url}
 Source0:        ${base_url}/downloads/${source_tar}
 BuildArch:      noarch
@@ -718,7 +728,7 @@ description: |
   SSHFling issues short-lived OpenSSH user certificates and installs a forced
   session wrapper so temporary SSH sessions are capped by a server-side
   wall-clock timeout.
-license: Apache-2.0
+license: Proprietary
 grade: stable
 confinement: classic
 
@@ -756,7 +766,7 @@ SNAP
 cat >"$public_dir/termux/packages/sshfling/build.sh" <<TERMUX
 TERMUX_PKG_HOMEPAGE=${base_url}
 TERMUX_PKG_DESCRIPTION="Temporary SSH certificate issuer and access CLI"
-TERMUX_PKG_LICENSE="Apache-2.0"
+TERMUX_PKG_LICENSE="LicenseRef-SSHFling-Commercial"
 TERMUX_PKG_MAINTAINER="${maintainer}"
 TERMUX_PKG_VERSION=${version}
 TERMUX_PKG_SRCURL=${base_url}/downloads/${source_tar}
@@ -822,7 +832,10 @@ if [[ -n "$windows_zip_name" ]]; then
   "version": "${version}",
   "description": "Temporary SSH certificate issuer and access CLI",
   "homepage": "${base_url}",
-  "license": "Apache-2.0",
+  "license": {
+    "identifier": "Proprietary",
+    "url": "https://github.com/${repository}/blob/main/LICENSE"
+  },
   "url": "${base_url}/downloads/${windows_zip_name}",
   "hash": "${windows_zip_sha}",
   "bin": "sshfling.cmd",
@@ -852,7 +865,7 @@ PackageVersion: ${version}
 PackageLocale: en-US
 Publisher: ${owner}
 PackageName: SSHFling
-License: Apache-2.0
+License: SSHFling Commercial License
 ShortDescription: Temporary SSH certificate issuer and access CLI
 PackageUrl: https://github.com/${repository}
 LicenseUrl: https://github.com/${repository}/blob/main/LICENSE
@@ -902,7 +915,7 @@ WINGET_INDEX
     <licenseUrl>https://github.com/${repository}/blob/main/LICENSE</licenseUrl>
     <projectUrl>https://github.com/${repository}</projectUrl>
     <packageSourceUrl>https://github.com/${repository}</packageSourceUrl>
-    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
     <description>Temporary SSH certificate issuer and access CLI.</description>
     <summary>Temporary SSH certificate issuer and access CLI.</summary>
     <tags>ssh openssh certificate temporary-access cli</tags>
@@ -968,6 +981,7 @@ cat >"$public_dir/community.html" <<HTML
 </head>
 <body>
   <h1>SSHFling ${version} community package manifests</h1>
+  <p>SSHFling is proprietary commercial software. Installing, running, redistributing, or submitting these manifests to third-party repositories requires the rights described in the project LICENSE or a separate written agreement from GRWLX.</p>
   <p>These files are generated from the release artifacts. Some ecosystems can install directly from these URLs; official/community repositories such as AUR, FreeBSD Ports, pkgsrc, winget, Chocolatey, Snapcraft, and distro repos still require maintainer account submission and review.</p>
   <ul>
     <li>Arch / AUR: <a href="arch/PKGBUILD">PKGBUILD</a>, <a href="arch/.SRCINFO">.SRCINFO</a></li>

@@ -34,7 +34,7 @@
             meta = with pkgs.lib; {
               description = "Temporary SSH certificate issuer and access CLI";
               homepage = "https://github.com/GRWLX/sshfling";
-              license = licenses.asl20;
+              license = licenses.unfree;
               mainProgram = "sshfling";
               platforms = platforms.unix;
             };

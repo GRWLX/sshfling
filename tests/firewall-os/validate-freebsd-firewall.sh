@@ -50,6 +50,35 @@ assert any(item.get("dry_run") and item.get("path", "").endswith("90-sshfling.co
 print(f"certificate host dry-run ok: {platform}")
 PY
 
+mkdir -p "$tmp/authorized_principals"
+printf '# Managed by sshfling.\n' >"$tmp/sshd_config.d/90-sshfling.conf"
+printf 'sshflingtest\n' >"$tmp/authorized_principals/sshflingtest"
+
+"$cmd" --json host uninstall \
+  --dry-run \
+  --no-validate \
+  --user sshflingtest \
+  --principal sshflingtest \
+  --trusted-ca "$tmp/trusted_user_ca_keys.pem" \
+  --principals-dir "$tmp/authorized_principals" \
+  --session-wrapper "$tmp/sshfling-session" \
+  --sshd-config "$tmp/sshd_config.d/90-sshfling.conf" \
+  --policy-file "$tmp/policy.json" \
+  >"$tmp/host-uninstall.json"
+
+python3 - "$tmp/host-uninstall.json" "$platform" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+platform = sys.argv[2]
+assert payload["ok"] is True, payload
+results = payload["results"]
+assert any(item.get("would_remove") and item.get("path", "").endswith("90-sshfling.conf") for item in results), payload
+assert any(item.get("would_remove") and item.get("path", "").endswith("sshflingtest") for item in results), payload
+print(f"certificate host uninstall dry-run ok: {platform}")
+PY
+
 if [ "$(id -u)" = "0" ]; then
   set +e
   "$cmd" --password --dry-run --username sshflingtest -t 60s 2>"$tmp/password.err" >"$tmp/password.out"

@@ -14,6 +14,7 @@ copy_sshfling_templates() {
   install -m 0644 "$src_root/compose.client.yml" "$dest/compose.client.yml"
 
   install -m 0755 "$src_root/scripts/install-local.sh" "$dest/scripts/install-local.sh"
+  install -m 0755 "$src_root/scripts/uninstall-local.sh" "$dest/scripts/uninstall-local.sh"
   install -m 0755 "$src_root/scripts/create-network.sh" "$dest/scripts/create-network.sh"
   install -m 0755 "$src_root/scripts/generate-ssh-key.sh" "$dest/scripts/generate-ssh-key.sh"
   install -m 0644 "$src_root/secrets/.gitkeep" "$dest/secrets/.gitkeep"

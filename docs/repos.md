@@ -9,6 +9,8 @@ For public installs, enable GitHub Pages for Actions in the repository settings 
 
 Replace `OWNER` and `REPO` in the examples below with the GitHub organization/user and repository name.
 
+SSHFling is proprietary commercial software. Installing, running, redistributing, or submitting generated manifests to third-party repositories requires the rights described in the project LICENSE or a separate written agreement from GRWLX.
+
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
 BASE_HOST="OWNER.github.io"
@@ -20,12 +22,26 @@ Automatic install on Linux or Homebrew hosts:
 curl -fsSL "${BASE_URL}/install.sh" | bash
 ```
 
+Automatic uninstall on Linux or Homebrew hosts:
+
+```bash
+curl -fsSL "${BASE_URL}/install.sh" | bash -s -- uninstall
+```
+
 Force a specific installer path:
 
 ```bash
 curl -fsSL "${BASE_URL}/install.sh" | bash -s -- apt
 curl -fsSL "${BASE_URL}/install.sh" | bash -s -- dnf
 curl -fsSL "${BASE_URL}/install.sh" | bash -s -- brew
+```
+
+Force a specific uninstall path:
+
+```bash
+curl -fsSL "${BASE_URL}/install.sh" | bash -s -- uninstall apt
+curl -fsSL "${BASE_URL}/install.sh" | bash -s -- uninstall dnf
+curl -fsSL "${BASE_URL}/install.sh" | bash -s -- uninstall brew
 ```
 
 ## Public Debian / Ubuntu APT
@@ -40,6 +56,14 @@ Pin-Priority: 1001
 EOF
 sudo apt update
 sudo apt install -y sshfling
+```
+
+Uninstall:
+
+```bash
+sudo apt remove -y sshfling
+sudo rm -f /etc/apt/sources.list.d/sshfling.list /etc/apt/preferences.d/sshfling
+sudo apt update
 ```
 
 ## Public RHEL / Fedora / Rocky / Alma RPM
@@ -59,10 +83,23 @@ sudo dnf install -y sshfling
 
 Use `sudo yum install -y sshfling` on older yum-based hosts.
 
+Uninstall:
+
+```bash
+sudo dnf remove -y sshfling
+sudo rm -f /etc/yum.repos.d/sshfling.repo
+```
+
 ## Public Homebrew
 
 ```bash
 brew install "${BASE_URL}/homebrew/sshfling.rb"
+```
+
+Uninstall:
+
+```bash
+brew uninstall sshfling
 ```
 
 ## Public macOS pkg
@@ -71,11 +108,24 @@ brew install "${BASE_URL}/homebrew/sshfling.rb"
 curl -fsSL "${BASE_URL}/macos/install-pkg.sh" | sudo bash
 ```
 
+Uninstall:
+
+```bash
+curl -fsSL "${BASE_URL}/macos/uninstall-pkg.sh" | sudo bash
+```
+
 ## Public Windows MSI
 
 ```powershell
 $BaseUrl = "https://OWNER.github.io/REPO"
 irm "$BaseUrl/windows/install.ps1" | iex
+```
+
+Uninstall:
+
+```powershell
+$BaseUrl = "https://OWNER.github.io/REPO"
+irm "$BaseUrl/windows/uninstall.ps1" | iex
 ```
 
 ## Public Community Manifests
@@ -182,7 +232,7 @@ class Sshfling < Formula
   homepage "https://example.com/sshfling"
   url "https://example.com/sshfling-0.1.11.tar.gz"
   sha256 "REPLACE_WITH_SHA256"
-  license "Apache-2.0"
+  license :cannot_represent
 
   depends_on "python@3"
   depends_on "docker" => :recommended

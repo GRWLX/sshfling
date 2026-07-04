@@ -34,7 +34,7 @@ Name: sshfling
 Version: $version
 Release: 1%{?dist}
 Summary: Temporary SSH certificate issuer and access CLI
-License: Apache-2.0
+License: LicenseRef-SSHFling-Commercial
 BuildArch: noarch
 Requires: python3
 Requires: openssh-clients

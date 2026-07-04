@@ -2,6 +2,10 @@
 
 This is the build and packaging target matrix for public distribution.
 
+SSHFling is proprietary commercial software. Installing, running, redistributing,
+or submitting generated manifests to third-party repositories requires the rights
+described in the project LICENSE or a separate written agreement from GRWLX.
+
 ## Built Release Artifacts
 
 These artifacts are built directly by GitHub Actions on every version tag.

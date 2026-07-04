@@ -33,6 +33,7 @@ log "syntax checks"
 python3 -m py_compile bin/sshfling
 bash -n \
   scripts/install-local.sh \
+  scripts/uninstall-local.sh \
   scripts/create-network.sh \
   scripts/generate-ssh-key.sh \
   ssh-client/entrypoint.sh \
@@ -599,5 +600,25 @@ ssh \
   -p 2222 \
   sshflingtmp@127.0.0.1 'whoami' >"$work/created-whoami.out"
 grep -q '^sshflingtmp$' "$work/created-whoami.out"
+
+log "host uninstall removes managed certificate host config"
+bin/sshfling --json host uninstall \
+  --username sshflingtmp \
+  --principal sshflingtmp \
+  --no-validate >"$work/host-uninstall.json"
+python3 - "$work/host-uninstall.json" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1]))
+assert payload["ok"] is True
+paths = {item.get("path"): item for item in payload["results"] if "path" in item}
+assert paths["/etc/ssh/sshd_config.d/90-sshfling-temp-access.conf"]["removed"] is True
+assert paths["/etc/ssh/auth_principals/sshflingtmp"]["removed"] is True
+PY
+test ! -e /etc/ssh/sshd_config.d/90-sshfling-temp-access.conf
+test ! -e /etc/ssh/auth_principals/sshflingtmp
+test -e /etc/ssh/sshfling_user_ca.pub
+test -e /usr/local/libexec/sshfling-session
+sshd -t
 
 log "all docker integration checks passed"

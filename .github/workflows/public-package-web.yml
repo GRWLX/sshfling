@@ -41,6 +41,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dpkg-dev file rpm
 
+      - name: Validate sources
+        run: make test
+
       - name: Build Debian and RPM packages
         env:
           SSHFLING_VERSION: ${{ steps.version.outputs.version }}
@@ -48,16 +51,11 @@ jobs:
           set -euo pipefail
           ./packaging/build-deb.sh
           ./packaging/build-rpm.sh
-          tar \
-            --exclude=.git \
-            --exclude=.github \
-            --exclude=build \
-            --exclude=dist \
-            --exclude='__pycache__' \
-            --exclude='*.pyc' \
-            --transform "s,^\.,sshfling-${SSHFLING_VERSION}," \
-            -czf "dist/sshfling-${SSHFLING_VERSION}.tar.gz" \
-            .
+          git archive \
+            --format=tar.gz \
+            --prefix="sshfling-${SSHFLING_VERSION}/" \
+            --output="dist/sshfling-${SSHFLING_VERSION}.tar.gz" \
+            HEAD
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4

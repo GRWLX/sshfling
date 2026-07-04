@@ -40,6 +40,7 @@ TEMPLATE_ENTRIES = [
     "compose.server.yml",
     "compose.client.yml",
     "scripts/install-local.sh",
+    "scripts/uninstall-local.sh",
     "scripts/create-network.sh",
     "scripts/generate-ssh-key.sh",
     "secrets/.gitkeep",
@@ -150,7 +151,7 @@ def run(args, cwd=None, env=None, capture=False, check=True):
             args,
             cwd=str(cwd) if cwd else None,
             env=merged_env,
-            text=True,
+            universal_newlines=True,
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.PIPE if capture else None,
             check=False,
@@ -182,7 +183,7 @@ def run_with_input(args, input_text, cwd=None, env=None, capture=False, check=Tr
             cwd=str(cwd) if cwd else None,
             env=merged_env,
             input=input_text,
-            text=True,
+            universal_newlines=True,
             stdout=subprocess.PIPE if capture else None,
             stderr=subprocess.PIPE if capture else None,
             check=False,
@@ -1373,6 +1374,81 @@ def remove_password_grant_config(path, username, dry_run=False):
     return {"path": str(path), "removed": True}
 
 
+def remove_file(path, dry_run=False):
+    path = Path(path)
+    if not path.exists():
+        return {"path": str(path), "status": "missing"}
+    if path.is_dir():
+        raise SSHFlingError(f"Refusing to remove directory as a file: {path}", 2)
+    if dry_run:
+        return {"path": str(path), "would_remove": True, "dry_run": True}
+    path.unlink()
+    return {"path": str(path), "removed": True}
+
+
+def remove_managed_file(path, marker, dry_run=False, force=False):
+    path = Path(path)
+    if not path.exists():
+        return {"path": str(path), "status": "missing"}
+    content = path.read_text()
+    if marker not in content and not force:
+        raise SSHFlingError(f"Refusing to remove unmanaged file: {path}", 2)
+    return remove_file(path, dry_run)
+
+
+def remove_matching_file(path, expected_content, dry_run=False, force=False):
+    path = Path(path)
+    if not path.exists():
+        return {"path": str(path), "status": "missing"}
+    content = path.read_text()
+    if content != expected_content and not force:
+        raise SSHFlingError(
+            f"Refusing to remove file with unexpected content: {path}. Re-run with matching --principal values or --force.",
+            2,
+        )
+    return remove_file(path, dry_run)
+
+
+def remove_empty_dir(path, dry_run=False):
+    path = Path(path)
+    if not path.exists():
+        return {"path": str(path), "status": "missing"}
+    if not path.is_dir():
+        return {"path": str(path), "status": "not-directory"}
+    if any(path.iterdir()):
+        return {"path": str(path), "status": "not-empty"}
+    if dry_run:
+        return {"path": str(path), "would_remove_empty_dir": True, "dry_run": True}
+    try:
+        path.rmdir()
+        return {"path": str(path), "removed_empty_dir": True}
+    except OSError:
+        return {"path": str(path), "status": "not-empty"}
+
+
+def remove_policy_user(policy_file, username, dry_run=False):
+    path = policy_file_path(policy_file)
+    if not path.exists():
+        return {"path": str(path), "status": "missing"}
+
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise SSHFlingError(f"Invalid policy file: {path}", 2) from exc
+
+    policy = normalize_policy(data)
+    if username not in policy.get("users", {}):
+        return {"path": str(path), "user": username, "status": "missing"}
+
+    if dry_run:
+        return {"path": str(path), "user": username, "would_remove": True, "dry_run": True}
+
+    del policy["users"][username]
+    path.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n")
+    path.chmod(0o644)
+    return {"path": str(path), "user": username, "removed": True}
+
+
 def lock_password_user(username, dry_run=False):
     if run(["id", "-u", username], capture=True, check=False).returncode != 0:
         return {"user": username, "status": "missing"}
@@ -1553,6 +1629,46 @@ Match User {args.user}
                 sshd_config,
             )
         )
+
+    if not args.dry_run and args.reload:
+        results.append(reload_sshd())
+
+    payload = {"ok": True, "results": results}
+    if args.json:
+        emit_json(payload)
+    else:
+        for item in results:
+            print(json.dumps(item, sort_keys=True))
+    return 0
+
+
+def cmd_host_uninstall(args):
+    require_root("host uninstall")
+    trusted_ca = Path(args.trusted_ca).expanduser()
+    principals_dir = Path(args.principals_dir).expanduser()
+    principals_file = principals_dir / args.user
+    wrapper_path = Path(args.session_wrapper).expanduser()
+    sshd_config = Path(args.sshd_config).expanduser()
+    principals = args.principal or [args.user]
+    principal_lines = "\n".join(dict.fromkeys(principals)) + "\n"
+
+    results = [
+        remove_managed_file(sshd_config, "# Managed by sshfling.", args.dry_run, args.force),
+        remove_matching_file(principals_file, principal_lines, args.dry_run, args.force),
+        remove_empty_dir(principals_dir, args.dry_run),
+    ]
+
+    if args.remove_ca:
+        results.append(remove_file(trusted_ca, args.dry_run))
+    if args.remove_wrapper:
+        results.append(remove_file(wrapper_path, args.dry_run))
+    if args.remove_policy_user:
+        results.append(remove_policy_user(args.policy_file, args.user, args.dry_run))
+    if args.delete_user:
+        results.append(delete_password_user(args.user, args.dry_run))
+
+    if not args.dry_run and args.validate:
+        results.append(validate_sshd_effective())
 
     if not args.dry_run and args.reload:
         results.append(reload_sshd())
@@ -2359,6 +2475,23 @@ def build_parser():
     host_install.add_argument("--reload", action="store_true", help="Reload sshd after writing config.")
     host_install.add_argument("--dry-run", action="store_true", help="Show intended changes without writing files.")
     host_install.set_defaults(func=cmd_host_install, validate=True)
+    host_uninstall = host_sub.add_parser("uninstall", help="Remove sshfling host SSH configuration.")
+    host_uninstall.add_argument("--username", "--user", dest="user", default="deploy", help="Unix account configured for temporary SSH access.")
+    host_uninstall.add_argument("--principal", action="append", help="Expected authorized principal. Defaults to --user. Repeatable.")
+    host_uninstall.add_argument("--trusted-ca", default="/etc/ssh/sshfling_user_ca.pub", help="Installed CA public key path.")
+    host_uninstall.add_argument("--principals-dir", default="/etc/ssh/auth_principals", help="Authorized principals directory.")
+    host_uninstall.add_argument("--sshd-config", default="/etc/ssh/sshd_config.d/90-sshfling-temp-access.conf", help="Managed sshd config snippet.")
+    host_uninstall.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help="Installed session wrapper path.")
+    host_uninstall.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help="Installed policy file path.")
+    host_uninstall.add_argument("--remove-ca", action="store_true", help="Also remove the installed trusted CA file.")
+    host_uninstall.add_argument("--remove-wrapper", action="store_true", help="Also remove the installed session wrapper.")
+    host_uninstall.add_argument("--remove-policy-user", action="store_true", help="Remove this user's policy override from the policy file.")
+    host_uninstall.add_argument("--delete-user", action="store_true", help="Delete the Unix account. Use only for accounts created solely for sshfling.")
+    host_uninstall.add_argument("--force", action="store_true", help="Remove files even when managed-content checks do not match.")
+    host_uninstall.add_argument("--no-validate", dest="validate", action="store_false", help="Skip sshd -t validation.")
+    host_uninstall.add_argument("--reload", action="store_true", help="Reload sshd after removing config.")
+    host_uninstall.add_argument("--dry-run", action="store_true", help="Show intended removals without changing files.")
+    host_uninstall.set_defaults(func=cmd_host_uninstall, validate=True)
 
     serve = subparsers.add_parser("serve", help="Run the temporary SSH certificate issuer service.")
     serve.add_argument("--listen", default=DEFAULT_ISSUER_LISTEN, help="Issuer listen address as host:port.")
