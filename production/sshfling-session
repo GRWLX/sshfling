@@ -2,7 +2,7 @@
 set -euo pipefail
 
 max_seconds=300
-max_allowed_seconds=3600
+max_allowed_seconds=86400
 max_allowed_connections=10
 grant_max_connections=""
 username="unknown"
@@ -61,7 +61,7 @@ if "default" in policy:
     caps.update((policy.get("users") or {}).get(username, {}))
 else:
     caps = policy
-print(int(caps.get("max_time_seconds", 3600)))
+print(int(caps.get("max_time_seconds", 86400)))
 print(int(caps.get("max_connections", 10)))
 PY
   )"
@@ -78,7 +78,7 @@ if [[ ! "$max_seconds" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
-if [[ ! "$max_allowed_seconds" =~ ^[1-9][0-9]*$ ]] || (( max_allowed_seconds > 3600 )); then
+if [[ ! "$max_allowed_seconds" =~ ^[1-9][0-9]*$ ]] || (( max_allowed_seconds > 86400 )); then
   echo "Invalid sshfling policy max_time_seconds." >&2
   exit 2
 fi

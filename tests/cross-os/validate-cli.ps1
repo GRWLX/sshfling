@@ -39,7 +39,7 @@ try {
   if (-not $policy.ok) {
     Fail "policy show returned ok=false"
   }
-  if ($policy.effective.max_time_seconds -ne 3600 -or $policy.effective.max_connections -ne 10) {
+  if ($policy.effective.max_time_seconds -ne 86400 -or $policy.effective.max_connections -ne 10) {
     Fail "policy defaults were not stable"
   }
   if ($policy.policy.version -ne 2) {
@@ -107,6 +107,18 @@ try {
   }
   if (-not $envContent.Contains("SSH_PORT_ON_HOST=2222")) {
     Fail "init did not write SSH_PORT_ON_HOST"
+  }
+  $systemdEnv = Get-Content -Raw -Path (Join-Path $project "systemd\sshflingd.env.example")
+  if (-not $systemdEnv.Contains("SSHFLING_MAX_SECONDS=86400")) {
+    Fail "systemd env did not default SSHFLING_MAX_SECONDS to 86400"
+  }
+  $productionWrapper = Get-Content -Raw -Path (Join-Path $project "production\sshfling-session")
+  if (-not $productionWrapper.Contains("max_allowed_seconds=86400")) {
+    Fail "production wrapper did not allow 24h sessions"
+  }
+  $dockerWrapper = Get-Content -Raw -Path (Join-Path $project "ssh-server\limited-session.sh")
+  if (-not $dockerWrapper.Contains("max_allowed_seconds=86400")) {
+    Fail "docker wrapper did not allow 24h sessions"
   }
 
   Write-Output "cross validation ok: $CommandPath $Version"

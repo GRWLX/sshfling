@@ -3,7 +3,7 @@ set -euo pipefail
 
 limit_file="/etc/ssh/session_limit_seconds"
 session_seconds="$(tr -d '[:space:]' <"$limit_file" 2>/dev/null || true)"
-max_allowed_seconds=3600
+max_allowed_seconds=86400
 
 if [[ ! "$session_seconds" =~ ^[1-9][0-9]*$ ]]; then
   session_seconds=60

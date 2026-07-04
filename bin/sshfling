@@ -30,7 +30,7 @@ DEFAULT_SESSION_DIR = "/var/lib/sshfling/sessions"
 DEFAULT_POLICY_FILE = "/etc/sshfling/policy.json"
 DEFAULT_PASSWORD_GRANT_DIR = "/var/lib/sshfling/password-grants"
 DEFAULT_TEMP_USERNAME_PREFIX = "s"
-MAX_TIME_SECONDS = 3600
+MAX_TIME_SECONDS = 86400
 MAX_CONNECTIONS = 10
 
 TEMPLATE_ENTRIES = [
@@ -506,6 +506,8 @@ def policy_file_path(value=None):
 
 
 def format_duration(seconds):
+    if seconds == 86400:
+        return "24 hours"
     if seconds == 3600:
         return "1 hour"
     if seconds % 3600 == 0:
@@ -2373,7 +2375,7 @@ def build_parser():
     )
     parser.add_argument("--version", action="version", version=f"sshfling {VERSION}")
     parser.add_argument("--json", action="store_true", help="Emit stable JSON where supported.")
-    parser.add_argument("-t", "--time", type=duration_seconds, help="Grant access for this long, for example 30s, 5m, or 1h.")
+    parser.add_argument("-t", "--time", type=duration_seconds, help="Grant access for this long, for example 30s, 5m, 1h, or 24h.")
     parser.add_argument("--username", help="Temporary SSH username. Defaults to a random name like s123.")
     parser.add_argument("--login-user", help="Actual Unix login account if different from --username.")
     parser.add_argument("-p", "--password", action="store_true", help="Create temporary password SSH access instead of certificate access.")
@@ -2405,7 +2407,7 @@ def build_parser():
     doctor.set_defaults(func=cmd_doctor)
 
     setup = subparsers.add_parser("setup", help="Create a temporary SSH login. Normal use only needs --time and optionally --username.")
-    setup.add_argument("-t", "--time", type=duration_seconds, required=True, help="Access lifetime, for example 30s, 5m, or 1h.")
+    setup.add_argument("-t", "--time", type=duration_seconds, required=True, help="Access lifetime, for example 30s, 5m, 1h, or 24h.")
     setup.add_argument("--username", help="Temporary SSH username. Defaults to a random name like s123.")
     setup.add_argument("--login-user", help="Actual Unix login account if different from --username.")
     setup.add_argument("-p", "--password", action="store_true", help="Create temporary password SSH access instead of certificate access.")
@@ -2462,7 +2464,7 @@ def build_parser():
     cert_issue.add_argument("--username", help="Temporary SSH username/certificate principal.")
     cert_issue.add_argument("--login-user", help="Unix login user for policy lookup and forced-command metadata.")
     cert_issue.add_argument("--principal", help=argparse.SUPPRESS)
-    cert_issue.add_argument("-t", "--time", type=duration_seconds, help="Access lifetime, for example 30s, 5m, or 1h.")
+    cert_issue.add_argument("-t", "--time", type=duration_seconds, help="Access lifetime, for example 30s, 5m, 1h, or 24h.")
     cert_issue.add_argument("--seconds", type=positive_int, default=300, help="Certificate and session lifetime.")
     cert_issue.add_argument("--key-id", help="Audit identifier stored in the certificate.")
     cert_issue.add_argument("--serial", type=positive_int, help=argparse.SUPPRESS)
@@ -2482,7 +2484,7 @@ def build_parser():
     policy_install = policy_sub.add_parser("install", help="Install the host policy.")
     policy_install.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help="Policy file path.")
     policy_install.add_argument("--user", help="Set policy for this Unix login user. Omit to set the default policy.")
-    policy_install.add_argument("--max-time", type=duration_seconds, default=MAX_TIME_SECONDS, help="Maximum SSH lifetime. Hard cap is 1h.")
+    policy_install.add_argument("--max-time", type=duration_seconds, default=MAX_TIME_SECONDS, help="Maximum SSH lifetime. Hard cap is 24h.")
     policy_install.add_argument("--max-connections", type=positive_int, default=MAX_CONNECTIONS, help="Maximum active sessions. Hard cap is 10.")
     policy_install.set_defaults(func=cmd_policy_install)
 
@@ -2497,7 +2499,7 @@ def build_parser():
     host_install.add_argument("--sshd-config", default="/etc/ssh/sshd_config.d/90-sshfling-temp-access.conf", help="Managed sshd config snippet.")
     host_install.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help="Installed session wrapper path.")
     host_install.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help="Installed policy file path.")
-    host_install.add_argument("--max-time", type=duration_seconds, help="Install a maximum SSH lifetime policy. Hard cap is 1h.")
+    host_install.add_argument("--max-time", type=duration_seconds, help="Install a maximum SSH lifetime policy. Hard cap is 24h.")
     host_install.add_argument("--max-connections", type=positive_int, help="Install a maximum active session policy. Hard cap is 10.")
     host_install.add_argument("--create-user", action="store_true", help="Create the Unix user if missing.")
     host_install.add_argument("--no-validate", dest="validate", action="store_false", help="Skip sshd -t validation.")
@@ -2527,7 +2529,7 @@ def build_parser():
     serve.add_argument("--ca-key", default=str(default_ca_key_path()), help="CA private key path.")
     serve.add_argument("--allowed-principal", action="append", default=["deploy"], help="Allowed principal or comma list. Repeatable.")
     serve.add_argument("--default-seconds", type=positive_int, default=300, help="Default certificate lifetime.")
-    serve.add_argument("--max-seconds", type=positive_int, default=3600, help="Maximum certificate lifetime.")
+    serve.add_argument("--max-seconds", type=positive_int, default=MAX_TIME_SECONDS, help="Maximum certificate lifetime.")
     serve.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help="Forced command wrapper path on target hosts.")
     serve.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help=argparse.SUPPRESS)
     serve.add_argument("--token-env", default="SSHFLING_ISSUER_TOKEN", help="Environment variable containing the bearer token.")

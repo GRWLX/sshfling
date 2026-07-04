@@ -153,13 +153,13 @@ set +e
 bin/sshfling \
   --ca-key "$work/ca_user_ed25519" \
   --username too-long \
-  -t 2h >"$work/too-long.out" 2>"$work/too-long.err"
+  -t 25h >"$work/too-long.out" 2>"$work/too-long.err"
 too_long_code="$?"
 set -e
 if [[ "$too_long_code" -eq 0 ]]; then
-  fail "expected --time 2h to be rejected"
+  fail "expected --time 25h to be rejected"
 fi
-grep -q "cannot exceed 1 hour" "$work/too-long.err"
+grep -q "cannot exceed 24 hours" "$work/too-long.err"
 
 bin/sshfling --json -t 8s \
   --ca-key "$work/ca_user_ed25519" \
@@ -523,7 +523,7 @@ assert payload["private_key"]
 assert payload["out"]
 PY
 
-log "bare sshfling defaults to one hour with a short random username"
+log "bare sshfling defaults to 24 hours with a short random username"
 bin/sshfling --json \
   --ca-key "$work/ca_user_ed25519" \
   >"$work/default-setup.json"
@@ -533,7 +533,7 @@ import re
 import sys
 payload = json.load(open(sys.argv[1]))
 assert payload["ok"] is True
-assert payload["seconds"] == 3600
+assert payload["seconds"] == 86400
 assert re.fullmatch(r"s[0-9]{3}", payload["username"]), payload["username"]
 PY
 

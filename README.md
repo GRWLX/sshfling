@@ -79,15 +79,15 @@ The server-side grant prints the detected server address in the client command. 
 Rules:
 
 - Server-side grant, shutdown, and kill commands require root/admin.
-- The maximum grant time is 1 hour.
-- `sshfling` with no `-t` uses the maximum: 1 hour.
+- The maximum grant time is 24 hours.
+- `sshfling` with no `-t` uses the maximum: 24 hours.
 - Up to 10 active sshfling SSH sessions are allowed, depending on install policy.
 - If no SSH public key is provided, certificate mode creates a temporary keypair automatically.
 - Password mode creates a real Unix account password, tracks the grant, auto-expires access, and allows only one active session for that temporary username.
 
 Under the hood, certificate mode uses OpenSSH user certificates and a host-side timeout wrapper. Password mode writes a temporary sshd `Match User` block that forces the same timeout wrapper.
 
-SSHFling also fits AI-assisted operations where the target server should not run an AI CLI, agent, SDK, or vendor daemon. An operator can grant a short-lived standard SSH session to a human or AI tool from a workstation, while the server continues to rely on OpenSSH certificates, local policy, and a forced command wrapper for timeout enforcement. See [AI-assisted temporary server access](docs/ai-temporary-access.md).
+SSHFling also fits AI-assisted operations where the target server should not run an AI CLI, agent, SDK, or vendor daemon. An operator can grant a short-lived standard SSH session to a human or AI tool from a workstation, while the server continues to rely on OpenSSH certificates, local policy, and a forced command wrapper for timeout enforcement. See [AI-assisted temporary server access](docs/ai-temporary-access.md) and [Codex and enterprise detached workflows](docs/codex-enterprise-workflow.md).
 
 It also includes a Docker Compose test harness with two projects:
 
@@ -150,6 +150,8 @@ List active sessions:
 sudo sshfling list
 ```
 
+The list output includes the `sshfling-session` wrapper PID and the active child process PID. JSON output also includes `status`, `process_pid`, and `process_pids` for automation.
+
 Install per-user policy limits:
 
 ```bash
@@ -165,7 +167,7 @@ sudo --preserve-env=SSHFLING_WEB_PASSWORD_HASH sshfling web
 
 Open `http://127.0.0.1:8790` and log in as `admin`.
 
-The policy is stored at `/etc/sshfling/policy.json`. SSHFling has hard caps of 1 hour and 10 active sessions. Policy can set lower default limits and lower per-user limits, not higher ones.
+The policy is stored at `/etc/sshfling/policy.json`. SSHFling has hard caps of 24 hours and 10 active sessions. Policy can set lower default limits and lower per-user limits, not higher ones.
 
 Root can always replace binaries or edit local files. To make policy changes controlled in production, manage `/etc/sshfling/policy.json` through signed packages/config management and alert on package verification or file integrity changes.
 
@@ -351,6 +353,7 @@ GitHub Actions workflows are included for public distribution:
 
 - `Release packages without web` builds release artifacts only.
 - `Release packages with public web` publishes a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, macOS `.pkg`, Windows MSI installs, and community package manifests for BSDs, Arch/AUR, Alpine, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey.
+- `Cross OS validation` installs or builds those outputs across Linux, BSD, macOS, and Windows and checks the 24-hour policy default, copied service templates, and PID fields.
 
 Nix users can also run from the repository:
 

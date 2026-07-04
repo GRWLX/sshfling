@@ -34,7 +34,7 @@ import sys
 
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 assert payload["ok"] is True, payload
-assert payload["effective"]["max_time_seconds"] == 3600, payload
+assert payload["effective"]["max_time_seconds"] == 86400, payload
 assert payload["effective"]["max_connections"] == 10, payload
 assert payload["policy"]["version"] == 2, payload
 PY
@@ -142,5 +142,8 @@ done
 
 grep -Fq "SSH_SESSION_SECONDS=60" "$project/.env" || fail "init did not write SSH_SESSION_SECONDS"
 grep -Fq "SSH_PORT_ON_HOST=2222" "$project/.env" || fail "init did not write SSH_PORT_ON_HOST"
+grep -Fq "SSHFLING_MAX_SECONDS=86400" "$project/systemd/sshflingd.env.example" || fail "systemd env did not default SSHFLING_MAX_SECONDS to 86400"
+grep -Fq "max_allowed_seconds=86400" "$project/production/sshfling-session" || fail "production wrapper did not allow 24h sessions"
+grep -Fq "max_allowed_seconds=86400" "$project/ssh-server/limited-session.sh" || fail "docker wrapper did not allow 24h sessions"
 
 echo "cross validation ok: $cmd $version"
