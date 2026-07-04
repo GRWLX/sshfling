@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-copy_fling_templates() {
+copy_sshfling_templates() {
   local src_root="$1"
   local dest="$2"
 
@@ -26,7 +26,7 @@ copy_fling_templates() {
   install -m 0755 "$src_root/ssh-server/limited-session.sh" "$dest/ssh-server/limited-session.sh"
   install -m 0644 "$src_root/ssh-server/sshd_config" "$dest/ssh-server/sshd_config"
 
-  install -m 0755 "$src_root/production/fling-session" "$dest/production/fling-session"
-  install -m 0644 "$src_root/systemd/flingd.service" "$dest/systemd/flingd.service"
-  install -m 0644 "$src_root/systemd/flingd.env.example" "$dest/systemd/flingd.env.example"
+  install -m 0755 "$src_root/production/sshfling-session" "$dest/production/sshfling-session"
+  install -m 0644 "$src_root/systemd/sshflingd.service" "$dest/systemd/sshflingd.service"
+  install -m 0644 "$src_root/systemd/sshflingd.env.example" "$dest/systemd/sshflingd.env.example"
 }

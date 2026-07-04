@@ -1,31 +1,31 @@
-# Fling
+# SSHFling
 
-`fling` is a production temporary SSH access tool. Normal use is intentionally small:
+`sshfling` is a production temporary SSH access tool. Normal use is intentionally small:
 
 ```bash
-sudo fling
-sudo fling -t 5m
-sudo fling -t 5m --username temp-name
-sudo fling list
-sudo fling -k f432
-sudo fling web
-sudo fling shutdown
-sudo fling -k
+sudo sshfling
+sudo sshfling -t 5m
+sudo sshfling -t 5m --username temp-name
+sudo sshfling list
+sudo sshfling -k s432
+sudo sshfling web
+sudo sshfling shutdown
+sudo sshfling -k
 ```
 
-If `--username` is omitted, `fling` creates a random temporary username like `f123`.
+If `--username` is omitted, `sshfling` creates a random temporary username like `s123`.
 
 Rules:
 
-- `fling`, `fling -t`, `fling shutdown`, and `fling -k` require root/admin.
+- `sshfling`, `sshfling -t`, `sshfling shutdown`, and `sshfling -k` require root/admin.
 - The maximum time is 1 hour.
-- `fling` with no `-t` uses the maximum: 1 hour.
-- Up to 10 active fling SSH sessions are allowed, depending on install policy.
-- If no SSH public key is provided, `fling` creates a temporary keypair automatically.
+- `sshfling` with no `-t` uses the maximum: 1 hour.
+- Up to 10 active sshfling SSH sessions are allowed, depending on install policy.
+- If no SSH public key is provided, `sshfling` creates a temporary keypair automatically.
 
 Under the hood, it uses OpenSSH user certificates and a host-side timeout wrapper.
 
-Fling also fits AI-assisted operations where the target server should not run an AI CLI, agent, SDK, or vendor daemon. An operator can grant a short-lived standard SSH session to a human or AI tool from a workstation, while the server continues to rely on OpenSSH certificates, local policy, and a forced command wrapper for timeout enforcement. See [AI-assisted temporary server access](docs/ai-temporary-access.md).
+SSHFling also fits AI-assisted operations where the target server should not run an AI CLI, agent, SDK, or vendor daemon. An operator can grant a short-lived standard SSH session to a human or AI tool from a workstation, while the server continues to rely on OpenSSH certificates, local policy, and a forced command wrapper for timeout enforcement. See [AI-assisted temporary server access](docs/ai-temporary-access.md).
 
 It also includes a Docker Compose test harness with two projects:
 
@@ -36,19 +36,19 @@ Every SSH session is capped by `SSH_SESSION_SECONDS`.
 
 For production hosts, Docker is only a test harness. The production mode uses OpenSSH user certificates:
 
-- `fling ca init` creates an SSH user CA keypair.
-- `fling host install` configures a target host to trust the CA for one Unix user.
-- `fling cert issue` signs a user's public key for a short lifetime.
-- `fling serve` runs a small authenticated certificate issuer service.
+- `sshfling ca init` creates an SSH user CA keypair.
+- `sshfling host install` configures a target host to trust the CA for one Unix user.
+- `sshfling cert issue` signs a user's public key for a short lifetime.
+- `sshfling serve` runs a small authenticated certificate issuer service.
 
-The issued certificate includes an OpenSSH `force-command` option that runs `fling-session` on the target host. That wrapper enforces the session wall-clock limit, so an already-connected SSH session is killed when its allowed time is reached.
+The issued certificate includes an OpenSSH `force-command` option that runs `sshfling-session` on the target host. That wrapper enforces the session wall-clock limit, so an already-connected SSH session is killed when its allowed time is reached.
 
 ## Production Quick Start
 
 The normal command is:
 
 ```bash
-sudo fling
+sudo sshfling
 ```
 
 That creates or reuses the CA key, creates a temporary username, creates a temporary keypair/certificate, and prints the SSH command. Use `-t` to choose a shorter time.
@@ -56,51 +56,51 @@ That creates or reuses the CA key, creates a temporary username, creates a tempo
 Optional username:
 
 ```bash
-sudo fling -t 10m --username ticket-1234
+sudo sshfling -t 10m --username ticket-1234
 ```
 
-Kill active fling SSH sessions:
+Kill active sshfling SSH sessions:
 
 ```bash
-sudo fling shutdown
-sudo fling -k f432
+sudo sshfling shutdown
+sudo sshfling -k s432
 ```
 
 List active sessions:
 
 ```bash
-sudo fling list
+sudo sshfling list
 ```
 
 Install per-user policy limits:
 
 ```bash
-sudo fling policy install --user deploy --max-time 30m --max-connections 3
+sudo sshfling policy install --user deploy --max-time 30m --max-connections 3
 ```
 
 Run the local web console:
 
 ```bash
-export FLING_WEB_PASSWORD_HASH="$(FLING_WEB_PASSWORD='change-me' fling web-hash)"
-sudo --preserve-env=FLING_WEB_PASSWORD_HASH fling web
+export SSHFLING_WEB_PASSWORD_HASH="$(SSHFLING_WEB_PASSWORD='change-me' sshfling web-hash)"
+sudo --preserve-env=SSHFLING_WEB_PASSWORD_HASH sshfling web
 ```
 
 Open `http://127.0.0.1:8790` and log in as `admin`.
 
-The policy is stored at `/etc/fling/policy.json`. Fling has hard caps of 1 hour and 10 active sessions. Policy can set lower default limits and lower per-user limits, not higher ones.
+The policy is stored at `/etc/sshfling/policy.json`. SSHFling has hard caps of 1 hour and 10 active sessions. Policy can set lower default limits and lower per-user limits, not higher ones.
 
-Root can always replace binaries or edit local files. To make policy changes controlled in production, manage `/etc/fling/policy.json` through signed packages/config management and alert on package verification or file integrity changes.
+Root can always replace binaries or edit local files. To make policy changes controlled in production, manage `/etc/sshfling/policy.json` through signed packages/config management and alert on package verification or file integrity changes.
 
 On the issuer machine:
 
 ```bash
-fling ca init --ca-key /etc/fling/ca_user_ed25519
+sshfling ca init --ca-key /etc/sshfling/ca_user_ed25519
 ```
 
-Copy `/etc/fling/ca_user_ed25519.pub` to each target host, then on each target host:
+Copy `/etc/sshfling/ca_user_ed25519.pub` to each target host, then on each target host:
 
 ```bash
-sudo fling host install \
+sudo sshfling host install \
   --ca-pub ./ca_user_ed25519.pub \
   --username temp-remote \
   --create-user \
@@ -110,8 +110,8 @@ sudo fling host install \
 Issue a temporary certificate for a client public key:
 
 ```bash
-fling cert issue \
-  --ca-key /etc/fling/ca_user_ed25519 \
+sshfling cert issue \
+  --ca-key /etc/sshfling/ca_user_ed25519 \
   --public-key-file ~/.ssh/id_ed25519.pub \
   --username temp-remote \
   --time 5m \
@@ -127,27 +127,27 @@ ssh -i ~/.ssh/id_ed25519 deploy@host.example.com
 Run the issuer API service:
 
 ```bash
-export FLING_ISSUER_TOKEN="$(openssl rand -hex 32)"
-fling serve --ca-key /etc/fling/ca_user_ed25519 --allowed-principal deploy
+export SSHFLING_ISSUER_TOKEN="$(openssl rand -hex 32)"
+sshfling serve --ca-key /etc/sshfling/ca_user_ed25519 --allowed-principal deploy
 ```
 
 Run it with systemd after installing a package:
 
 ```bash
-sudo useradd --system --home /var/lib/flingd --shell /usr/sbin/nologin flingd
-sudo install -d -m 0750 -o flingd -g flingd /etc/fling
-sudo fling ca init --ca-key /etc/fling/ca_user_ed25519
-sudo chown flingd:flingd /etc/fling/ca_user_ed25519 /etc/fling/ca_user_ed25519.pub
-sudo install -m 0600 -o root -g root /usr/share/doc/fling/flingd.env.example /etc/fling/flingd.env
-sudo sed -i "s/replace-with-a-long-random-token/$(openssl rand -hex 32)/" /etc/fling/flingd.env
-sudo systemctl enable --now flingd
+sudo useradd --system --home /var/lib/sshflingd --shell /usr/sbin/nologin sshflingd
+sudo install -d -m 0750 -o sshflingd -g sshflingd /etc/sshfling
+sudo sshfling ca init --ca-key /etc/sshfling/ca_user_ed25519
+sudo chown sshflingd:sshflingd /etc/sshfling/ca_user_ed25519 /etc/sshfling/ca_user_ed25519.pub
+sudo install -m 0600 -o root -g root /usr/share/doc/sshfling/sshflingd.env.example /etc/sshfling/sshflingd.env
+sudo sed -i "s/replace-with-a-long-random-token/$(openssl rand -hex 32)/" /etc/sshfling/sshflingd.env
+sudo systemctl enable --now sshflingd
 ```
 
 Request a certificate from the service:
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer $FLING_ISSUER_TOKEN" \
+  -H "Authorization: Bearer $SSHFLING_ISSUER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"public_key":"ssh-ed25519 AAAA... user@host","principal":"deploy","seconds":300}' \
   http://127.0.0.1:8787/v1/certificates
@@ -157,17 +157,17 @@ curl -sS \
 
 ```bash
 ./scripts/install-local.sh
-fling init ./my-fling --with-key --session-seconds 60
-cd ./my-fling
-fling network create
-fling server up --build
-fling client run 'whoami && hostname && date -u'
+sshfling init ./my-sshfling --with-key --session-seconds 60
+cd ./my-sshfling
+sshfling network create
+sshfling server up --build
+sshfling client run 'whoami && hostname && date -u'
 ```
 
 Timeout test:
 
 ```bash
-fling test-timeout --seconds 5 --sleep 20
+sshfling test-timeout --seconds 5 --sleep 20
 ```
 
 ## Packages
@@ -193,28 +193,28 @@ Repo registration instructions are in [docs/repos.md](docs/repos.md).
 GitHub Actions workflows are included for public distribution:
 
 - `Release packages without web` builds release artifacts only.
-- `Release packages with public web` publishes a GitHub Pages package site for commands such as `sudo apt install -y fling`, `sudo dnf install -y fling`, Homebrew, macOS `.pkg`, and Windows MSI installs.
+- `Release packages with public web` publishes a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, macOS `.pkg`, and Windows MSI installs.
 
 ## Package Ecosystem Choice
 
 For this tool, native packages are the right default for deployment fleets because the command wraps Docker, writes deployment files, and is likely to be installed by admins.
 
-NPM would be good for developer-first distribution, especially `npm install -g fling`, but it would add a Node runtime expectation. NuGet is only a good fit if this becomes a .NET global tool. Homebrew is the best macOS developer path, winget/Intune are better Windows distribution paths, and APT/YUM are best for Linux fleets.
+NPM would be good for developer-first distribution, especially `npm install -g sshfling`, but it would add a Node runtime expectation. NuGet is only a good fit if this becomes a .NET global tool. Homebrew is the best macOS developer path, winget/Intune are better Windows distribution paths, and APT/YUM are best for Linux fleets.
 
 ## License
 
-Fling is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+SSHFling is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
 
 ## Common Commands
 
 ```bash
-fling doctor
-fling init ./deploy --with-key
-fling network create
-fling server up --build
-fling server logs --tail 100
-fling client run 'uname -a'
-fling server down
+sshfling doctor
+sshfling init ./deploy --with-key
+sshfling network create
+sshfling server up --build
+sshfling server logs --tail 100
+sshfling client run 'uname -a'
+sshfling server down
 ```
 
 ## Direct Compose

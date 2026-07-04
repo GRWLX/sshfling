@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /opt/fling
+cd /opt/sshfling
 
 log() {
-  printf '\n[fling-test] %s\n' "$*"
+  printf '\n[sshfling-test] %s\n' "$*"
 }
 
 fail() {
@@ -30,7 +30,7 @@ cleanup() {
 trap cleanup EXIT
 
 log "syntax checks"
-python3 -m py_compile bin/fling
+python3 -m py_compile bin/sshfling
 bash -n \
   scripts/install-local.sh \
   scripts/create-network.sh \
@@ -38,25 +38,25 @@ bash -n \
   ssh-client/entrypoint.sh \
   ssh-server/entrypoint.sh \
   ssh-server/limited-session.sh \
-  production/fling-session \
+  production/sshfling-session \
   packaging/copy-templates.sh \
   packaging/build-deb.sh \
   packaging/build-rpm.sh \
   packaging/build-pkg.sh
-bin/fling -h >"$work/help.out"
+bin/sshfling -h >"$work/help.out"
 grep -q -- "-t TIME, --time TIME" "$work/help.out"
 grep -q -- "-k \\[USERNAME\\], --kill \\[USERNAME\\]" "$work/help.out"
-grep -q -- "f123" "$work/help.out"
+grep -q -- "s123" "$work/help.out"
 grep -q -- "list" "$work/help.out"
 grep -q -- "web" "$work/help.out"
 
 log "install user-specific policy caps root connections at two"
-bin/fling policy install --user root --max-time 1h --max-connections 2 >"$work/policy.out"
+bin/sshfling policy install --user root --max-time 1h --max-connections 2 >"$work/policy.out"
 grep -q "user: root" "$work/policy.out"
 grep -q "max-connections: 2" "$work/policy.out"
 
 log "web console login can update user-specific policy"
-FLING_WEB_PASSWORD=web-pass FLING_WEB_SESSION_SECRET=test-secret bin/fling web \
+SSHFLING_WEB_PASSWORD=web-pass SSHFLING_WEB_SESSION_SECRET=test-secret bin/sshfling web \
   --listen 127.0.0.1:8899 \
   --policy-file "$work/web-policy.json" >"$work/web.out" 2>"$work/web.err" &
 web_pid="$!"
@@ -105,7 +105,7 @@ log "non-root access grant is rejected"
 install -d -m 0755 "$work/nonroot"
 ssh-keygen -q -t ed25519 -N "" -C "nonroot-test" -f "$work/nonroot/client"
 set +e
-su nobody -s /bin/sh -c "cd /opt/fling && bin/fling -t 1m --ca-key '$work/nonroot/ca' --username denied --public-key-file '$work/nonroot/client.pub'" >"$work/nonroot.out" 2>"$work/nonroot.err"
+su nobody -s /bin/sh -c "cd /opt/sshfling && bin/sshfling -t 1m --ca-key '$work/nonroot/ca' --username denied --public-key-file '$work/nonroot/client.pub'" >"$work/nonroot.out" 2>"$work/nonroot.err"
 nonroot_code="$?"
 set -e
 if [[ "$nonroot_code" -ne 77 ]]; then
@@ -115,14 +115,14 @@ if [[ "$nonroot_code" -ne 77 ]]; then
 fi
 
 log "create CA and configure host for an existing remote user"
-bin/fling ca init --ca-key "$work/ca_user_ed25519" >/dev/null
-bin/fling host install \
+bin/sshfling ca init --ca-key "$work/ca_user_ed25519" >/dev/null
+bin/sshfling host install \
   --ca-pub "$work/ca_user_ed25519.pub" \
   --username root \
   --principal temp-remote \
-  --principal f101 \
-  --principal f102 \
-  --principal f103 \
+  --principal s101 \
+  --principal s102 \
+  --principal s103 \
   --no-validate
 
 sshd -t
@@ -144,7 +144,7 @@ fi
 
 log "issue temp cert with --username and -t"
 set +e
-bin/fling \
+bin/sshfling \
   --ca-key "$work/ca_user_ed25519" \
   --username too-long \
   -t 2h >"$work/too-long.out" 2>"$work/too-long.err"
@@ -155,7 +155,7 @@ if [[ "$too_long_code" -eq 0 ]]; then
 fi
 grep -q "cannot exceed 1 hour" "$work/too-long.err"
 
-bin/fling --json -t 8s \
+bin/sshfling --json -t 8s \
   --ca-key "$work/ca_user_ed25519" \
   --username temp-remote \
   --login-user root \
@@ -174,11 +174,12 @@ with open(sys.argv[2], "w") as out:
     out.write(f"CLIENT_KEY={payload['private_key']}\n")
     out.write(f"CLIENT_CERT={payload['out']}\n")
 PY
+# shellcheck source=/dev/null
 source "$work/setup.env"
 
 ssh-keygen -L -f "$CLIENT_CERT" >"$work/cert.txt"
 grep -q "temp-remote" "$work/cert.txt"
-grep -q "force-command /usr/local/libexec/fling-session --max-seconds 8 --username temp-remote --login-user root --policy-file /etc/fling/policy.json" "$work/cert.txt"
+grep -q "force-command /usr/local/libexec/sshfling-session --max-seconds 8 --username temp-remote --login-user root --policy-file /etc/sshfling/policy.json" "$work/cert.txt"
 
 ssh_base=(
   ssh
@@ -196,8 +197,8 @@ log "ssh login succeeds before expiry"
 grep -q '^root$' "$work/whoami.out"
 
 log "list and kill named sessions with max connections policy"
-for name in f101 f102 f103; do
-  bin/fling --json -t 30s \
+for name in s101 s102 s103; do
+  bin/sshfling --json -t 30s \
     --ca-key "$work/ca_user_ed25519" \
     --username "$name" \
     --login-user root >"$work/$name.json"
@@ -208,11 +209,12 @@ import sys
 from pathlib import Path
 work = Path(sys.argv[1])
 with open(sys.argv[2], "w") as out:
-    for name in ["f101", "f102", "f103"]:
+    for name in ["s101", "s102", "s103"]:
         payload = json.load(open(work / f"{name}.json"))
         out.write(f"{name.upper()}_KEY={payload['private_key']}\n")
         out.write(f"{name.upper()}_CERT={payload['out']}\n")
 PY
+# shellcheck source=/dev/null
 source "$work/multi.env"
 
 ssh_cert() {
@@ -230,74 +232,74 @@ ssh_cert() {
     "$@"
 }
 
-ssh_cert "$F101_KEY" "$F101_CERT" 'echo f101; sleep 30' >"$work/f101-session.out" 2>"$work/f101-session.err" &
-f101_pid="$!"
+ssh_cert "$S101_KEY" "$S101_CERT" 'echo s101; sleep 30' >"$work/s101-session.out" 2>"$work/s101-session.err" &
+s101_pid="$!"
 for _ in $(seq 1 30); do
-  if grep -q '^f101$' "$work/f101-session.out" 2>/dev/null; then
+  if grep -q '^s101$' "$work/s101-session.out" 2>/dev/null; then
     break
   fi
   sleep 0.1
 done
 
-ssh_cert "$F102_KEY" "$F102_CERT" 'echo f102; sleep 30' >"$work/f102-session.out" 2>"$work/f102-session.err" &
-f102_pid="$!"
+ssh_cert "$S102_KEY" "$S102_CERT" 'echo s102; sleep 30' >"$work/s102-session.out" 2>"$work/s102-session.err" &
+s102_pid="$!"
 for _ in $(seq 1 30); do
-  if grep -q '^f102$' "$work/f102-session.out" 2>/dev/null; then
+  if grep -q '^s102$' "$work/s102-session.out" 2>/dev/null; then
     break
   fi
   sleep 0.1
 done
 
 set +e
-ssh_cert "$F103_KEY" "$F103_CERT" 'echo f103' >"$work/f103-session.out" 2>"$work/f103-session.err"
-f103_code="$?"
+ssh_cert "$S103_KEY" "$S103_CERT" 'echo s103' >"$work/s103-session.out" 2>"$work/s103-session.err"
+s103_code="$?"
 set -e
-if [[ "$f103_code" -eq 0 ]]; then
+if [[ "$s103_code" -eq 0 ]]; then
   fail "expected third concurrent session to be rejected"
 fi
-grep -q "Maximum active fling sessions reached" "$work/f103-session.err"
+grep -q "Maximum active sshfling sessions reached" "$work/s103-session.err"
 
-bin/fling --json list --login-user root >"$work/list-two.json"
+bin/sshfling --json list --login-user root >"$work/list-two.json"
 python3 - "$work/list-two.json" <<'PY'
 import json
 import sys
 payload = json.load(open(sys.argv[1]))
 names = {session["username"] for session in payload["sessions"]}
-assert {"f101", "f102"}.issubset(names), names
+assert {"s101", "s102"}.issubset(names), names
 PY
 
-bin/fling -k f101 >"$work/kill-f101.out"
-grep -q "killed 1 active fling session" "$work/kill-f101.out"
+bin/sshfling -k s101 >"$work/kill-s101.out"
+grep -q "killed 1 active sshfling session" "$work/kill-s101.out"
 set +e
-wait "$f101_pid"
-f101_code="$?"
+wait "$s101_pid"
+s101_code="$?"
 set -e
-if [[ "$f101_code" -eq 0 ]]; then
-  fail "expected fling -k f101 to terminate only f101"
+if [[ "$s101_code" -eq 0 ]]; then
+  fail "expected sshfling -k s101 to terminate only s101"
 fi
 
-bin/fling --json list --login-user root >"$work/list-one.json"
+bin/sshfling --json list --login-user root >"$work/list-one.json"
 python3 - "$work/list-one.json" <<'PY'
 import json
 import sys
 payload = json.load(open(sys.argv[1]))
 names = {session["username"] for session in payload["sessions"]}
-assert "f101" not in names, names
-assert "f102" in names, names
+assert "s101" not in names, names
+assert "s102" in names, names
 PY
 
-bin/fling shutdown f102 >"$work/kill-f102.out"
-grep -q "killed 1 active fling session" "$work/kill-f102.out"
+bin/sshfling shutdown s102 >"$work/kill-s102.out"
+grep -q "killed 1 active sshfling session" "$work/kill-s102.out"
 set +e
-wait "$f102_pid"
-f102_code="$?"
+wait "$s102_pid"
+s102_code="$?"
 set -e
-if [[ "$f102_code" -eq 0 ]]; then
-  fail "expected fling shutdown f102 to terminate f102"
+if [[ "$s102_code" -eq 0 ]]; then
+  fail "expected sshfling shutdown s102 to terminate s102"
 fi
 
 log "forced session timeout kills long command"
-bin/fling --json -t 8s \
+bin/sshfling --json -t 8s \
   --ca-key "$work/ca_user_ed25519" \
   --username temp-remote \
   --login-user root >"$work/timeout-setup.json"
@@ -309,6 +311,7 @@ with open(sys.argv[2], "w") as out:
     out.write(f"TIMEOUT_KEY={payload['private_key']}\n")
     out.write(f"TIMEOUT_CERT={payload['out']}\n")
 PY
+# shellcheck source=/dev/null
 source "$work/timeout.env"
 ssh_timeout_base=(
   ssh
@@ -337,7 +340,7 @@ grep -q 'time limit reached after 8 seconds' "$work/timeout.err"
 
 log "issuer API returns a temp certificate"
 ssh-keygen -q -t ed25519 -N "" -C "api-client" -f "$work/api-client"
-FLING_ISSUER_TOKEN=test-token bin/fling serve \
+SSHFLING_ISSUER_TOKEN=test-token bin/sshfling serve \
   --listen 127.0.0.1:8877 \
   --ca-key "$work/ca_user_ed25519" \
   --allowed-principal temp-api \
@@ -384,7 +387,7 @@ wait "$issuer_pid" 2>/dev/null || true
 trap cleanup EXIT
 
 log "setup can generate a random username by default"
-bin/fling --json -t 20s \
+bin/sshfling --json -t 20s \
   --ca-key "$work/ca_user_ed25519" \
   >"$work/random-setup.json"
 python3 - "$work/random-setup.json" <<'PY'
@@ -393,14 +396,14 @@ import re
 import sys
 payload = json.load(open(sys.argv[1]))
 assert payload["ok"] is True
-assert re.fullmatch(r"f[0-9]{3}", payload["username"]), payload["username"]
+assert re.fullmatch(r"s[0-9]{3}", payload["username"]), payload["username"]
 assert payload["generated_key"] is True
 assert payload["private_key"]
 assert payload["out"]
 PY
 
-log "bare fling defaults to one hour with a short random username"
-bin/fling --json \
+log "bare sshfling defaults to one hour with a short random username"
+bin/sshfling --json \
   --ca-key "$work/ca_user_ed25519" \
   >"$work/default-setup.json"
 python3 - "$work/default-setup.json" <<'PY'
@@ -410,15 +413,15 @@ import sys
 payload = json.load(open(sys.argv[1]))
 assert payload["ok"] is True
 assert payload["seconds"] == 3600
-assert re.fullmatch(r"f[0-9]{3}", payload["username"]), payload["username"]
+assert re.fullmatch(r"s[0-9]{3}", payload["username"]), payload["username"]
 PY
 
 log "custom user-specific install policy caps default and requested time"
-bin/fling policy install --policy-file "$work/short-policy.json" --user root --max-time 45s --max-connections 2 >/dev/null
+bin/sshfling policy install --policy-file "$work/short-policy.json" --user root --max-time 45s --max-connections 2 >/dev/null
 set +e
-bin/fling --policy-file "$work/short-policy.json" \
+bin/sshfling --policy-file "$work/short-policy.json" \
   --ca-key "$work/ca_user_ed25519" \
-  --username f201 \
+  --username s201 \
   --login-user root \
   -t 46s >"$work/short-too-long.out" 2>"$work/short-too-long.err"
 short_too_long_code="$?"
@@ -427,7 +430,7 @@ if [[ "$short_too_long_code" -eq 0 ]]; then
   fail "expected policy max-time 45s to reject 46s"
 fi
 grep -q "cannot exceed 45s" "$work/short-too-long.err"
-bin/fling --json \
+bin/sshfling --json \
   --policy-file "$work/short-policy.json" \
   --login-user root \
   --ca-key "$work/ca_user_ed25519" >"$work/short-default.json"
@@ -439,10 +442,10 @@ assert payload["seconds"] == 45
 PY
 
 log "create-user path unlocks generated account for certificate ssh"
-bin/fling host install \
+bin/sshfling host install \
   --ca-pub "$work/ca_user_ed25519.pub" \
-  --username flingtmp \
-  --principal flingtmp \
+  --username sshflingtmp \
+  --principal sshflingtmp \
   --create-user \
   --no-validate
 
@@ -453,9 +456,9 @@ wait "$sshd_pid" 2>/dev/null || true
 sshd_pid="$!"
 sleep 0.5
 
-bin/fling --json -t 20s \
+bin/sshfling --json -t 20s \
   --ca-key "$work/ca_user_ed25519" \
-  --username flingtmp >"$work/created-setup.json"
+  --username sshflingtmp >"$work/created-setup.json"
 python3 - "$work/created-setup.json" "$work/created.env" <<'PY'
 import json
 import sys
@@ -464,6 +467,7 @@ with open(sys.argv[2], "w") as out:
     out.write(f"CREATED_KEY={payload['private_key']}\n")
     out.write(f"CREATED_CERT={payload['out']}\n")
 PY
+# shellcheck source=/dev/null
 source "$work/created.env"
 
 ssh \
@@ -473,7 +477,7 @@ ssh \
   -o "StrictHostKeyChecking=yes" \
   -o "UserKnownHostsFile=$work/known_hosts" \
   -p 2222 \
-  flingtmp@127.0.0.1 'whoami' >"$work/created-whoami.out"
-grep -q '^flingtmp$' "$work/created-whoami.out"
+  sshflingtmp@127.0.0.1 'whoami' >"$work/created-whoami.out"
+grep -q '^sshflingtmp$' "$work/created-whoami.out"
 
 log "all docker integration checks passed"

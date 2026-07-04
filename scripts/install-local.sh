@@ -3,7 +3,7 @@ set -euo pipefail
 
 prefix="${PREFIX:-$HOME/.local}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-template_dir="$prefix/share/fling/templates"
+template_dir="$prefix/share/sshfling/templates"
 
 install -d \
   "$prefix/bin" \
@@ -14,7 +14,7 @@ install -d \
   "$template_dir/production" \
   "$template_dir/systemd"
 
-install -m 0755 "$repo_root/bin/fling" "$prefix/bin/fling"
+install -m 0755 "$repo_root/bin/sshfling" "$prefix/bin/sshfling"
 
 install -m 0644 \
   "$repo_root/.env.example" \
@@ -45,9 +45,9 @@ install -m 0755 \
   "$repo_root/ssh-server/limited-session.sh" \
   "$template_dir/ssh-server/"
 
-install -m 0755 "$repo_root/production/fling-session" "$template_dir/production/fling-session"
-install -m 0644 "$repo_root/systemd/flingd.service" "$template_dir/systemd/flingd.service"
-install -m 0644 "$repo_root/systemd/flingd.env.example" "$template_dir/systemd/flingd.env.example"
+install -m 0755 "$repo_root/production/sshfling-session" "$template_dir/production/sshfling-session"
+install -m 0644 "$repo_root/systemd/sshflingd.service" "$template_dir/systemd/sshflingd.service"
+install -m 0644 "$repo_root/systemd/sshflingd.env.example" "$template_dir/systemd/sshflingd.env.example"
 
-echo "Installed fling to $prefix/bin/fling"
+echo "Installed sshfling to $prefix/bin/sshfling"
 echo "Installed templates to $template_dir"

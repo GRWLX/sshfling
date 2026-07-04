@@ -12,13 +12,13 @@ RUN apt-get update \
     python3 \
   && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /opt/fling
-COPY . /opt/fling
+WORKDIR /opt/sshfling
+COPY . /opt/sshfling
 
 RUN chmod 0755 \
-    /opt/fling/bin/fling \
-    /opt/fling/production/fling-session \
-    /opt/fling/tests/docker/run-production-test.sh \
+    /opt/sshfling/bin/sshfling \
+    /opt/sshfling/production/sshfling-session \
+    /opt/sshfling/tests/docker/run-production-test.sh \
   && mkdir -p /run/sshd
 
-CMD ["/opt/fling/tests/docker/run-production-test.sh"]
+CMD ["/opt/sshfling/tests/docker/run-production-test.sh"]

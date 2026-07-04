@@ -1,11 +1,11 @@
-# Register Fling In Package Repos
+# Register SSHFling In Package Repos
 
 The repo includes two GitHub Actions release paths:
 
 - `Release packages without web` builds `.deb`, `.rpm`, `.msi`, `.pkg`, a source tarball, and release checksums.
 - `Release packages with public web` builds the same package set and publishes a GitHub Pages package site with APT, RPM, Homebrew, macOS pkg, and Windows MSI install entry points.
 
-For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.0`.
+For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.1`.
 
 Replace `OWNER` and `REPO` in the examples below with the GitHub organization/user and repository name.
 
@@ -31,36 +31,36 @@ curl -fsSL "${BASE_URL}/install.sh" | bash -s -- brew
 ## Public Debian / Ubuntu APT
 
 ```bash
-echo "deb [trusted=yes] ${BASE_URL}/apt ./" | sudo tee /etc/apt/sources.list.d/fling.list
-sudo tee /etc/apt/preferences.d/fling >/dev/null <<EOF
-Package: fling
+echo "deb [trusted=yes] ${BASE_URL}/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
+sudo tee /etc/apt/preferences.d/sshfling >/dev/null <<EOF
+Package: sshfling
 Pin: origin ${BASE_HOST}
 Pin-Priority: 1001
 EOF
 sudo apt update
-sudo apt install -y fling
+sudo apt install -y sshfling
 ```
 
 ## Public RHEL / Fedora / Rocky / Alma RPM
 
 ```bash
-sudo tee /etc/yum.repos.d/fling.repo >/dev/null <<EOF
-[fling]
-name=Fling
+sudo tee /etc/yum.repos.d/sshfling.repo >/dev/null <<EOF
+[sshfling]
+name=SSHFling
 baseurl=${BASE_URL}/rpm
 enabled=1
 gpgcheck=0
 EOF
 
-sudo dnf install -y fling
+sudo dnf install -y sshfling
 ```
 
-Use `sudo yum install -y fling` on older yum-based hosts.
+Use `sudo yum install -y sshfling` on older yum-based hosts.
 
 ## Public Homebrew
 
 ```bash
-brew install "${BASE_URL}/homebrew/fling.rb"
+brew install "${BASE_URL}/homebrew/sshfling.rb"
 ```
 
 ## Public macOS pkg
@@ -95,7 +95,7 @@ Minimal local repo:
 
 ```bash
 mkdir -p repo/apt
-cp dist/fling_*.deb repo/apt/
+cp dist/sshfling_*.deb repo/apt/
 cd repo/apt
 dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz
 ```
@@ -103,9 +103,9 @@ dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz
 Register it on a client:
 
 ```bash
-echo "deb [trusted=yes] file:/absolute/path/to/repo/apt ./" | sudo tee /etc/apt/sources.list.d/fling.list
+echo "deb [trusted=yes] file:/absolute/path/to/repo/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
 sudo apt update
-sudo apt install fling
+sudo apt install sshfling
 ```
 
 For production, sign the repo metadata with GPG and host it over HTTPS.
@@ -116,22 +116,22 @@ Minimal local repo:
 
 ```bash
 mkdir -p repo/rpm
-cp dist/fling-*.rpm repo/rpm/
+cp dist/sshfling-*.rpm repo/rpm/
 createrepo_c repo/rpm
 ```
 
 Register it on a client:
 
 ```bash
-sudo tee /etc/yum.repos.d/fling.repo >/dev/null <<'EOF'
-[fling]
-name=Fling
+sudo tee /etc/yum.repos.d/sshfling.repo >/dev/null <<'EOF'
+[sshfling]
+name=SSHFling
 baseurl=file:///absolute/path/to/repo/rpm
 enabled=1
 gpgcheck=0
 EOF
 
-sudo dnf install fling
+sudo dnf install sshfling
 ```
 
 For production, sign RPMs and enable `gpgcheck=1`.
@@ -141,16 +141,16 @@ For production, sign RPMs and enable `gpgcheck=1`.
 For direct `.pkg` distribution:
 
 ```bash
-sudo installer -pkg dist/fling-0.1.0.pkg -target /
+sudo installer -pkg dist/sshfling-0.1.1.pkg -target /
 ```
 
 For Homebrew distribution, publish a source tarball and add a formula to a tap:
 
 ```ruby
-class Fling < Formula
+class Sshfling < Formula
   desc "Time-limited SSH Docker Compose deployment CLI"
-  homepage "https://example.com/fling"
-  url "https://example.com/fling-0.1.0.tar.gz"
+  homepage "https://example.com/sshfling"
+  url "https://example.com/sshfling-0.1.1.tar.gz"
   sha256 "REPLACE_WITH_SHA256"
   license "Apache-2.0"
 
@@ -158,13 +158,13 @@ class Fling < Formula
   depends_on "docker" => :recommended
 
   def install
-    bin.install "bin/fling"
+    bin.install "bin/sshfling"
     pkgshare.install ".env.example", "LICENSE", "README.md", "compose.server.yml", "compose.client.yml"
-    pkgshare.install "scripts", "secrets", "ssh-client", "ssh-server"
+    pkgshare.install "scripts", "secrets", "ssh-client", "ssh-server", "production", "systemd"
   end
 
   test do
-    system "#{bin}/fling", "--version"
+    system "#{bin}/sshfling", "--version"
   end
 end
 ```
@@ -172,8 +172,8 @@ end
 Then users install with:
 
 ```bash
-brew tap your-org/fling
-brew install fling
+brew tap your-org/sshfling
+brew install sshfling
 ```
 
 For production `.pkg` distribution, sign and notarize the package.
@@ -189,7 +189,7 @@ MSI files are not installed from APT/YUM-style repos. Common registration paths:
 Silent install:
 
 ```powershell
-msiexec /i fling-0.1.0.msi /qn
+msiexec /i sshfling-0.1.1.msi /qn
 ```
 
 For production, sign the MSI with an Authenticode certificate.

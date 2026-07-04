@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Package version. Defaults to the tag name or bin/fling VERSION."
+        description: "Package version. Defaults to the tag name or bin/sshfling VERSION."
         required: false
         type: string
 
@@ -43,7 +43,7 @@ jobs:
 
       - name: Build Debian and RPM packages
         env:
-          FLING_VERSION: ${{ steps.version.outputs.version }}
+          SSHFLING_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           ./packaging/build-deb.sh
@@ -53,8 +53,8 @@ jobs:
             --exclude=.github \
             --exclude=build \
             --exclude=dist \
-            --transform "s,^,fling-${FLING_VERSION}/," \
-            -czf "dist/fling-${FLING_VERSION}.tar.gz" \
+            --transform "s,^,sshfling-${SSHFLING_VERSION}/," \
+            -czf "dist/sshfling-${SSHFLING_VERSION}.tar.gz" \
             .
 
       - name: Upload Linux artifacts
@@ -84,7 +84,7 @@ jobs:
 
       - name: Build macOS package
         env:
-          FLING_VERSION: ${{ steps.version.outputs.version }}
+          SSHFLING_VERSION: ${{ steps.version.outputs.version }}
         run: ./packaging/build-pkg.sh
 
       - name: Upload macOS artifact
@@ -111,7 +111,7 @@ jobs:
           } elseif ($env:GITHUB_REF_TYPE -eq "tag") {
             $version = $env:GITHUB_REF_NAME.TrimStart("v")
           } else {
-            $match = Select-String -Path "bin/fling" -Pattern '^VERSION = "([^"]+)"' | Select-Object -First 1
+            $match = Select-String -Path "bin/sshfling" -Pattern '^VERSION = "([^"]+)"' | Select-Object -First 1
             $version = $match.Matches[0].Groups[1].Value
           }
           "version=$version" >> $env:GITHUB_OUTPUT
@@ -125,7 +125,7 @@ jobs:
       - name: Build Windows MSI
         shell: pwsh
         env:
-          FLING_VERSION: ${{ steps.version.outputs.version }}
+          SSHFLING_VERSION: ${{ steps.version.outputs.version }}
         run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build-msi.ps1
 
       - name: Upload Windows artifact

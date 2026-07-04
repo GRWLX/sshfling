@@ -1,5 +1,5 @@
 param(
-  [string]$Version = $(if ($env:FLING_VERSION) { $env:FLING_VERSION } else { "0.1.0" })
+  [string]$Version = $(if ($env:SSHFLING_VERSION) { $env:SSHFLING_VERSION } else { "0.1.1" })
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,7 +8,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $BuildRoot = Join-Path $RepoRoot "build\msi"
 $Stage = Join-Path $BuildRoot "stage"
 $Dist = Join-Path $RepoRoot "dist"
-$ProductDir = Join-Path $Stage "Fling"
+$ProductDir = Join-Path $Stage "SSHFling"
 $TemplateDir = Join-Path $ProductDir "templates"
 
 foreach ($tool in @("candle.exe", "light.exe", "heat.exe")) {
@@ -20,14 +20,14 @@ foreach ($tool in @("candle.exe", "light.exe", "heat.exe")) {
 Remove-Item -Recurse -Force $BuildRoot -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $ProductDir, $TemplateDir, $Dist | Out-Null
 
-Copy-Item -Force (Join-Path $RepoRoot "bin\fling") (Join-Path $ProductDir "fling.py")
+Copy-Item -Force (Join-Path $RepoRoot "bin\sshfling") (Join-Path $ProductDir "sshfling.py")
 Copy-Item -Force (Join-Path $RepoRoot "packaging\policy.json") (Join-Path $ProductDir "policy.json")
 Copy-Item -Force (Join-Path $RepoRoot "LICENSE") (Join-Path $ProductDir "LICENSE")
 
 @"
 @echo off
-python "%~dp0fling.py" %*
-"@ | Set-Content -Encoding ASCII (Join-Path $ProductDir "fling.cmd")
+python "%~dp0sshfling.py" %*
+"@ | Set-Content -Encoding ASCII (Join-Path $ProductDir "sshfling.cmd")
 
 $templateEntries = @(
   ".env.example",
@@ -45,9 +45,9 @@ $templateEntries = @(
   "ssh-server\entrypoint.sh",
   "ssh-server\limited-session.sh",
   "ssh-server\sshd_config",
-  "production\fling-session",
-  "systemd\flingd.service",
-  "systemd\flingd.env.example"
+  "production\sshfling-session",
+  "systemd\sshflingd.service",
+  "systemd\sshflingd.env.example"
 )
 
 foreach ($entry in $templateEntries) {
@@ -59,35 +59,35 @@ foreach ($entry in $templateEntries) {
 
 $ProductCode = "*"
 $UpgradeCode = "9F86364E-40E3-4E90-93D2-907112B2B945"
-$Wxs = Join-Path $BuildRoot "fling.wxs"
+$Wxs = Join-Path $BuildRoot "sshfling.wxs"
 $HarvestedWxs = Join-Path $BuildRoot "harvested.wxs"
-$WixObj = Join-Path $BuildRoot "fling.wixobj"
+$WixObj = Join-Path $BuildRoot "sshfling.wixobj"
 $HarvestedObj = Join-Path $BuildRoot "harvested.wixobj"
 
-heat.exe dir $ProductDir -nologo -cg FlingFiles -dr INSTALLFOLDER -srd -sreg -gg -var var.ProductDir -out $HarvestedWxs
+heat.exe dir $ProductDir -nologo -cg SSHFlingFiles -dr INSTALLFOLDER -srd -sreg -gg -var var.ProductDir -out $HarvestedWxs
 
 @"
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="$ProductCode" Name="Fling" Language="1033" Version="$Version" Manufacturer="Fling Maintainers" UpgradeCode="$UpgradeCode">
+  <Product Id="$ProductCode" Name="SSHFling" Language="1033" Version="$Version" Manufacturer="SSHFling Maintainers" UpgradeCode="$UpgradeCode">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of Fling is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of SSHFling is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFilesFolder">
-        <Directory Id="INSTALLFOLDER" Name="Fling">
+        <Directory Id="INSTALLFOLDER" Name="SSHFling">
           <Component Id="PathComponent" Guid="5B92775A-4A2D-4E65-AE38-43B17117697D">
-            <RegistryValue Root="HKLM" Key="Software\Fling" Name="InstallDir" Value="[INSTALLFOLDER]" Type="string" KeyPath="yes" />
-            <Environment Id="PathFling" Name="PATH" Value="[INSTALLFOLDER]" Permanent="no" Part="last" Action="set" System="yes" />
+            <RegistryValue Root="HKLM" Key="Software\SSHFling" Name="InstallDir" Value="[INSTALLFOLDER]" Type="string" KeyPath="yes" />
+            <Environment Id="PathSSHFling" Name="PATH" Value="[INSTALLFOLDER]" Permanent="no" Part="last" Action="set" System="yes" />
           </Component>
         </Directory>
       </Directory>
     </Directory>
 
-    <Feature Id="DefaultFeature" Title="Fling" Level="1">
+    <Feature Id="DefaultFeature" Title="SSHFling" Level="1">
       <ComponentRef Id="PathComponent" />
-      <ComponentGroupRef Id="FlingFiles" />
+      <ComponentGroupRef Id="SSHFlingFiles" />
     </Feature>
   </Product>
 </Wix>
@@ -95,6 +95,6 @@ heat.exe dir $ProductDir -nologo -cg FlingFiles -dr INSTALLFOLDER -srd -sreg -gg
 
 candle.exe -nologo -dProductDir="$ProductDir" -out $WixObj $Wxs
 candle.exe -nologo -dProductDir="$ProductDir" -out $HarvestedObj $HarvestedWxs
-light.exe -nologo -out (Join-Path $Dist "fling-$Version.msi") $WixObj $HarvestedObj
+light.exe -nologo -out (Join-Path $Dist "sshfling-$Version.msi") $WixObj $HarvestedObj
 
-Write-Output (Join-Path $Dist "fling-$Version.msi")
+Write-Output (Join-Path $Dist "sshfling-$Version.msi")

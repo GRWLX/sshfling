@@ -10,6 +10,9 @@ secrets/*
 !secrets/.gitkeep
 build/
 dist/
+public/
+package-dist/
+release-dist/
 *.deb
 *.rpm
 *.msi

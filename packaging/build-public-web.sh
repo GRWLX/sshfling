@@ -48,10 +48,10 @@ cp "$package_dist"/*.msi "$public_dir/downloads/"
 
 createrepo_c "$public_dir/rpm"
 
-source_tar="$(basename "$(first_file "$public_dir/downloads" "fling-*.tar.gz")")"
+source_tar="$(basename "$(first_file "$public_dir/downloads" "sshfling-*.tar.gz")")"
 source_sha="$(sha256sum "$public_dir/downloads/$source_tar" | awk '{print $1}')"
-cat >"$public_dir/homebrew/fling.rb" <<RUBY
-class Fling < Formula
+cat >"$public_dir/homebrew/sshfling.rb" <<RUBY
+class Sshfling < Formula
   desc "Temporary SSH certificate issuer and access CLI"
   homepage "$base_url"
   url "$base_url/downloads/$source_tar"
@@ -61,13 +61,13 @@ class Fling < Formula
   depends_on "python@3"
 
   def install
-    bin.install "bin/fling"
+    bin.install "bin/sshfling"
     pkgshare.install ".env.example", "LICENSE", "README.md", "compose.server.yml", "compose.client.yml"
     pkgshare.install "scripts", "secrets", "ssh-client", "ssh-server", "production", "systemd"
   end
 
   test do
-    system "#{bin}/fling", "--version"
+    system "#{bin}/sshfling", "--version"
   end
 end
 RUBY
@@ -76,40 +76,40 @@ cat >"$public_dir/install.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
-base_url="${FLING_BASE_URL:-__BASE_URL__}"
+base_url="${SSHFLING_BASE_URL:-__BASE_URL__}"
 base_host="${base_url#http://}"
 base_host="${base_host#https://}"
 base_host="${base_host%%/*}"
 mode="${1:-auto}"
 
 install_apt() {
-  echo "deb [trusted=yes] ${base_url}/apt ./" | sudo tee /etc/apt/sources.list.d/fling.list >/dev/null
-  sudo tee /etc/apt/preferences.d/fling >/dev/null <<EOF
-Package: fling
+  echo "deb [trusted=yes] ${base_url}/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list >/dev/null
+  sudo tee /etc/apt/preferences.d/sshfling >/dev/null <<EOF
+Package: sshfling
 Pin: origin ${base_host}
 Pin-Priority: 1001
 EOF
   sudo apt-get update
-  sudo apt-get install -y fling
+  sudo apt-get install -y sshfling
 }
 
 install_rpm() {
-  sudo tee /etc/yum.repos.d/fling.repo >/dev/null <<EOF
-[fling]
-name=Fling
+  sudo tee /etc/yum.repos.d/sshfling.repo >/dev/null <<EOF
+[sshfling]
+name=SSHFling
 baseurl=${base_url}/rpm
 enabled=1
 gpgcheck=0
 EOF
   if command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y fling
+    sudo dnf install -y sshfling
   else
-    sudo yum install -y fling
+    sudo yum install -y sshfling
   fi
 }
 
 install_brew() {
-  brew install "${base_url}/homebrew/fling.rb"
+  brew install "${base_url}/homebrew/sshfling.rb"
 }
 
 case "$mode" in
@@ -137,7 +137,7 @@ SH
 sed -i "s#__BASE_URL__#$base_url#g" "$public_dir/install.sh"
 chmod 0755 "$public_dir/install.sh"
 
-pkg_name="$(basename "$(first_file "$public_dir/downloads" "fling-*.pkg")")"
+pkg_name="$(basename "$(first_file "$public_dir/downloads" "sshfling-*.pkg")")"
 cat >"$public_dir/macos/install-pkg.sh" <<SH
 #!/usr/bin/env bash
 set -euo pipefail
@@ -148,7 +148,7 @@ sudo installer -pkg "\$tmp/$pkg_name" -target /
 SH
 chmod 0755 "$public_dir/macos/install-pkg.sh"
 
-msi_name="$(basename "$(first_file "$public_dir/downloads" "fling-*.msi")")"
+msi_name="$(basename "$(first_file "$public_dir/downloads" "sshfling-*.msi")")"
 cat >"$public_dir/windows/install.ps1" <<SH
 \$ErrorActionPreference = "Stop"
 \$installer = Join-Path \$env:TEMP "$msi_name"
@@ -165,8 +165,8 @@ SH
   echo '<!doctype html>'
   echo '<html lang="en">'
   echo '<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-  echo "<title>Fling $version downloads</title></head>"
-  echo '<body><h1>Fling downloads</h1><ul>'
+  echo "<title>SSHFling $version downloads</title></head>"
+  echo '<body><h1>SSHFling downloads</h1><ul>'
   for file in "$public_dir"/downloads/*; do
     name="$(basename "$file")"
     echo "<li><a href=\"$name\">$name</a></li>"
@@ -180,7 +180,7 @@ cat >"$public_dir/index.html" <<HTML
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fling $version packages</title>
+  <title>SSHFling $version packages</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 920px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
     code, pre { background: #f4f4f5; border-radius: 6px; }
@@ -189,27 +189,27 @@ cat >"$public_dir/index.html" <<HTML
   </style>
 </head>
 <body>
-  <h1>Fling $version packages</h1>
+  <h1>SSHFling $version packages</h1>
   <h2>Debian / Ubuntu</h2>
-  <pre><code>echo "deb [trusted=yes] $base_url/apt ./" | sudo tee /etc/apt/sources.list.d/fling.list
-sudo tee /etc/apt/preferences.d/fling &gt;/dev/null &lt;&lt;'EOF'
-Package: fling
+  <pre><code>echo "deb [trusted=yes] $base_url/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
+sudo tee /etc/apt/preferences.d/sshfling &gt;/dev/null &lt;&lt;'EOF'
+Package: sshfling
 Pin: origin $base_host
 Pin-Priority: 1001
 EOF
 sudo apt update
-sudo apt install -y fling</code></pre>
+sudo apt install -y sshfling</code></pre>
   <h2>RHEL / Fedora / Rocky / Alma</h2>
-  <pre><code>sudo tee /etc/yum.repos.d/fling.repo &gt;/dev/null &lt;&lt;'EOF'
-[fling]
-name=Fling
+  <pre><code>sudo tee /etc/yum.repos.d/sshfling.repo &gt;/dev/null &lt;&lt;'EOF'
+[sshfling]
+name=SSHFling
 baseurl=$base_url/rpm
 enabled=1
 gpgcheck=0
 EOF
-sudo dnf install -y fling</code></pre>
+sudo dnf install -y sshfling</code></pre>
   <h2>Homebrew</h2>
-  <pre><code>brew install $base_url/homebrew/fling.rb</code></pre>
+  <pre><code>brew install $base_url/homebrew/sshfling.rb</code></pre>
   <h2>macOS pkg</h2>
   <pre><code>curl -fsSL $base_url/macos/install-pkg.sh | sudo bash</code></pre>
   <h2>Windows MSI</h2>

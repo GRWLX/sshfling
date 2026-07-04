@@ -6,7 +6,7 @@ max_allowed_seconds=3600
 max_allowed_connections=10
 username="unknown"
 login_user=""
-policy_file="/etc/fling/policy.json"
+policy_file="/etc/sshfling/policy.json"
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
@@ -27,7 +27,7 @@ while [[ "$#" -gt 0 ]]; do
       shift 2
       ;;
     *)
-      echo "Unknown fling-session option: $1" >&2
+      echo "Unknown sshfling-session option: $1" >&2
       exit 2
       ;;
   esac
@@ -65,12 +65,12 @@ if [[ ! "$max_seconds" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 if [[ ! "$max_allowed_seconds" =~ ^[1-9][0-9]*$ ]] || (( max_allowed_seconds > 3600 )); then
-  echo "Invalid fling policy max_time_seconds." >&2
+  echo "Invalid sshfling policy max_time_seconds." >&2
   exit 2
 fi
 
 if [[ ! "$max_allowed_connections" =~ ^[1-9][0-9]*$ ]] || (( max_allowed_connections > 10 )); then
-  echo "Invalid fling policy max_connections." >&2
+  echo "Invalid sshfling policy max_connections." >&2
   exit 2
 fi
 
@@ -86,27 +86,26 @@ timeout_marker=""
 max_sessions="$max_allowed_connections"
 uid="$(id -u)"
 slot_fd=""
-slot_number=""
 
 if command -v flock >/dev/null 2>&1; then
   for slot in $(seq 1 "$max_sessions"); do
-    lock_file="${TMPDIR:-/tmp}/fling-session-${uid}-${slot}.lock"
+    lock_file="${TMPDIR:-/tmp}/sshfling-session-${uid}-${slot}.lock"
     exec {candidate_fd}>"$lock_file"
     if flock -n "$candidate_fd"; then
       slot_fd="$candidate_fd"
-      slot_number="$slot"
       break
     fi
     eval "exec ${candidate_fd}>&-"
   done
   if [[ -z "$slot_fd" ]]; then
-    echo "Maximum active fling sessions reached for ${USER:-uid-$uid}." >&2
+    echo "Maximum active sshfling sessions reached for ${USER:-uid-$uid}." >&2
     exit 75
   fi
 else
-  active_sessions="$(pgrep -u "$uid" -f 'fling-session' 2>/dev/null | grep -v "^$$$" | wc -l | tr -d '[:space:]')"
+  active_sessions="$(pgrep -u "$uid" -f 'sshfling-session' 2>/dev/null | grep -cv "^$$$" || true)"
+  active_sessions="${active_sessions:-0}"
   if (( active_sessions > max_sessions )); then
-    echo "Maximum active fling sessions reached for ${USER:-uid-$uid}." >&2
+    echo "Maximum active sshfling sessions reached for ${USER:-uid-$uid}." >&2
     exit 75
   fi
 fi
