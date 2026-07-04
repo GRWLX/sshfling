@@ -52,7 +52,7 @@ These files are generated into the public package site. Some can be used directl
 
 `packaging/verify-public-web.sh` checks the generated package site for every target above. The public web release workflow runs this verifier before publishing `gh-pages`.
 
-`tests/cross-os/validate-cli.sh` and `tests/cross-os/validate-cli.ps1` verify the stable runtime contract used by release validation, including the 24-hour policy default, copied wrapper and systemd templates, and active-session PID fields.
+`tests/cross-os/validate-cli.sh` and `tests/cross-os/validate-cli.ps1` verify the stable runtime contract used by release validation, including the 24-hour policy default, copied wrapper and systemd templates, active-session PID fields, and detached job start/list/kill PID behavior.
 
 `.github/workflows/container-image-tests.yml` validates the Docker-based local
 install path with `make test-containers`. It builds the generated package

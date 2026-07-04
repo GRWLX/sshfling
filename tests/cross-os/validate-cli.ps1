@@ -7,6 +7,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$hasNativeCommandUseErrorActionPreference = Test-Path Variable:\PSNativeCommandUseErrorActionPreference
+$previousNativeCommandUseErrorActionPreference = $null
+if ($hasNativeCommandUseErrorActionPreference) {
+  $previousNativeCommandUseErrorActionPreference = $PSNativeCommandUseErrorActionPreference
+  $PSNativeCommandUseErrorActionPreference = $false
+}
 
 function Fail([string]$Message) {
   throw "cross validation failed: $Message"
@@ -61,6 +67,31 @@ try {
     if (-not $connectOutput.Contains($needle)) {
       Fail "connect dry-run missing $needle"
     }
+  }
+
+  $detachedDir = Join-Path $tempRoot "detached"
+  $detachedStartJson = (& $CommandPath --json detached start --name cross --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "import time; print('detached-ready', flush=True); time.sleep(30)" | Out-String)
+  $detachedStart = $detachedStartJson | ConvertFrom-Json
+  if (-not $detachedStart.ok -or $detachedStart.job.name -ne "cross" -or $detachedStart.job.status -ne "processing") {
+    Fail "detached start did not return a processing job"
+  }
+  if ($detachedStart.job.pid -le 0 -or $detachedStart.job.supervisor_pid -le 0) {
+    Fail "detached start did not report process and supervisor PIDs"
+  }
+  $detachedListJson = (& $CommandPath --json detached list --detached-dir $detachedDir | Out-String)
+  $detachedList = $detachedListJson | ConvertFrom-Json
+  if (-not $detachedList.ok -or $detachedList.count -ne 1 -or $detachedList.jobs[0].pid -ne $detachedStart.job.pid) {
+    Fail "detached list did not report the started job"
+  }
+  $detachedKillJson = (& $CommandPath --json detached kill --detached-dir $detachedDir cross | Out-String)
+  $detachedKill = $detachedKillJson | ConvertFrom-Json
+  if (-not $detachedKill.ok -or $detachedKill.job.status -ne "killed" -or $detachedKill.killed -lt 1) {
+    Fail "detached kill did not stop the started job"
+  }
+  $tooLongJson = (& $CommandPath --json detached start --name too-long --time 25h --detached-dir $detachedDir -- python -c "print('no')" | Out-String)
+  $tooLong = $tooLongJson | ConvertFrom-Json
+  if ($tooLong.ok -ne $false -or -not $tooLong.error.message.Contains("cannot exceed 24 hours")) {
+    Fail "detached 25h start was not rejected with the 24h cap"
   }
 
   $project = Join-Path $tempRoot "project"
@@ -128,4 +159,7 @@ finally {
   Remove-Item Env:\SSHFLING_WEB_PASSWORD -ErrorAction SilentlyContinue
   Remove-Item Env:\SSHFLING_CONNECT_DRY_RUN -ErrorAction SilentlyContinue
   Remove-Item Env:\SSHFLING_SSH_BIN -ErrorAction SilentlyContinue
+  if ($hasNativeCommandUseErrorActionPreference) {
+    $PSNativeCommandUseErrorActionPreference = $previousNativeCommandUseErrorActionPreference
+  }
 }

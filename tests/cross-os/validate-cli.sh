@@ -47,6 +47,69 @@ printf '%s\n' "$connect_output" | grep -Fq -- "-p 2222" || fail "connect dry-run
 printf '%s\n' "$connect_output" | grep -Fq "s123@example.invalid" || fail "connect dry-run missing target"
 printf '%s\n' "$connect_output" | grep -Fq "whoami" || fail "connect dry-run missing remote command"
 
+detached_dir="$tmp/detached"
+"$cmd" --json detached start --name cross --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; print("detached-ready", flush=True); time.sleep(30)' >"$tmp/detached-start.json"
+"$cmd" --json detached list --detached-dir "$detached_dir" >"$tmp/detached-list.json"
+python3 - "$tmp/detached-start.json" "$tmp/detached-list.json" <<'PY'
+import json
+import sys
+
+start = json.load(open(sys.argv[1], encoding="utf-8"))
+listing = json.load(open(sys.argv[2], encoding="utf-8"))
+assert start["ok"] is True, start
+job = start["job"]
+assert job["name"] == "cross", job
+assert job["status"] == "processing", job
+assert isinstance(job["pid"], int) and job["pid"] > 0, job
+assert isinstance(job["supervisor_pid"], int) and job["supervisor_pid"] > 0, job
+assert job["seconds"] == 30, job
+assert listing["ok"] is True and listing["count"] == 1, listing
+assert listing["jobs"][0]["pid"] == job["pid"], listing
+PY
+"$cmd" --json detached kill --detached-dir "$detached_dir" cross >"$tmp/detached-kill.json"
+python3 - "$tmp/detached-kill.json" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["ok"] is True, payload
+assert payload["job"]["status"] == "killed", payload
+assert payload["killed"] >= 1, payload
+assert payload["pids"], payload
+PY
+"$cmd" --json detached start --name timeout --time 1s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(10)' >"$tmp/detached-timeout-start.json"
+timeout_seen=0
+timeout_attempts=0
+while [ "$timeout_attempts" -lt 12 ]; do
+  "$cmd" --json detached list --name timeout --detached-dir "$detached_dir" >"$tmp/detached-timeout-list.json"
+  if python3 - "$tmp/detached-timeout-list.json" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+jobs = payload.get("jobs", [])
+sys.exit(0 if jobs and jobs[0].get("status") == "timed_out" else 1)
+PY
+  then
+    timeout_seen=1
+    break
+  fi
+  timeout_attempts=$((timeout_attempts + 1))
+  sleep 1
+done
+if [ "$timeout_seen" -ne 1 ]; then
+  "$cmd" --json detached kill --detached-dir "$detached_dir" timeout >/dev/null 2>&1 || true
+  fail "detached timeout job did not reach timed_out status"
+fi
+set +e
+"$cmd" --json detached start --name too-long --time 25h --detached-dir "$detached_dir" -- python3 -c 'print("no")' >"$tmp/detached-too-long.out" 2>"$tmp/detached-too-long.err"
+detached_too_long_code="$?"
+set -e
+if [ "$detached_too_long_code" -eq 0 ]; then
+  fail "expected detached --time 25h to be rejected"
+fi
+grep -Fq "cannot exceed 24 hours" "$tmp/detached-too-long.out" || fail "detached too-long JSON missing 24h error"
+
 python3 - "$cmd" <<'PY'
 import importlib.machinery
 import importlib.util

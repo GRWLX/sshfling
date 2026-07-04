@@ -19,7 +19,7 @@ SSHFling avoids that pattern. It lets an administrator issue access for a narrow
 5. The server-side forced command enforces the wall-clock limit even if the connection is already open.
 6. The operator can list or kill active sessions with `sudo sshfling list`, `sudo sshfling -k ticket-1234`, or `sudo sshfling shutdown`.
 
-For longer enterprise workflows, SSHFling can issue access up to 24 hours. Active session JSON includes the wrapper PID and child process PID fields for operational tracking. If Codex or another tool needs to continue after the SSH connection closes, hand it to a host supervisor such as systemd or tmux and track that supervisor's PID and logs. See [Codex and enterprise detached workflows](codex-enterprise-workflow.md).
+For longer enterprise workflows, SSHFling can issue access up to 24 hours. Active session JSON includes the wrapper PID and child process PID fields for operational tracking. If Codex or another tool needs to continue after the SSH connection closes, start it with `sshfling detached start` or hand it to a host supervisor such as systemd or tmux, then track that detached PID and logs. See [Codex and enterprise detached workflows](codex-enterprise-workflow.md).
 
 For clients that cannot receive or use an SSH key/certificate, an operator can use password fallback:
 

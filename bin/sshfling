@@ -30,8 +30,10 @@ DEFAULT_SESSION_DIR = "/var/lib/sshfling/sessions"
 DEFAULT_POLICY_FILE = "/etc/sshfling/policy.json"
 DEFAULT_PASSWORD_GRANT_DIR = "/var/lib/sshfling/password-grants"
 DEFAULT_TEMP_USERNAME_PREFIX = "s"
+DEFAULT_DETACHED_DIR = ".sshfling/detached"
 MAX_TIME_SECONDS = 86400
 MAX_CONNECTIONS = 10
+UTC = getattr(dt, "UTC", dt.timezone.utc)
 
 TEMPLATE_ENTRIES = [
     ".env.example",
@@ -637,7 +639,7 @@ def sign_user_certificate(
     if not ca_key_path.exists():
         raise SSHFlingError(f"CA key does not exist: {ca_key_path}", 2)
 
-    key_id = key_id or f"sshfling-{principal}-{dt.datetime.now(dt.UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    key_id = key_id or f"sshfling-{principal}-{dt.datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     serial = serial if serial is not None else secrets.randbits(63)
     force_command = (
         f"{shlex.quote(session_wrapper)} --max-seconds {seconds} "
@@ -687,7 +689,7 @@ def sign_user_certificate(
     else:
         out_path = None
 
-    valid_before = dt.datetime.now(dt.UTC) + dt.timedelta(seconds=seconds)
+    valid_before = dt.datetime.now(UTC) + dt.timedelta(seconds=seconds)
     return {
         "ok": True,
         "certificate": certificate,
@@ -812,7 +814,7 @@ def private_key_hint(public_key_file):
 
 
 def create_temp_client_key(username, session_dir):
-    stamp = dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
+    stamp = dt.datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     safe_username = re.sub(r"[^A-Za-z0-9_.-]+", "_", username).strip("._-") or random_username()
     base_dir = Path(session_dir).expanduser().resolve() / f"{safe_username}-{stamp}-{secrets.token_hex(4)}"
     base_dir.mkdir(parents=True, exist_ok=False)
@@ -863,6 +865,8 @@ def maybe_connect_argv(argv):
         "compose",
         "package",
         "password",
+        "detached",
+        "_detached-supervisor",
     }
     for index, token in enumerate(argv):
         if token == "--":
@@ -1026,7 +1030,7 @@ def cmd_setup_password(args):
         "password": password,
         "seconds": seconds,
         "expires_at": expires_at,
-        "expires_at_utc": dt.datetime.fromtimestamp(expires_at, dt.UTC).isoformat(),
+        "expires_at_utc": dt.datetime.fromtimestamp(expires_at, UTC).isoformat(),
         "server": server_host,
         "ssh_command": f"sshfling {args.username}@{server_host}",
         "results": results,
@@ -1106,6 +1110,32 @@ def cmd_setup(args):
 
 
 def process_exists(pid):
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            access = 0x1000  # PROCESS_QUERY_LIMITED_INFORMATION
+            kernel32 = ctypes.windll.kernel32
+            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+            kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle.restype = wintypes.BOOL
+
+            handle = kernel32.OpenProcess(access, False, int(pid))
+            if not handle:
+                return False
+            try:
+                exit_code = wintypes.DWORD()
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    return False
+                return exit_code.value == 259  # STILL_ACTIVE
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:
+            return False
     try:
         os.kill(pid, 0)
         return True
@@ -1293,6 +1323,352 @@ def kill_sshfling_sessions(login_user=None, session_username=None):
         kill_process_tree(pid, signal.SIGKILL)
 
     return {"ok": True, "killed": len(pids), "pids": pids, "login_user": login_user, "username": session_username}
+
+
+def utc_timestamp():
+    return int(time.time())
+
+
+def utc_iso(timestamp=None):
+    timestamp = utc_timestamp() if timestamp is None else int(timestamp)
+    return dt.datetime.fromtimestamp(timestamp, UTC).isoformat().replace("+00:00", "Z")
+
+
+def detached_root(path=None):
+    if path:
+        return Path(path).expanduser().resolve()
+    env_path = os.environ.get("SSHFLING_DETACHED_DIR")
+    if env_path:
+        return Path(env_path).expanduser().resolve()
+    return (Path.home() / DEFAULT_DETACHED_DIR).resolve()
+
+
+def validate_detached_name(name):
+    if not name or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", name):
+        raise SSHFlingError("Detached job name must match [A-Za-z0-9][A-Za-z0-9_.-]{0,79}.", 2, name=name)
+
+
+def detached_paths(root, name):
+    validate_detached_name(name)
+    root = detached_root(root)
+    return {
+        "root": root,
+        "metadata": root / f"{name}.json",
+        "stdout": root / f"{name}.out.log",
+        "stderr": root / f"{name}.err.log",
+    }
+
+
+def write_json_atomic(path, payload, mode=0o600):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    tmp_path.chmod(mode)
+    tmp_path.replace(path)
+
+
+def read_json_file(path):
+    return json.loads(Path(path).read_text())
+
+
+def detached_command_from(args):
+    command = list(args.detached_args or [])
+    if command and command[0] == "--":
+        command = command[1:]
+    if not command:
+        raise SSHFlingError("Pass the detached command after --.", 2)
+    return command
+
+
+def start_new_process_kwargs(detached=False):
+    if os.name == "nt":
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        if detached:
+            flags |= getattr(subprocess, "DETACHED_PROCESS", 0)
+        return {"creationflags": flags}
+    return {"start_new_session": True}
+
+
+def terminate_detached_process(pid, force=False):
+    sig = signal.SIGKILL if force else signal.SIGTERM
+    if os.name == "nt" and command_path("taskkill"):
+        cmd = ["taskkill", "/PID", str(pid), "/T"]
+        if force:
+            cmd.append("/F")
+        run(cmd, capture=True, check=False)
+        return
+    if os.name != "nt":
+        try:
+            os.killpg(pid, sig)
+            return
+        except ProcessLookupError:
+            return
+        except OSError:
+            pass
+    kill_process_tree(pid, sig)
+
+
+def refresh_detached_job(job):
+    status = job.get("status")
+    pid = job.get("pid")
+    supervisor_pid = job.get("supervisor_pid")
+    if status in {"starting", "processing"}:
+        pid_alive = bool(pid and process_exists(int(pid)))
+        supervisor_alive = bool(supervisor_pid and process_exists(int(supervisor_pid)))
+        if pid_alive:
+            job["status"] = "processing"
+        elif not supervisor_alive:
+            job["status"] = "unknown"
+            job.setdefault("completed_at", utc_timestamp())
+            job.setdefault("completed_at_utc", utc_iso(job["completed_at"]))
+    return job
+
+
+def load_detached_jobs(root):
+    root = detached_root(root)
+    jobs = []
+    if not root.exists():
+        return jobs
+    for path in sorted(root.glob("*.json")):
+        try:
+            job = read_json_file(path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if job.get("managed_by") != "sshfling" or not job.get("name"):
+            continue
+        job["metadata_path"] = str(path)
+        jobs.append(refresh_detached_job(job))
+    return jobs
+
+
+def cmd_detached_start(args):
+    seconds = lifetime_seconds(args, MAX_TIME_SECONDS)
+    if seconds < 1:
+        raise SSHFlingError("Detached job lifetime must be positive.", 2)
+    if seconds > MAX_TIME_SECONDS:
+        raise SSHFlingError(f"Detached job lifetime cannot exceed {format_duration(MAX_TIME_SECONDS)}.", 2)
+    validate_detached_name(args.name)
+
+    command = detached_command_from(args)
+    paths = detached_paths(args.detached_dir, args.name)
+    existing = read_json_file(paths["metadata"]) if paths["metadata"].exists() else None
+    if existing and not args.replace:
+        existing = refresh_detached_job(existing)
+        if existing.get("status") in {"starting", "processing"}:
+            raise SSHFlingError(f"Detached job is already active: {args.name}", 2, pid=existing.get("pid"))
+
+    root = paths["root"]
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        root.chmod(0o700)
+    except OSError:
+        pass
+
+    started_at = utc_timestamp()
+    job = {
+        "version": 1,
+        "managed_by": "sshfling",
+        "name": args.name,
+        "status": "starting",
+        "pid": None,
+        "supervisor_pid": None,
+        "command": command,
+        "cwd": str(Path(args.cwd).expanduser().resolve()),
+        "seconds": seconds,
+        "started_at": started_at,
+        "started_at_utc": utc_iso(started_at),
+        "expires_at": started_at + seconds,
+        "expires_at_utc": utc_iso(started_at + seconds),
+        "metadata_path": str(paths["metadata"]),
+        "stdout_path": str(paths["stdout"]),
+        "stderr_path": str(paths["stderr"]),
+    }
+    write_json_atomic(paths["metadata"], job)
+
+    supervisor_cmd = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "_detached-supervisor",
+        "--metadata",
+        str(paths["metadata"]),
+        "--",
+    ] + command
+    try:
+        supervisor = subprocess.Popen(
+            supervisor_cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=os.name != "nt",
+            **start_new_process_kwargs(detached=True),
+        )
+    except OSError as exc:
+        job["status"] = "failed"
+        job["error"] = str(exc)
+        job["completed_at"] = utc_timestamp()
+        job["completed_at_utc"] = utc_iso(job["completed_at"])
+        write_json_atomic(paths["metadata"], job)
+        raise SSHFlingError(f"Could not start detached supervisor: {exc}", 1) from exc
+
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        try:
+            current = read_json_file(paths["metadata"])
+        except (OSError, json.JSONDecodeError):
+            current = job
+        if current.get("pid") or current.get("status") not in {"starting", "processing"}:
+            job = current
+            break
+        time.sleep(0.05)
+    else:
+        job = read_json_file(paths["metadata"])
+
+    payload = {"ok": True, "job": refresh_detached_job(job)}
+    if args.json:
+        emit_json(payload)
+    else:
+        item = payload["job"]
+        print(f"name: {item['name']}")
+        print(f"status: {item['status']}")
+        print(f"pid: {item.get('pid') or '-'}")
+        print(f"supervisor-pid: {item.get('supervisor_pid') or '-'}")
+        print(f"stdout: {item['stdout_path']}")
+        print(f"stderr: {item['stderr_path']}")
+    return 0
+
+
+def cmd_detached_list(args):
+    jobs = load_detached_jobs(args.detached_dir)
+    if args.name:
+        jobs = [job for job in jobs if job.get("name") == args.name]
+    payload = {"ok": True, "jobs": jobs, "count": len(jobs)}
+    if args.json:
+        emit_json(payload)
+    else:
+        if not jobs:
+            print("no detached sshfling jobs")
+        else:
+            print("name status pid supervisor-pid age max stdout")
+            now = utc_timestamp()
+            for job in jobs:
+                age = max(0, now - int(job.get("started_at", now)))
+                print(
+                    f"{job.get('name', '-')} {job.get('status', '-')} {job.get('pid') or '-'} "
+                    f"{job.get('supervisor_pid') or '-'} {age}s {job.get('seconds', '-')} {job.get('stdout_path', '-')}"
+                )
+    return 0
+
+
+def cmd_detached_kill(args):
+    paths = detached_paths(args.detached_dir, args.name)
+    if not paths["metadata"].exists():
+        raise SSHFlingError(f"Detached job does not exist: {args.name}", 2)
+    job = read_json_file(paths["metadata"])
+    killed = []
+    for pid_key in ["pid", "supervisor_pid"]:
+        pid = job.get(pid_key)
+        if pid and process_exists(int(pid)):
+            terminate_detached_process(int(pid), force=False)
+            killed.append(int(pid))
+
+    deadline = time.time() + 2
+    while time.time() < deadline:
+        live = [pid for pid in killed if process_exists(pid)]
+        if not live:
+            break
+        time.sleep(0.1)
+
+    remaining = [pid for pid in killed if process_exists(pid)]
+    for pid in remaining:
+        terminate_detached_process(pid, force=True)
+
+    job["status"] = "killed"
+    job["killed_at"] = utc_timestamp()
+    job["killed_at_utc"] = utc_iso(job["killed_at"])
+    job["killed_pids"] = killed
+    write_json_atomic(paths["metadata"], job)
+    payload = {"ok": True, "job": job, "killed": len(killed), "pids": killed}
+    if args.json:
+        emit_json(payload)
+    else:
+        print(f"killed {len(killed)} detached process(es)")
+    return 0
+
+
+def cmd_detached_supervisor(args):
+    metadata_path = Path(args.metadata).expanduser().resolve()
+    job = read_json_file(metadata_path)
+    command = detached_command_from(args)
+    job["supervisor_pid"] = os.getpid()
+    write_json_atomic(metadata_path, job)
+    stdout_path = Path(job["stdout_path"])
+    stderr_path = Path(job["stderr_path"])
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    stderr_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with stdout_path.open("ab", buffering=0) as stdout, stderr_path.open("ab", buffering=0) as stderr:
+            try:
+                proc = subprocess.Popen(
+                    command,
+                    cwd=job["cwd"],
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout,
+                    stderr=stderr,
+                    close_fds=os.name != "nt",
+                    **start_new_process_kwargs(detached=False),
+                )
+            except OSError as exc:
+                job.update(
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "supervisor_pid": os.getpid(),
+                        "completed_at": utc_timestamp(),
+                    }
+                )
+                job["completed_at_utc"] = utc_iso(job["completed_at"])
+                write_json_atomic(metadata_path, job)
+                return 127
+
+            job["pid"] = proc.pid
+            job["supervisor_pid"] = os.getpid()
+            job["status"] = "processing"
+            write_json_atomic(metadata_path, job)
+
+            timed_out = False
+            while proc.poll() is None:
+                if utc_timestamp() >= int(job["expires_at"]):
+                    timed_out = True
+                    terminate_detached_process(proc.pid, force=False)
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        terminate_detached_process(proc.pid, force=True)
+                    break
+                time.sleep(0.5)
+
+            exit_code = proc.wait()
+            job["exit_code"] = exit_code
+            job["completed_at"] = utc_timestamp()
+            job["completed_at_utc"] = utc_iso(job["completed_at"])
+            if timed_out:
+                job["status"] = "timed_out"
+            elif exit_code == 0:
+                job["status"] = "completed"
+            else:
+                job["status"] = "failed"
+            write_json_atomic(metadata_path, job)
+            return 0
+    except Exception as exc:
+        try:
+            job.update({"status": "failed", "error": str(exc), "completed_at": utc_timestamp()})
+            job["completed_at_utc"] = utc_iso(job["completed_at"])
+            write_json_atomic(metadata_path, job)
+        except Exception:
+            pass
+        return 1
 
 
 def write_if_changed(path, content, mode=0o644, dry_run=False):
@@ -2550,6 +2926,30 @@ def build_parser():
     web_hash = subparsers.add_parser("web-hash", help="Hash a web login password.")
     web_hash.add_argument("--password-env", default="SSHFLING_WEB_PASSWORD", help="Environment variable containing the password.")
     web_hash.set_defaults(func=cmd_web_hash)
+
+    detached = subparsers.add_parser("detached", help="Manage detached local jobs with PIDs and logs.")
+    detached_sub = detached.add_subparsers(dest="detached_command")
+    detached_start = detached_sub.add_parser("start", help="Start a detached local command.")
+    detached_start.add_argument("--name", required=True, help="Detached job name.")
+    detached_start.add_argument("-t", "--time", type=duration_seconds, default=MAX_TIME_SECONDS, help="Maximum runtime, up to 24h.")
+    detached_start.add_argument("--cwd", default=".", help="Working directory for the command.")
+    detached_start.add_argument("--detached-dir", help="Detached job metadata directory.")
+    detached_start.add_argument("--replace", action="store_true", help="Replace an inactive job with the same name.")
+    detached_start.add_argument("detached_args", nargs=argparse.REMAINDER, help="Command to run after --.")
+    detached_start.set_defaults(func=cmd_detached_start)
+    detached_list = detached_sub.add_parser("list", help="List detached local jobs.")
+    detached_list.add_argument("--name", help="Only show this detached job.")
+    detached_list.add_argument("--detached-dir", help="Detached job metadata directory.")
+    detached_list.set_defaults(func=cmd_detached_list)
+    detached_kill = detached_sub.add_parser("kill", help="Kill a detached local job.")
+    detached_kill.add_argument("name", help="Detached job name.")
+    detached_kill.add_argument("--detached-dir", help="Detached job metadata directory.")
+    detached_kill.set_defaults(func=cmd_detached_kill)
+
+    detached_supervisor = subparsers.add_parser("_detached-supervisor", help=argparse.SUPPRESS)
+    detached_supervisor.add_argument("--metadata", required=True)
+    detached_supervisor.add_argument("detached_args", nargs=argparse.REMAINDER)
+    detached_supervisor.set_defaults(func=cmd_detached_supervisor)
 
     init = subparsers.add_parser("init", help="Copy deployment templates into a directory.")
     init.add_argument("path", nargs="?", default=None, help="Target directory. Defaults to --project-dir.")

@@ -1,6 +1,6 @@
 # Codex and Enterprise Detached Workflows
 
-SSHFling grants temporary SSH access. It does not install Codex, an AI agent, or a vendor daemon on the target host. For enterprise use, keep that boundary clear: use SSHFling for access, then use the host's normal process supervisor when work needs to continue after the SSH connection closes.
+SSHFling grants temporary SSH access. It does not install Codex, an AI agent, or a vendor daemon on the target host. For enterprise use, keep that boundary clear: use SSHFling for access, then use the host's normal process supervision or SSHFling's detached job manager when work needs to continue after the SSH connection closes.
 
 ## 24-Hour Grant
 
@@ -39,11 +39,37 @@ Each session includes:
 
 Use `pid` when calling `sshfling shutdown` or `sshfling -k`. Use `process_pid` or `process_pids` for operational visibility into the command currently doing work.
 
-## Detached Work
+## Detached Work With PID Tracking
 
-Do not rely on raw `nohup`, shell backgrounding, or `disown` for enterprise work. Those patterns make ownership, logs, and shutdown policy harder to audit. Prefer a supervisor that records the main PID and can enforce a runtime limit.
+Do not rely on raw `nohup`, shell backgrounding, or `disown` for enterprise work. Those patterns make ownership, logs, and shutdown policy harder to audit.
 
-On systemd hosts:
+Use SSHFling's detached job manager when you need a process to continue after the SSH connection closes:
+
+```bash
+sshfling detached start \
+  --name codex-ticket-1234 \
+  --time 24h \
+  --cwd /srv/app \
+  -- codex
+```
+
+The start response includes:
+
+- `pid`: the detached command PID.
+- `supervisor_pid`: the SSHFling supervisor PID that enforces the runtime limit.
+- `stdout_path` and `stderr_path`: log files for the detached job.
+- `status`: `processing`, `completed`, `failed`, `timed_out`, or `killed`.
+
+Inspect or stop detached jobs:
+
+```bash
+sshfling detached list
+sshfling detached kill codex-ticket-1234
+```
+
+The detached supervisor enforces the requested runtime and refuses lifetimes over 24 hours.
+
+On systemd hosts, a native systemd unit is also appropriate:
 
 ```bash
 sudo systemd-run \
@@ -61,14 +87,14 @@ sudo systemctl show codex-ticket-1234.service -p ActiveState -p MainPID
 sudo journalctl -u codex-ticket-1234.service -f
 ```
 
-On hosts without systemd, use `tmux` with an explicit timeout:
+On hosts without systemd, `tmux` with an explicit timeout is another option:
 
 ```bash
 tmux new-session -d -s codex-ticket-1234 'cd /srv/app && timeout 24h codex'
 tmux list-panes -t codex-ticket-1234 -F '#{pane_pid}'
 ```
 
-Detached jobs are no longer children of the `sshfling-session` wrapper after the SSH command exits, so `sshfling list` tracks connected SSHFling sessions, not completed handoffs to systemd or tmux. Use the supervisor PID and logs for detached work.
+Detached jobs are no longer children of the `sshfling-session` wrapper after the SSH command exits, so `sshfling list` tracks connected SSHFling sessions. Use `sshfling detached list` for jobs started by SSHFling's detached manager, or use the systemd/tmux supervisor PID and logs for jobs handed off to those tools.
 
 ## Release Validation
 
@@ -77,6 +103,7 @@ The local and cross-OS validation scripts check that:
 - The default policy cap is 86,400 seconds.
 - Installed templates carry the 24-hour wrapper and issuer defaults.
 - Active session JSON exposes `status`, `process_pid`, and `process_pids`.
+- Detached jobs can start, report `pid` and `supervisor_pid`, list, kill, and reject 25-hour runtime requests.
 
 Run local validation before publishing:
 

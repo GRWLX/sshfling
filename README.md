@@ -152,6 +152,16 @@ sudo sshfling list
 
 The list output includes the `sshfling-session` wrapper PID and the active child process PID. JSON output also includes `status`, `process_pid`, and `process_pids` for automation.
 
+Start work that should continue after the SSH connection closes:
+
+```bash
+sshfling detached start --name ticket-1234 --time 24h --cwd /srv/app -- codex
+sshfling detached list
+sshfling detached kill ticket-1234
+```
+
+Detached jobs report a command `pid`, a `supervisor_pid`, stdout/stderr log paths, and enforce the same 24-hour runtime ceiling.
+
 Install per-user policy limits:
 
 ```bash
@@ -353,7 +363,7 @@ GitHub Actions workflows are included for public distribution:
 
 - `Release packages without web` builds release artifacts only.
 - `Release packages with public web` publishes a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, macOS `.pkg`, Windows MSI installs, and community package manifests for BSDs, Arch/AUR, Alpine, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey.
-- `Cross OS validation` installs or builds those outputs across Linux, BSD, macOS, and Windows and checks the 24-hour policy default, copied service templates, and PID fields.
+- `Cross OS validation` installs or builds those outputs across Linux, BSD, macOS, and Windows and checks the 24-hour policy default, copied service templates, active-session PID fields, and detached job PID lifecycle.
 
 Nix users can also run from the repository:
 
