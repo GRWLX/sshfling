@@ -22,7 +22,7 @@ import tempfile
 import time
 from pathlib import Path
 
-VERSION = "0.1.10"
+VERSION = "0.1.11"
 DEFAULT_NETWORK = "timed-ssh-net"
 DEFAULT_SESSION_WRAPPER = "/usr/local/libexec/sshfling-session"
 DEFAULT_ISSUER_LISTEN = "127.0.0.1:8787"

@@ -5,7 +5,7 @@ The repo includes two GitHub Actions release paths:
 - `Release packages without web` builds `.deb`, `.rpm`, `.msi`, `.pkg`, a source tarball, and release checksums.
 - `Release packages with public web` builds the same package set and publishes a GitHub Pages package site with APT, RPM, Homebrew, macOS pkg, Windows MSI, and community package manifests for additional ecosystems.
 
-For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.10`.
+For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.11`.
 
 Replace `OWNER` and `REPO` in the examples below with the GitHub organization/user and repository name.
 
@@ -171,7 +171,7 @@ For production, sign RPMs and enable `gpgcheck=1`.
 For direct `.pkg` distribution:
 
 ```bash
-sudo installer -pkg dist/sshfling-0.1.10.pkg -target /
+sudo installer -pkg dist/sshfling-0.1.11.pkg -target /
 ```
 
 For Homebrew distribution, publish a source tarball and add a formula to a tap:
@@ -180,7 +180,7 @@ For Homebrew distribution, publish a source tarball and add a formula to a tap:
 class Sshfling < Formula
   desc "Time-limited SSH Docker Compose deployment CLI"
   homepage "https://example.com/sshfling"
-  url "https://example.com/sshfling-0.1.10.tar.gz"
+  url "https://example.com/sshfling-0.1.11.tar.gz"
   sha256 "REPLACE_WITH_SHA256"
   license "Apache-2.0"
 
@@ -219,7 +219,7 @@ MSI files are not installed from APT/YUM-style repos. Common registration paths:
 Silent install:
 
 ```powershell
-msiexec /i sshfling-0.1.10.msi /qn
+msiexec /i sshfling-0.1.11.msi /qn
 ```
 
 For production, sign the MSI with an Authenticode certificate.

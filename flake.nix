@@ -15,7 +15,7 @@
         in {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "sshfling";
-            version = "0.1.10";
+            version = "0.1.11";
             src = self;
             nativeBuildInputs = [ pkgs.makeWrapper ];
             dontBuild = true;

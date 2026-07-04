@@ -65,8 +65,8 @@ class Sshfling < Formula
 
   def install
     bin.install "bin/sshfling"
-    pkgshare.install ".env.example", "LICENSE", "README.md", "compose.server.yml", "compose.client.yml"
-    pkgshare.install "scripts", "secrets", "ssh-client", "ssh-server", "production", "systemd"
+    (pkgshare/"templates").install ".env.example", "LICENSE", "README.md", "compose.server.yml", "compose.client.yml"
+    (pkgshare/"templates").install "scripts", "secrets", "ssh-client", "ssh-server", "production", "systemd"
   end
 
   test do
