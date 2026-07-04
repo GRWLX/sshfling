@@ -260,8 +260,13 @@ jobs:
           release: "10.1"
           usesh: true
           prepare: |
-            /usr/sbin/pkg_add -u curl || true
-            /usr/sbin/pkg_add -u python313 || /usr/sbin/pkg_add -u python312 || /usr/sbin/pkg_add -u python311
+            export PKG_PATH="https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/x86_64/10.1/All"
+            if ! command -v curl >/dev/null 2>&1; then
+              /usr/sbin/pkg_add curl
+            fi
+            if ! command -v python3 >/dev/null 2>&1; then
+              /usr/sbin/pkg_add python313 || /usr/sbin/pkg_add python312 || /usr/sbin/pkg_add python311
+            fi
           run: |
             set -eu
             workspace="$(pwd)"
