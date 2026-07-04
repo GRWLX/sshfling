@@ -86,7 +86,7 @@ try {
   $detachedKillJson = (& $CommandPath --json detached kill --detached-dir $detachedDir cross | Out-String)
   $detachedKill = $detachedKillJson | ConvertFrom-Json
   if (-not $detachedKill.ok -or $detachedKill.job.status -ne "killed" -or $detachedKill.killed -lt 1) {
-    Fail "detached kill did not stop the started job"
+    Fail "detached kill did not stop the started job: $($detachedKillJson.Trim())"
   }
   $tooLongJson = (& $CommandPath --json detached start --name too-long --time 25h --detached-dir $detachedDir -- python -c "print('no')" | Out-String)
   $tooLong = $tooLongJson | ConvertFrom-Json

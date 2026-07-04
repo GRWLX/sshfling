@@ -1396,17 +1396,18 @@ def terminate_detached_process(pid, force=False):
         cmd = ["taskkill", "/PID", str(pid), "/T"]
         if force:
             cmd.append("/F")
-        run(cmd, capture=True, check=False)
-        return
+        proc = run(cmd, capture=True, check=False)
+        return proc.returncode == 0
     if os.name != "nt":
         try:
             os.killpg(pid, sig)
-            return
+            return True
         except ProcessLookupError:
-            return
+            return False
         except OSError:
             pass
     kill_process_tree(pid, sig)
+    return True
 
 
 def refresh_detached_job(job):
@@ -1568,8 +1569,13 @@ def cmd_detached_kill(args):
     killed = []
     for pid_key in ["pid", "supervisor_pid"]:
         pid = job.get(pid_key)
-        if pid and process_exists(int(pid)):
-            terminate_detached_process(int(pid), force=False)
+        if not pid:
+            continue
+        if os.name == "nt":
+            terminated = terminate_detached_process(int(pid), force=False)
+        else:
+            terminated = process_exists(int(pid)) and terminate_detached_process(int(pid), force=False)
+        if terminated:
             killed.append(int(pid))
 
     deadline = time.time() + 2
