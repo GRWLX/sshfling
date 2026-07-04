@@ -161,6 +161,7 @@ sshfling detached kill ticket-1234
 ```
 
 Detached jobs report a command `pid`, a `supervisor_pid`, stdout/stderr log paths, and enforce the same 24-hour runtime ceiling.
+Use a unique job name for each tracked change. To reuse a name after the previous job has completed, failed, timed out, or been killed, pass `--replace`; active jobs are never replaced in place.
 
 Install per-user policy limits:
 

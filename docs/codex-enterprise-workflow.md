@@ -68,6 +68,17 @@ sshfling detached kill codex-ticket-1234
 ```
 
 The detached supervisor enforces the requested runtime and refuses lifetimes over 24 hours.
+Job names are audit handles, so `sshfling detached start` refuses to overwrite an existing job by default. Reuse a name only after the prior job is inactive:
+
+```bash
+sshfling detached start --replace \
+  --name codex-ticket-1234 \
+  --time 24h \
+  --cwd /srv/app \
+  -- codex
+```
+
+`--replace` clears the prior stdout/stderr logs before starting the new job. It still refuses active jobs; stop the active job explicitly with `sshfling detached kill` first.
 
 On systemd hosts, a native systemd unit is also appropriate:
 

@@ -1454,10 +1454,16 @@ def cmd_detached_start(args):
     command = detached_command_from(args)
     paths = detached_paths(args.detached_dir, args.name)
     existing = read_json_file(paths["metadata"]) if paths["metadata"].exists() else None
-    if existing and not args.replace:
+    if existing:
         existing = refresh_detached_job(existing)
         if existing.get("status") in {"starting", "processing"}:
             raise SSHFlingError(f"Detached job is already active: {args.name}", 2, pid=existing.get("pid"))
+        if not args.replace:
+            raise SSHFlingError(
+                f"Detached job already exists: {args.name}. Use --replace after it is inactive.",
+                2,
+                status=existing.get("status"),
+            )
 
     root = paths["root"]
     root.mkdir(parents=True, exist_ok=True)
@@ -1465,6 +1471,12 @@ def cmd_detached_start(args):
         root.chmod(0o700)
     except OSError:
         pass
+    if existing and args.replace:
+        for log_path in (paths["stdout"], paths["stderr"]):
+            try:
+                log_path.unlink()
+            except FileNotFoundError:
+                pass
 
     started_at = utc_timestamp()
     job = {

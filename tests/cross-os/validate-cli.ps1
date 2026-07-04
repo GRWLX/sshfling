@@ -93,6 +93,59 @@ try {
   if (-not [regex]::IsMatch($plainKillOutput, "^killed [1-9][0-9]* detached process\(es\)$")) {
     Fail "plain detached kill output was not stable: $plainKillOutput"
   }
+  $null = (& $CommandPath --json detached start --name replace-active --time 300s --cwd $tempRoot --detached-dir $detachedDir -- python -c "import time; time.sleep(300)" | Out-String)
+  $replaceActiveJson = (& $CommandPath --json detached start --replace --name replace-active --time 300s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" | Out-String)
+  $replaceActiveCode = $LASTEXITCODE
+  if ($replaceActiveCode -eq 0) {
+    $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-active | Out-String)
+    Fail "active detached job was replaced"
+  }
+  if (-not $replaceActiveJson.Contains("already active")) {
+    Fail "active detached replace did not explain the active job: $($replaceActiveJson.Trim())"
+  }
+  $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-active | Out-String)
+  $null = (& $CommandPath --json detached start --name replace-done --time 300s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('first', flush=True)" | Out-String)
+  $replaceDoneSeen = $false
+  for ($attempt = 0; $attempt -lt 10; $attempt++) {
+    $replaceDoneListJson = (& $CommandPath --json detached list --name replace-done --detached-dir $detachedDir | Out-String)
+    $replaceDoneList = $replaceDoneListJson | ConvertFrom-Json
+    $replaceDoneJobs = @($replaceDoneList.jobs)
+    if ($replaceDoneJobs.Count -gt 0 -and $replaceDoneJobs[0].status -eq "completed") {
+      $replaceDoneSeen = $true
+      break
+    }
+    Start-Sleep -Seconds 1
+  }
+  if (-not $replaceDoneSeen) {
+    Fail "detached replacement setup did not reach completed status"
+  }
+  $replaceDoneJson = (& $CommandPath --json detached start --name replace-done --time 300s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" | Out-String)
+  $replaceDoneCode = $LASTEXITCODE
+  if ($replaceDoneCode -eq 0) {
+    Fail "inactive detached job was replaced without --replace"
+  }
+  if (-not $replaceDoneJson.Contains("Use --replace after it is inactive")) {
+    Fail "inactive detached replace did not require --replace: $($replaceDoneJson.Trim())"
+  }
+  $null = (& $CommandPath --json detached start --replace --name replace-done --time 300s --cwd $tempRoot --detached-dir $detachedDir -- python -c "import time; print('second', flush=True); time.sleep(300)" | Out-String)
+  $replaceDoneLog = Join-Path $detachedDir "replace-done.out.log"
+  $replaceSecondSeen = $false
+  for ($attempt = 0; $attempt -lt 5; $attempt++) {
+    if ((Test-Path $replaceDoneLog) -and (Get-Content -Raw -Path $replaceDoneLog).Contains("second")) {
+      $replaceSecondSeen = $true
+      break
+    }
+    Start-Sleep -Seconds 1
+  }
+  if (-not $replaceSecondSeen) {
+    $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-done | Out-String)
+    Fail "detached --replace did not start the replacement job"
+  }
+  if ((Get-Content -Raw -Path $replaceDoneLog).Contains("first")) {
+    $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-done | Out-String)
+    Fail "detached --replace did not reset stdout log"
+  }
+  $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-done | Out-String)
   $tooLongJson = (& $CommandPath --json detached start --name too-long --time 25h --detached-dir $detachedDir -- python -c "print('no')" | Out-String)
   $tooLong = $tooLongJson | ConvertFrom-Json
   if ($tooLong.ok -ne $false -or -not $tooLong.error.message.Contains("cannot exceed 24 hours")) {

@@ -80,6 +80,69 @@ PY
 "$cmd" detached start --name plain --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(30)' >"$tmp/detached-plain-start.out"
 "$cmd" detached kill --detached-dir "$detached_dir" plain >"$tmp/detached-plain-kill.out"
 grep -Eq '^killed [1-9][0-9]* detached process\(es\)$' "$tmp/detached-plain-kill.out" || fail "plain detached kill output was not stable"
+"$cmd" --json detached start --name replace-active --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(30)' >"$tmp/detached-replace-active-start.json"
+set +e
+"$cmd" --json detached start --replace --name replace-active --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'print("bad")' >"$tmp/detached-replace-active.out" 2>"$tmp/detached-replace-active.err"
+replace_active_code="$?"
+set -e
+if [ "$replace_active_code" -eq 0 ]; then
+  "$cmd" --json detached kill --detached-dir "$detached_dir" replace-active >/dev/null 2>&1 || true
+  fail "active detached job was replaced"
+fi
+grep -Fq "already active" "$tmp/detached-replace-active.out" || fail "active detached replace did not explain the active job"
+"$cmd" --json detached kill --detached-dir "$detached_dir" replace-active >/dev/null
+"$cmd" --json detached start --name replace-done --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'print("first", flush=True)' >"$tmp/detached-replace-done-start.json"
+replace_done_seen=0
+replace_done_attempts=0
+while [ "$replace_done_attempts" -lt 10 ]; do
+  "$cmd" --json detached list --name replace-done --detached-dir "$detached_dir" >"$tmp/detached-replace-done-list.json"
+  if python3 - "$tmp/detached-replace-done-list.json" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+jobs = payload.get("jobs", [])
+sys.exit(0 if jobs and jobs[0].get("status") == "completed" else 1)
+PY
+  then
+    replace_done_seen=1
+    break
+  fi
+  replace_done_attempts=$((replace_done_attempts + 1))
+  sleep 1
+done
+if [ "$replace_done_seen" -ne 1 ]; then
+  fail "detached replacement setup did not reach completed status"
+fi
+set +e
+"$cmd" --json detached start --name replace-done --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'print("bad")' >"$tmp/detached-replace-done.out" 2>"$tmp/detached-replace-done.err"
+replace_done_code="$?"
+set -e
+if [ "$replace_done_code" -eq 0 ]; then
+  fail "inactive detached job was replaced without --replace"
+fi
+grep -Fq "Use --replace after it is inactive" "$tmp/detached-replace-done.out" || fail "inactive detached replace did not require --replace"
+"$cmd" --json detached start --replace --name replace-done --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; print("second", flush=True); time.sleep(30)' >"$tmp/detached-replace-done-replaced.json"
+replace_done_log="$detached_dir/replace-done.out.log"
+replace_second_seen=0
+replace_second_attempts=0
+while [ "$replace_second_attempts" -lt 5 ]; do
+  if grep -Fq "second" "$replace_done_log" 2>/dev/null; then
+    replace_second_seen=1
+    break
+  fi
+  replace_second_attempts=$((replace_second_attempts + 1))
+  sleep 1
+done
+if [ "$replace_second_seen" -ne 1 ]; then
+  "$cmd" --json detached kill --detached-dir "$detached_dir" replace-done >/dev/null 2>&1 || true
+  fail "detached --replace did not start the replacement job"
+fi
+if grep -Fq "first" "$replace_done_log" 2>/dev/null; then
+  "$cmd" --json detached kill --detached-dir "$detached_dir" replace-done >/dev/null 2>&1 || true
+  fail "detached --replace did not reset stdout log"
+fi
+"$cmd" --json detached kill --detached-dir "$detached_dir" replace-done >/dev/null
 "$cmd" --json detached start --name timeout --time 1s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(10)' >"$tmp/detached-timeout-start.json"
 timeout_seen=0
 timeout_attempts=0
