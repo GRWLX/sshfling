@@ -57,6 +57,8 @@ These files are generated into the public package site. Some can be used directl
 - Slackware 15.0 from the generated SlackBuild.
 - Void Linux from the generated `xbps-src` template.
 - FreeBSD 14.4, OpenBSD 7.9, and NetBSD 10.1 source-runtime smoke tests.
+- pfSense/OPNsense FreeBSD-family substrate coverage for FreeBSD 13.2, 14.0,
+  14.1, 14.2, 14.3, 15.0, and 15.1. See [firewall-os.md](firewall-os.md).
 - macOS from the published `.pkg` and generated Homebrew formula.
 - Windows from the published MSI and portable zip.
 

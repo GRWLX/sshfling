@@ -285,6 +285,49 @@ jobs:
             cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/pkg/share/sshfling/templates/
             "$workspace/tests/cross-os/validate-cli.sh" /usr/pkg/bin/sshfling "${{ inputs.version }}"
 
+  firewall-freebsd-family:
+    name: Firewall OS FreeBSD runtime
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: opnsense-23.x-freebsd-13.2
+            release: "13.2"
+          - name: pfsense-ce-2.7-freebsd-14.0
+            release: "14.0"
+          - name: opnsense-24.x-freebsd-14.1
+            release: "14.1"
+          - name: opnsense-25.1-freebsd-14.2
+            release: "14.2"
+          - name: opnsense-25.7-26.1-freebsd-14.3
+            release: "14.3"
+          - name: pfsense-ce-2.8-plus-25.07-freebsd-15.0
+            release: "15.0"
+          - name: opnsense-26.7-tracking-freebsd-15.1
+            release: "15.1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ matrix.release }}
+          usesh: true
+          prepare: |
+            pkg install -y curl python3 openssh-portable
+          run: |
+            set -eu
+            workspace="$(pwd)"
+            tmp="$(mktemp -d)"
+            cd "$tmp"
+            curl -fsSLO https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz
+            tar -xzf sshfling-${{ inputs.version }}.tar.gz
+            src="$tmp/sshfling-${{ inputs.version }}"
+            install -m 0755 "$src/bin/sshfling" /usr/local/bin/sshfling
+            mkdir -p /usr/local/share/sshfling/templates
+            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
+            "$workspace/tests/firewall-os/validate-freebsd-firewall.sh" /usr/local/bin/sshfling "${{ inputs.version }}" "${{ matrix.name }}"
+
   macos-pkg:
     name: macOS pkg runtime
     runs-on: macos-latest
