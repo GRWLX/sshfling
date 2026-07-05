@@ -1562,7 +1562,7 @@ def cmd_detached_start(args):
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            close_fds=os.name != "nt",
+            close_fds=True,
             **start_new_process_kwargs(detached=True),
         )
     except OSError as exc:
@@ -1686,7 +1686,7 @@ def cmd_detached_supervisor(args):
                     stdin=subprocess.DEVNULL,
                     stdout=stdout,
                     stderr=stderr,
-                    close_fds=os.name != "nt",
+                    close_fds=True,
                     **start_new_process_kwargs(detached=False),
                 )
             except OSError as exc:

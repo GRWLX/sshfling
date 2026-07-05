@@ -152,7 +152,8 @@ try {
   $replaceDoneLog = Join-Path $detachedDir "replace-done.out.log"
   $replaceSecondSeen = $false
   for ($attempt = 0; $attempt -lt 5; $attempt++) {
-    if ((Test-Path $replaceDoneLog) -and (Get-Content -Raw -Path $replaceDoneLog).Contains("second")) {
+    $replaceDoneContent = Get-Content -Raw -Path $replaceDoneLog -ErrorAction SilentlyContinue
+    if ($replaceDoneContent -like "*second*") {
       $replaceSecondSeen = $true
       break
     }
@@ -162,7 +163,7 @@ try {
     $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-done | Out-String)
     Fail "detached --replace did not start the replacement job"
   }
-  if ((Get-Content -Raw -Path $replaceDoneLog).Contains("first")) {
+  if ((Get-Content -Raw -Path $replaceDoneLog) -like "*first*") {
     $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-done | Out-String)
     Fail "detached --replace did not reset stdout log"
   }
