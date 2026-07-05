@@ -98,6 +98,7 @@ assert "Detached job failed to start" in message, payload
 job = payload["error"]["details"]["job"]
 assert job["name"] == "start-fails", job
 assert job["status"] == "failed", job
+assert job.get("pid") is None, job
 assert "error" in job, job
 PY
 "$cmd" --json detached start --name replace-active --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(30)' >"$tmp/detached-replace-active-start.json"

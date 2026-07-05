@@ -96,6 +96,21 @@ try {
   if (-not [regex]::IsMatch($plainKillOutput, "^killed [1-9][0-9]* detached process\(es\)$")) {
     Fail "plain detached kill output was not stable: $plainKillOutput"
   }
+  $missingCwd = Join-Path $tempRoot "missing-cwd"
+  $startFailsRaw = & $CommandPath --json detached start --name start-fails --time 30s --cwd $missingCwd --detached-dir $detachedDir -- python -c "print('bad')" 2>&1
+  $startFailsCode = $LASTEXITCODE
+  $startFailsJson = ($startFailsRaw | Out-String)
+  if ($startFailsCode -eq 0) {
+    Fail "detached start reported success for a command that never started: $($startFailsJson.Trim())"
+  }
+  $startFails = $startFailsJson | ConvertFrom-Json
+  if ($startFails.ok -ne $false -or -not $startFails.error.message.Contains("Detached job failed to start")) {
+    Fail "detached start failure JSON was not stable: $($startFailsJson.Trim())"
+  }
+  $startFailsJob = $startFails.error.details.job
+  if ($startFailsJob.name -ne "start-fails" -or $startFailsJob.status -ne "failed" -or $null -ne $startFailsJob.pid -or -not $startFailsJob.error) {
+    Fail "detached start failure job details were not stable: $($startFailsJson.Trim())"
+  }
   $replaceActiveStartJson = (& $CommandPath --json detached start --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- @sleep30Command | Out-String)
   $replaceActiveStart = $replaceActiveStartJson | ConvertFrom-Json
   if (-not $replaceActiveStart.ok -or $replaceActiveStart.job.status -ne "processing") {
