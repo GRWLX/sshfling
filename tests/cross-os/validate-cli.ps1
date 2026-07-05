@@ -20,7 +20,9 @@ function Fail([string]$Message) {
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sshfling-cross-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
-$sleep30Command = @("powershell", "-NoProfile", "-Command", "Start-Sleep -Seconds 30")
+$activeMarker = Join-Path $tempRoot "replace-active.ready"
+$env:SSHFLING_ACTIVE_MARKER = $activeMarker
+$sleep30Command = @("cmd.exe", "/C", 'echo ready>"%SSHFLING_ACTIVE_MARKER%" & ping -n 31 127.0.0.1 >NUL')
 
 try {
   $versionOutput = (& $CommandPath --version | Out-String).Trim()
@@ -98,6 +100,18 @@ try {
   $replaceActiveStart = $replaceActiveStartJson | ConvertFrom-Json
   if (-not $replaceActiveStart.ok -or $replaceActiveStart.job.status -ne "processing") {
     Fail "active detached replacement setup was not processing: $($replaceActiveStartJson.Trim())"
+  }
+  $replaceActiveReady = $false
+  for ($attempt = 0; $attempt -lt 50; $attempt++) {
+    if (Test-Path $activeMarker) {
+      $replaceActiveReady = $true
+      break
+    }
+    Start-Sleep -Milliseconds 200
+  }
+  if (-not $replaceActiveReady) {
+    $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-active | Out-String)
+    Fail "active detached replacement setup did not start child command: $($replaceActiveStartJson.Trim())"
   }
   $replaceActiveRaw = & $CommandPath --json detached start --replace --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" 2>&1
   $replaceActiveCode = $LASTEXITCODE
@@ -224,6 +238,7 @@ finally {
   Remove-Item Env:\SSHFLING_WEB_PASSWORD -ErrorAction SilentlyContinue
   Remove-Item Env:\SSHFLING_CONNECT_DRY_RUN -ErrorAction SilentlyContinue
   Remove-Item Env:\SSHFLING_SSH_BIN -ErrorAction SilentlyContinue
+  Remove-Item Env:\SSHFLING_ACTIVE_MARKER -ErrorAction SilentlyContinue
   if ($hasNativeCommandUseErrorActionPreference) {
     $PSNativeCommandUseErrorActionPreference = $previousNativeCommandUseErrorActionPreference
   }
