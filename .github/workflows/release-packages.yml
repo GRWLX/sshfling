@@ -58,7 +58,7 @@ jobs:
             HEAD
 
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: linux-packages
           path: |
@@ -88,7 +88,7 @@ jobs:
         run: ./packaging/build-pkg.sh
 
       - name: Upload macOS artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: macos-package
           path: dist/*.pkg
@@ -129,7 +129,7 @@ jobs:
         run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build-msi.ps1
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: windows-package
           path: |
@@ -147,7 +147,7 @@ jobs:
       - windows
     steps:
       - name: Download package artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           path: release-dist
           merge-multiple: true
