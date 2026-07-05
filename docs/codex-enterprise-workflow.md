@@ -37,13 +37,13 @@ Each session includes:
 - `process_pid`: the immediate child process launched by the wrapper.
 - `process_pids`: the child process tree under the wrapper.
 
-Use `pid` when calling `sshfling shutdown` or `sshfling -k`. Use `process_pid` or `process_pids` for operational visibility into the command currently doing work.
+Use the session username/name when calling `sshfling shutdown` or `sshfling -k`. Use `pid`, `process_pid`, and `process_pids` for operational visibility into the wrapper and command currently doing work.
 
 ## Detached Work With PID Tracking
 
 Do not rely on raw `nohup`, shell backgrounding, or `disown` for enterprise work. Those patterns make ownership, logs, and shutdown policy harder to audit.
 
-Use SSHFling's detached job manager when you need a process to continue after the SSH connection closes:
+Use SSHFling's detached job manager when you need a process to continue after the SSH connection closes. Only run `codex` on the target host when that host is intentionally allowed to have the Codex CLI installed; otherwise replace the command with the approved local maintenance command for that host:
 
 ```bash
 sshfling detached start \
@@ -58,7 +58,7 @@ The start response includes:
 - `pid`: the detached command PID.
 - `supervisor_pid`: the SSHFling supervisor PID that enforces the runtime limit.
 - `stdout_path` and `stderr_path`: log files for the detached job.
-- `status`: `processing`, `completed`, `failed`, `timed_out`, or `killed`.
+- `status`: usually `processing`, `completed`, `failed`, `timed_out`, or `killed`; `starting` and `unknown` can appear as transient or fallback states during process handoff and liveness checks.
 
 Inspect or stop detached jobs:
 
@@ -66,6 +66,8 @@ Inspect or stop detached jobs:
 sshfling detached list
 sshfling detached kill codex-ticket-1234
 ```
+
+Detached metadata and logs default to `~/.sshfling/detached` for the user running the command. Use the same account to inspect later, or pass `--detached-dir` consistently. `SSHFLING_DETACHED_DIR` can set a shared explicit metadata directory for automation.
 
 The detached supervisor enforces the requested runtime and refuses lifetimes over 24 hours.
 Job names are audit handles, so `sshfling detached start` refuses to overwrite an existing job by default. Reuse a name only after the prior job is inactive:
@@ -106,6 +108,19 @@ tmux list-panes -t codex-ticket-1234 -F '#{pane_pid}'
 ```
 
 Detached jobs are no longer children of the `sshfling-session` wrapper after the SSH command exits, so `sshfling list` tracks connected SSHFling sessions. Use `sshfling detached list` for jobs started by SSHFling's detached manager, or use the systemd/tmux supervisor PID and logs for jobs handed off to those tools.
+
+## Parallel Codex Execution
+
+For larger enterprise changes, split Codex work into bounded, auditable roles:
+
+- Start three read-only explorers to inspect the codebase, map risks, and propose implementation paths without writing files.
+- Assign two workers only after the exploration phase. Keep their write sets disjoint by file path, and document the owned paths before they start.
+- Set `max_depth=1` for each agent unless the run intentionally allows nested agents; nested execution should be an explicit exception, not the default.
+- Wait for both workers to finish, then consolidate their changes in one coordinating session.
+- Run a final reviewer after consolidation to check integration risks, missing tests, and accidental overlap between worker write sets.
+- Use GitHub Actions runs as validation proof for the finished change, linking the relevant workflow results in the ticket or release notes.
+
+For project-local Codex settings, keep the concurrency policy in `.codex/config.toml` and record worker-owned paths in the task prompt or ticket before agents start. Treat read-only explorer mode as an instruction and access-control boundary: explorers should inspect and report only, while the coordinator owns final integration, tests, commits, and pushes.
 
 ## Release Validation
 

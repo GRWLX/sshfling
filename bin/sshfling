@@ -1586,7 +1586,12 @@ def cmd_detached_start(args):
     else:
         job = read_json_file(paths["metadata"])
 
-    payload = {"ok": True, "job": refresh_detached_job(job)}
+    job = refresh_detached_job(job)
+    if job.get("status") == "failed" and not job.get("pid"):
+        error = job.get("error") or "detached command exited before it could start"
+        raise SSHFlingError(f"Detached job failed to start: {error}", 1, job=job)
+
+    payload = {"ok": True, "job": job}
     if args.json:
         emit_json(payload)
     else:

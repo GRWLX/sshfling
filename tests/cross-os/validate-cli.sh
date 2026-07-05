@@ -80,6 +80,26 @@ PY
 "$cmd" detached start --name plain --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(30)' >"$tmp/detached-plain-start.out"
 "$cmd" detached kill --detached-dir "$detached_dir" plain >"$tmp/detached-plain-kill.out"
 grep -Eq '^killed [1-9][0-9]* detached process\(es\)$' "$tmp/detached-plain-kill.out" || fail "plain detached kill output was not stable"
+set +e
+"$cmd" --json detached start --name start-fails --time 30s --cwd "$tmp/missing-cwd" --detached-dir "$detached_dir" -- python3 -c 'print("bad")' >"$tmp/detached-start-fails.out" 2>"$tmp/detached-start-fails.err"
+start_fails_code="$?"
+set -e
+if [ "$start_fails_code" -eq 0 ]; then
+  fail "detached start reported success for a command that never started"
+fi
+python3 - "$tmp/detached-start-fails.out" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["ok"] is False, payload
+message = payload["error"]["message"]
+assert "Detached job failed to start" in message, payload
+job = payload["error"]["details"]["job"]
+assert job["name"] == "start-fails", job
+assert job["status"] == "failed", job
+assert "error" in job, job
+PY
 "$cmd" --json detached start --name replace-active --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(30)' >"$tmp/detached-replace-active-start.json"
 set +e
 "$cmd" --json detached start --replace --name replace-active --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'print("bad")' >"$tmp/detached-replace-active.out" 2>"$tmp/detached-replace-active.err"
