@@ -57,7 +57,7 @@ jobs:
               printf "%s\n" "[sshfling]" "name=SSHFling" "baseurl=https://grwlx.github.io/sshfling/rpm" "enabled=1" "gpgcheck=0" >/etc/yum.repos.d/sshfling.repo
               dnf install -y sshfling >/dev/null
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Validate ${{ matrix.name }}
         run: |
@@ -100,7 +100,7 @@ jobs:
               test -n "$apk_file"
               apk add --allow-untrusted "$apk_file" >/dev/null
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Validate ${{ matrix.name }}
         run: |
@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build, install, and validate generated openSUSE spec
         run: |
@@ -133,7 +133,7 @@ jobs:
     name: Nix flake runtime
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build and validate generated Nix flake
         run: |
@@ -149,7 +149,7 @@ jobs:
     name: Slackware SlackBuild runtime
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build, install, and validate generated SlackBuild
         run: |
@@ -172,7 +172,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build, install, and validate generated Void template
         run: |
@@ -198,7 +198,7 @@ jobs:
     name: FreeBSD source layout runtime
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: vmactions/freebsd-vm@v1
         with:
@@ -223,7 +223,7 @@ jobs:
     name: OpenBSD source layout runtime
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: vmactions/openbsd-vm@v1
         with:
@@ -253,7 +253,7 @@ jobs:
     name: NetBSD source layout runtime
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: vmactions/netbsd-vm@v1
         with:
@@ -317,7 +317,7 @@ jobs:
           - name: opnsense-26.7-tracking-freebsd-15.1
             release: "15.1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: vmactions/freebsd-vm@v1
         with:
@@ -378,7 +378,7 @@ jobs:
     name: macOS pkg runtime
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install and validate published pkg
         run: |
@@ -391,7 +391,7 @@ jobs:
     name: Homebrew formula runtime
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install and validate published formula
         run: |
@@ -409,7 +409,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install and validate published MSI
         shell: pwsh
@@ -435,7 +435,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download and validate published Windows zip
         shell: pwsh
@@ -453,7 +453,7 @@ jobs:
     name: Community manifest template sanity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Generate and inspect community manifests
         run: |
