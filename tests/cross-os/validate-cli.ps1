@@ -22,7 +22,7 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sshfling-cross-" + [gu
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 $activeMarker = Join-Path $tempRoot "replace-active.ready"
 $env:SSHFLING_ACTIVE_MARKER = $activeMarker
-$sleep30Command = @("cmd.exe", "/C", 'echo ready>"%SSHFLING_ACTIVE_MARKER%" & ping -n 31 127.0.0.1 >NUL')
+$sleep30Command = @("python", "-c", "import os, pathlib, time; pathlib.Path(os.environ['SSHFLING_ACTIVE_MARKER']).write_text('ready'); time.sleep(30)")
 
 try {
   $versionOutput = (& $CommandPath --version | Out-String).Trim()
@@ -112,6 +112,13 @@ try {
   if (-not $replaceActiveReady) {
     $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-active | Out-String)
     Fail "active detached replacement setup did not start child command: $($replaceActiveStartJson.Trim())"
+  }
+  $replaceActiveListJson = (& $CommandPath --json detached list --name replace-active --detached-dir $detachedDir | Out-String)
+  $replaceActiveList = $replaceActiveListJson | ConvertFrom-Json
+  $replaceActiveJobs = @($replaceActiveList.jobs)
+  if ($replaceActiveJobs.Count -ne 1 -or $replaceActiveJobs[0].status -ne "processing") {
+    $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-active | Out-String)
+    Fail "active detached replacement setup was not still processing: $($replaceActiveListJson.Trim())"
   }
   $replaceActiveRaw = & $CommandPath --json detached start --replace --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" 2>&1
   $replaceActiveCode = $LASTEXITCODE
