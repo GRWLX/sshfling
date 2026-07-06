@@ -17,6 +17,9 @@ status=0
 timed_out=0
 watchdog_pid=""
 timeout_marker=""
+session_deadline=$(( $(date +%s) + session_seconds ))
+export SSHFLING_SESSION_ACTIVE=1
+export SSHFLING_SESSION_EXPIRES_AT="$session_deadline"
 
 kill_tree() {
   local pid="$1"

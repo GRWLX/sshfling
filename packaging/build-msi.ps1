@@ -1,10 +1,25 @@
 param(
-  [string]$Version = $(if ($env:SSHFLING_VERSION) { $env:SSHFLING_VERSION } else { "0.1.11" })
+  [string]$Version = $(if ($env:SSHFLING_VERSION) { $env:SSHFLING_VERSION } else { "" })
 )
 
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$SourceVersionMatch = Select-String -Path (Join-Path $RepoRoot "bin\sshfling") -Pattern '^VERSION = "([^"]+)"' | Select-Object -First 1
+if (-not $SourceVersionMatch) {
+  throw "VERSION constant was not found in bin\sshfling."
+}
+$SourceVersion = $SourceVersionMatch.Matches[0].Groups[1].Value
+if (-not $Version) {
+  $Version = $SourceVersion
+}
+if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+  throw "Invalid SSHFling version '$Version'. Use exactly three numeric components, for example: 1.2.3."
+}
+if ($Version -ne $SourceVersion) {
+  throw "Package version '$Version' does not match bin\sshfling VERSION '$SourceVersion'."
+}
+
 $BuildRoot = Join-Path $RepoRoot "build\msi"
 $Stage = Join-Path $BuildRoot "stage"
 $Dist = Join-Path $RepoRoot "dist"

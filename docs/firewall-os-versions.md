@@ -4,18 +4,21 @@ This file records every pfSense and OPNsense version family found in the public
 vendor documentation as of July 4, 2026, and maps each family to the closest
 SSHFling public validation target.
 
-The GitHub Actions matrix validates every x86_64 FreeBSD release currently
-listed by `vmactions/freebsd-vm`: 12.4, 13.2, 13.3, 13.4, 13.5, 14.0, 14.1,
-14.2, 14.3, 14.4, 15.0, and 15.1. Older FreeBSD 6.x through 11.x firewall
-lines are documented but not tested because the public runner no longer boots
-those releases. pfSense `16.0-CURRENT` lines are documented but not tested
-because there is no public `16.0-CURRENT` runner in the VMActions matrix.
+The GitHub Actions matrix validates enterprise-safe x86_64 FreeBSD releases
+currently listed by `vmactions/freebsd-vm`: 13.2, 13.3, 13.4, 13.5, 14.0,
+14.1, 14.2, 14.3, 14.4, 15.0, and 15.1. FreeBSD 12.x firewall lines are
+documented as historical mappings but are not active enterprise CI targets
+because the remaining public package bootstrap path depends on an unsigned
+OPNsense archive. Older FreeBSD 6.x through 11.x firewall lines are documented
+but not tested because the public runner no longer boots those releases.
+pfSense `16.0-CURRENT` lines are documented but not tested because there is no
+public `16.0-CURRENT` runner in the VMActions matrix.
 
 ## Public Runner Coverage
 
 | FreeBSD runner | Firewall mapping | Validation claim |
 | --- | --- | --- |
-| 12.4 | pfSense Plus 21.x/22.x, pfSense CE 2.5.x/2.6.x, OPNsense HardenedBSD/FreeBSD 12.x-era releases | Nearest 12.x smoke, not exact; CI bootstraps Python from the OPNsense FreeBSD:12 package snapshot because the FreeBSD 12 package bootstrap endpoint is gone |
+| 12.4 | pfSense Plus 21.x/22.x, pfSense CE 2.5.x/2.6.x, OPNsense HardenedBSD/FreeBSD 12.x-era releases | Historical mapping only; not active enterprise CI because the remaining public bootstrap archive is unsigned |
 | 13.2 | OPNsense 22.x nearest, OPNsense 23.x, OPNsense 24.1, Business 23.10, Business 24.4 | Exact or nearest 13.x smoke |
 | 13.3 | no direct firewall release mapping found | 13.x continuity smoke |
 | 13.4 | no direct firewall release mapping found | 13.x continuity smoke |
@@ -176,8 +179,8 @@ every BE series linked from that index.
   https://docs.opnsense.org/CE_releases.html
 - OPNsense Business Edition release index:
   https://docs.opnsense.org/BE_releases.html
-- OPNsense FreeBSD:12 package snapshot used for the historical 12.4 CI
-  bootstrap:
+- OPNsense FreeBSD:12 package snapshot previously used for historical 12.4
+  experiments; not used by enterprise CI because it is unsigned:
   https://pkg.opnsense.org/FreeBSD:12:amd64/snapshots/latest/
 - VMActions public FreeBSD VM support matrix:
   https://github.com/vmactions/freebsd-vm

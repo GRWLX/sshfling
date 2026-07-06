@@ -19,7 +19,7 @@ the pfSense and OPNsense substrates that public CI can boot:
 
 | FreeBSD substrate | Firewall release coverage | CI status |
 | --- | --- | --- |
-| FreeBSD 12.4 | pfSense Plus 22.x, pfSense CE 2.6.x, and OPNsense HardenedBSD/FreeBSD 12.x-era releases | Nearest public 12.x runner smoke, not exact |
+| FreeBSD 12.4 | pfSense Plus 22.x, pfSense CE 2.6.x, and OPNsense HardenedBSD/FreeBSD 12.x-era releases | Historical mapping only; not active enterprise CI because the remaining public bootstrap archive is unsigned |
 | FreeBSD 13.2 | OPNsense 23.x, OPNsense 24.1, and Business 24.4 | Matching FreeBSD VM coverage |
 | FreeBSD 13.3 | no direct pfSense/OPNsense release mapping found | Public 13.x continuity smoke |
 | FreeBSD 13.4 | no direct pfSense/OPNsense release mapping found | Public 13.x continuity smoke |

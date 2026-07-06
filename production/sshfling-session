@@ -9,9 +9,14 @@ username="unknown"
 login_user=""
 policy_file="/etc/sshfling/policy.json"
 expires_at=""
+allow_detached_start=0
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --allow-detached-start)
+      allow_detached_start=1
+      shift
+      ;;
     --max-seconds)
       max_seconds="${2:-}"
       shift 2
@@ -46,6 +51,14 @@ done
 if [[ -z "$login_user" ]]; then
   login_user="$(id -un 2>/dev/null || true)"
 fi
+
+audit_log() {
+  local event="$1"
+  shift || true
+  if command -v logger >/dev/null 2>&1; then
+    logger -t sshfling-session -- "event=${event} program=sshfling-session pid=$$ uid=$(id -u 2>/dev/null || printf unknown) username=${username} login_user=${login_user} $*" >/dev/null 2>&1 || true
+  fi
+}
 
 if [[ -r "$policy_file" ]] && command -v python3 >/dev/null 2>&1; then
   policy_values="$(
@@ -100,6 +113,7 @@ if [[ -n "$expires_at" ]]; then
   fi
   now="$(date +%s)"
   if (( now >= expires_at )); then
+    audit_log session_rejected reason=expired expires_at="$expires_at"
     echo "Temporary SSH access expired." >&2
     exit 124
   fi
@@ -114,10 +128,57 @@ timed_out=0
 max_sessions="$max_allowed_connections"
 uid="$(id -u)"
 slot_fd=""
+session_deadline=$(( $(date +%s) + max_seconds ))
+export SSHFLING_SESSION_ACTIVE=1
+export SSHFLING_SESSION_EXPIRES_AT="$session_deadline"
+export SSHFLING_FORCED_SESSION=1
+export SSHFLING_FORCED_SESSION_EXPIRES_AT="$session_deadline"
+if [[ "$allow_detached_start" -eq 1 ]]; then
+  export SSHFLING_FORCED_SESSION_ALLOW_DETACHED=1
+else
+  unset SSHFLING_FORCED_SESSION_ALLOW_DETACHED
+fi
+audit_log session_attempt max_seconds="$max_seconds" expires_at="$session_deadline" max_connections="$max_sessions" allow_detached_start="$allow_detached_start" original_command_present="$([[ -n "${SSH_ORIGINAL_COMMAND:-}" ]] && printf 1 || printf 0)"
+
+private_lock_dir() {
+  local candidate
+  local passwd_home
+  local -a candidates=()
+
+  if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+    candidates+=("${XDG_RUNTIME_DIR%/}/sshfling/session-locks")
+  fi
+  candidates+=("/run/user/${uid}/sshfling/session-locks")
+  candidates+=("/run/sshfling/locks-${uid}")
+  if command -v getent >/dev/null 2>&1; then
+    passwd_home="$(getent passwd "$uid" | awk -F: 'NR == 1 {print $6}')"
+  else
+    passwd_home="${HOME:-}"
+  fi
+  if [[ -n "$passwd_home" ]]; then
+    candidates+=("${passwd_home%/}/.sshfling/session-locks")
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    [[ -n "$candidate" ]] || continue
+    if [[ -L "$candidate" || ( -e "$candidate" && ! -d "$candidate" ) ]]; then
+      continue
+    fi
+    if mkdir -p "$candidate" 2>/dev/null && [[ -d "$candidate" && -O "$candidate" && ! -L "$candidate" ]] && chmod 0700 "$candidate" 2>/dev/null; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
 
 if command -v flock >/dev/null 2>&1; then
+  lock_root="$(private_lock_dir)" || {
+    echo "Could not create a private sshfling lock directory." >&2
+    exit 75
+  }
   for slot in $(seq 1 "$max_sessions"); do
-    lock_file="${TMPDIR:-/tmp}/sshfling-session-${uid}-${slot}.lock"
+    lock_file="${lock_root}/session-${slot}.lock"
     exec {candidate_fd}>"$lock_file"
     if flock -n "$candidate_fd"; then
       slot_fd="$candidate_fd"
@@ -126,6 +187,7 @@ if command -v flock >/dev/null 2>&1; then
     eval "exec ${candidate_fd}>&-"
   done
   if [[ -z "$slot_fd" ]]; then
+    audit_log session_rejected reason=max_sessions max_connections="$max_sessions"
     echo "Maximum active sshfling sessions reached for ${USER:-uid-$uid}." >&2
     exit 75
   fi
@@ -133,10 +195,12 @@ else
   active_sessions="$(pgrep -u "$uid" -f 'sshfling-session' 2>/dev/null | grep -cv "^$$$" || true)"
   active_sessions="${active_sessions:-0}"
   if (( active_sessions >= max_sessions )); then
+    audit_log session_rejected reason=max_sessions max_connections="$max_sessions"
     echo "Maximum active sshfling sessions reached for ${USER:-uid-$uid}." >&2
     exit 75
   fi
 fi
+audit_log session_start max_seconds="$max_seconds" expires_at="$session_deadline" max_connections="$max_sessions" allow_detached_start="$allow_detached_start" original_command_present="$([[ -n "${SSH_ORIGINAL_COMMAND:-}" ]] && printf 1 || printf 0)"
 
 kill_tree() {
   local pid="$1"
@@ -155,7 +219,7 @@ run_limited() {
   "$@" &
   local command_pid="$!"
   local deadline
-  deadline=$(( $(date +%s) + max_seconds ))
+  deadline="$session_deadline"
 
   while kill -0 "$command_pid" 2>/dev/null; do
     if (( $(date +%s) >= deadline )); then
@@ -186,4 +250,5 @@ if [[ "$timed_out" -eq 1 ]]; then
   echo "Temporary SSH session time limit reached after ${max_seconds} seconds." >&2
 fi
 
+audit_log session_end status="$status" timed_out="$timed_out" max_seconds="$max_seconds" expires_at="$session_deadline"
 exit "$status"

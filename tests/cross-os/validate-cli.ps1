@@ -190,10 +190,327 @@ try {
     Fail "detached --replace did not reset stdout log"
   }
   $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-done | Out-String)
-  $tooLongJson = (& $CommandPath --json detached start --name too-long --time 25h --detached-dir $detachedDir -- python -c "print('no')" | Out-String)
+  $tooLongRaw = & $CommandPath --json detached start --name too-long --time 25h --detached-dir $detachedDir -- python -c "print('no')" 2>&1
+  $tooLongCode = $LASTEXITCODE
+  $tooLongJson = ($tooLongRaw | Out-String)
   $tooLong = $tooLongJson | ConvertFrom-Json
-  if ($tooLong.ok -ne $false -or -not $tooLong.error.message.Contains("cannot exceed 24 hours")) {
-    Fail "detached 25h start was not rejected with the 24h cap"
+  if ($tooLongCode -eq 0 -or $tooLong.ok -ne $false -or -not $tooLong.error.message.Contains("cannot exceed 24 hours")) {
+    Fail "detached 25h start was not rejected with the 24h cap: $($tooLongJson.Trim())"
+  }
+
+  $importCheck = Join-Path $tempRoot "import-check.py"
+  @'
+import importlib.machinery
+import importlib.util
+import json
+from pathlib import Path
+from types import SimpleNamespace
+import sys
+import tempfile
+import time
+
+command_path = Path(sys.argv[1])
+candidates = [
+    command_path,
+    command_path.with_suffix(".py"),
+    command_path.parent / "sshfling.py",
+]
+last_syntax_error = None
+for candidate in candidates:
+    if not candidate.exists():
+        continue
+    loader = importlib.machinery.SourceFileLoader("sshfling_setup_under_test", str(candidate))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    sshfling = importlib.util.module_from_spec(spec)
+    try:
+        loader.exec_module(sshfling)
+        break
+    except SyntaxError as exc:
+        last_syntax_error = exc
+else:
+    raise last_syntax_error or AssertionError(f"could not load sshfling source from {candidates}")
+
+def setup_args(**overrides):
+    values = {
+        "password": False,
+        "certificate": False,
+        "ca_key": None,
+        "ca_key_explicit": False,
+        "login_user": None,
+        "login_user_explicit": False,
+        "public_key": None,
+        "public_key_file": None,
+        "out": None,
+        "session_dir": None,
+        "session_dir_explicit": False,
+        "key_id": None,
+        "source_address": None,
+        "no_pty": False,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+routes = []
+original_password = sshfling.cmd_setup_password
+original_certificate = sshfling.cmd_setup_certificate
+try:
+    sshfling.cmd_setup_password = lambda args: routes.append("password") or 0
+    sshfling.cmd_setup_certificate = lambda args: routes.append("certificate") or 0
+
+    assert sshfling.cmd_setup(setup_args()) == 0
+    assert routes[-1] == "password", routes
+    assert sshfling.cmd_setup(setup_args(password=True)) == 0
+    assert routes[-1] == "password", routes
+    assert sshfling.cmd_setup(setup_args(ca_key="/tmp/default-ca", session_dir="/tmp/default-sessions")) == 0
+    assert routes[-1] == "password", routes
+    assert sshfling.cmd_setup(setup_args(certificate=True)) == 0
+    assert routes[-1] == "certificate", routes
+
+    for option_args, expected_option in [
+        ({"public_key": "ssh-ed25519 AAAA test"}, "--public-key"),
+        ({"public_key_file": "/tmp/client.pub"}, "--public-key-file"),
+        ({"out": "/tmp/client-cert.pub"}, "--out"),
+        ({"ca_key": "/tmp/sshfling-ca", "ca_key_explicit": True}, "--ca-key"),
+        ({"login_user": "root", "login_user_explicit": True}, "--login-user"),
+        ({"session_dir": "/tmp/sshfling-sessions", "session_dir_explicit": True}, "--session-dir"),
+        ({"key_id": "setup-test"}, "--key-id"),
+        ({"source_address": "192.0.2.0/24"}, "--source-address"),
+        ({"no_pty": True}, "--no-pty"),
+    ]:
+        try:
+            sshfling.cmd_setup(setup_args(**option_args))
+        except sshfling.SSHFlingError as exc:
+            assert "require --certificate" in exc.message, exc.message
+            assert expected_option in exc.details["options"], exc.details
+        else:
+            raise AssertionError(f"{expected_option} was accepted without --certificate")
+
+    try:
+        sshfling.cmd_setup(setup_args(password=True, certificate=True))
+    except sshfling.SSHFlingError as exc:
+        assert "not both" in exc.message, exc.message
+    else:
+        raise AssertionError("--password and --certificate were accepted together")
+finally:
+    sshfling.cmd_setup_password = original_password
+    sshfling.cmd_setup_certificate = original_certificate
+
+with tempfile.TemporaryDirectory() as tmpdir:
+    root = Path(tmpdir)
+    grant_dir = root / "grants"
+    conf_dir = root / "sshd_config.d"
+    grant_dir.mkdir()
+    conf_dir.mkdir()
+    now = int(time.time())
+
+    fixtures = [
+        ("sshflingactive", True, now + 3600, {"managed_by": "sshfling", "auth": "password"}),
+        ("sshflingexpired", True, now - 60, {"managed_by": "sshfling", "auth": "password"}),
+        ("sshflingexisting", False, now - 60, {"managed_by": "sshfling", "auth": "password"}),
+        ("sshflingunmanaged", True, now - 60, {}),
+        ("sshflingmissingconfig", True, now - 60, {"managed_by": "sshfling", "auth": "password", "config_path": None}),
+    ]
+    for username, created_user, expires_at, extra in fixtures:
+        conf = conf_dir / f"91-sshfling-password-{username}.conf"
+        conf.write_text(f"# Managed by sshfling password grant for {username}.\n", encoding="utf-8")
+        metadata = {
+            "username": username,
+            "created_user": created_user,
+            "expires_at": expires_at,
+            "config_path": str(conf),
+        }
+        metadata.update(extra)
+        if metadata.get("config_path") is None:
+            metadata.pop("config_path", None)
+        (grant_dir / f"{username}.json").write_text(json.dumps(metadata), encoding="utf-8")
+    spoof_conf = conf_dir / "91-sshfling-password-root.conf"
+    spoof_conf.write_text("# Managed by sshfling password grant for root.\n", encoding="utf-8")
+    (grant_dir / "sshflingspoof.json").write_text(json.dumps({
+        "username": "root",
+        "managed_by": "sshfling",
+        "auth": "password",
+        "created_user": True,
+        "expires_at": now - 60,
+        "config_path": str(spoof_conf),
+    }), encoding="utf-8")
+
+    class UserExists:
+        returncode = 0
+        stderr = ""
+        stdout = ""
+
+    original_run = sshfling.run
+    sshfling.run = lambda *args, **kwargs: UserExists()
+    try:
+        results = sshfling.prune_password_grants(
+            grant_dir,
+            all_grants=True,
+            delete_users=True,
+            dry_run=True,
+        )
+    finally:
+        sshfling.run = original_run
+
+    by_user = {item["username"]: item for item in results}
+    assert by_user["sshflingactive"]["status"] == "active", by_user
+    expired = by_user["sshflingexpired"]
+    assert expired["status"] == "pruned", by_user
+    assert expired["config"]["would_remove"] is True, expired
+    assert expired["metadata"]["would_remove"] is True, expired
+    assert expired["user"]["would_delete"] is True, expired
+    existing = by_user["sshflingexisting"]
+    assert existing["status"] == "pruned", by_user
+    assert existing["user"]["would_lock"] is True, existing
+    assert existing["user"]["existing_user"] is True, existing
+    assert existing["user"]["delete_skipped"] == "existing Unix user was not created by sshfling", existing
+    unmanaged = by_user["sshflingunmanaged"]
+    assert unmanaged["status"] == "skipped-unmanaged", unmanaged
+    assert "config" not in unmanaged, unmanaged
+    assert "metadata" not in unmanaged, unmanaged
+    missing_config = by_user["sshflingmissingconfig"]
+    assert missing_config["status"] == "pruned", missing_config
+    assert missing_config["user"]["would_lock"] is True, missing_config
+    assert missing_config["user"]["delete_skipped"], missing_config
+    spoofed = by_user["root"]
+    assert spoofed["status"] == "skipped-unmanaged", spoofed
+    assert "config" not in spoofed, spoofed
+    assert "user" not in spoofed, spoofed
+
+    captured = {}
+    originals = {
+        "require_root": sshfling.require_root,
+        "require_password_host_tools": sshfling.require_password_host_tools,
+        "prune_password_grants": sshfling.prune_password_grants,
+        "unix_user_exists": sshfling.unix_user_exists,
+        "ensure_unix_user": sshfling.ensure_unix_user,
+        "set_user_password": sshfling.set_user_password,
+        "resource_file": sshfling.resource_file,
+        "install_file": sshfling.install_file,
+        "write_if_changed": sshfling.write_if_changed,
+        "write_password_grant_metadata": sshfling.write_password_grant_metadata,
+        "reload_sshd": sshfling.reload_sshd,
+        "detect_server_host": sshfling.detect_server_host,
+        "audit_log": sshfling.audit_log,
+        "emit_json": sshfling.emit_json,
+    }
+    try:
+        sshfling.require_root = lambda action: None
+        sshfling.require_password_host_tools = lambda: None
+        sshfling.unix_user_exists = lambda username: True
+        sshfling.ensure_unix_user = lambda username: {"user": username, "created": False}
+        sshfling.set_user_password = lambda username, password: None
+        sshfling.resource_file = lambda relative: command_path
+        sshfling.install_file = lambda *args, **kwargs: {"installed": True}
+        sshfling.write_if_changed = lambda *args, **kwargs: {"changed": True}
+        def capture_metadata(grant_dir, username, metadata, dry_run=False):
+            captured["metadata"] = metadata
+            return {"metadata": "captured"}
+        sshfling.write_password_grant_metadata = capture_metadata
+        sshfling.reload_sshd = lambda: {"reloaded": "sshd"}
+        sshfling.detect_server_host = lambda: "127.0.0.1"
+        sshfling.audit_log = lambda *args, **kwargs: None
+        sshfling.emit_json = lambda payload: None
+        prune_called = {"value": False}
+        def record_prune(*args, **kwargs):
+            prune_called["value"] = True
+            return []
+        sshfling.prune_password_grants = record_prune
+        try:
+            sshfling.cmd_setup_password(SimpleNamespace(
+                username="sshflingexisting",
+                password_grant_dir=str(grant_dir),
+                password_sshd_config_dir=str(conf_dir),
+                session_wrapper="/tmp/sshfling-session",
+                policy_file=str(root / "policy.json"),
+                time=60,
+                seconds=None,
+                dry_run=True,
+                validate=False,
+                allow_existing_user=False,
+                json=True,
+            ))
+        except sshfling.SSHFlingError as exc:
+            assert "existing Unix user" in exc.message, exc.message
+        else:
+            raise AssertionError("existing Unix user was accepted without --allow-existing-user")
+        assert prune_called["value"] is False, prune_called
+
+        sshfling.prune_password_grants = lambda *args, **kwargs: []
+        sshfling.cmd_setup_password(SimpleNamespace(
+            username="sshflingexisting",
+            password_grant_dir=str(grant_dir),
+            password_sshd_config_dir=str(conf_dir),
+            session_wrapper="/tmp/sshfling-session",
+            policy_file=str(root / "policy.json"),
+            time=60,
+            seconds=None,
+            dry_run=False,
+            validate=False,
+            allow_existing_user=True,
+            json=True,
+        ))
+    finally:
+        for name, value in originals.items():
+            setattr(sshfling, name, value)
+    assert captured["metadata"]["created_user"] is False, captured
+
+    host_root = root / "host"
+    host_root.mkdir()
+    ca_pub = host_root / "ca.pub"
+    template = host_root / "sshfling-session"
+    trusted_ca = host_root / "trusted_ca.pub"
+    principals_dir = host_root / "principals"
+    wrapper_path = host_root / "installed-session"
+    sshd_config = host_root / "90-sshfling.conf"
+    ca_pub.write_text("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest ca\n", encoding="utf-8")
+    template.write_text("#!/bin/sh\n", encoding="utf-8")
+    sshd_config.write_text("original sshd config\n", encoding="utf-8")
+
+    originals = {
+        "require_root": sshfling.require_root,
+        "resource_file": sshfling.resource_file,
+        "validate_sshd_effective": sshfling.validate_sshd_effective,
+    }
+    try:
+        sshfling.require_root = lambda action: None
+        sshfling.resource_file = lambda relative: template
+        def fail_validation(*args, **kwargs):
+            raise sshfling.SSHFlingError("forced validation failure", 2)
+        sshfling.validate_sshd_effective = fail_validation
+        try:
+            sshfling.cmd_host_install(SimpleNamespace(
+                ca_pub=str(ca_pub),
+                trusted_ca=str(trusted_ca),
+                principals_dir=str(principals_dir),
+                user="deploy",
+                principal=None,
+                session_wrapper=str(wrapper_path),
+                sshd_config=str(sshd_config),
+                max_time=None,
+                max_connections=None,
+                policy_file=str(host_root / "policy.json"),
+                create_user=False,
+                dry_run=False,
+                validate=True,
+                reload=False,
+                json=True,
+            ))
+        except sshfling.SSHFlingError as exc:
+            assert "forced validation failure" in exc.message, exc.message
+            assert exc.details.get("rollback"), exc.details
+        else:
+            raise AssertionError("host install validation failure did not abort")
+    finally:
+        for name, value in originals.items():
+            setattr(sshfling, name, value)
+    assert sshd_config.read_text(encoding="utf-8") == "original sshd config\n"
+    assert not trusted_ca.exists(), trusted_ca
+    assert not (principals_dir / "deploy").exists(), principals_dir / "deploy"
+    assert not wrapper_path.exists(), wrapper_path
+'@ | Set-Content -Encoding ASCII $importCheck
+  & python $importCheck $CommandPath
+  if ($LASTEXITCODE -ne 0) {
+    Fail "Python import-level CLI contract checks failed"
   }
 
   $project = Join-Path $tempRoot "project"

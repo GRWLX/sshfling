@@ -8,6 +8,7 @@ RUN apt-get update \
     openssh-server \
     procps \
     tini \
+  && rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub \
   && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --shell /bin/bash deploy \
@@ -17,6 +18,7 @@ RUN useradd --create-home --shell /bin/bash deploy \
   && chmod 0700 /home/deploy/.ssh
 
 COPY sshd_config /etc/ssh/sshd_config
+COPY sshd_config /usr/local/share/timed-ssh-server/sshd_config
 COPY entrypoint.sh /usr/local/bin/ssh-server-entrypoint
 COPY limited-session.sh /usr/local/bin/limited-session
 

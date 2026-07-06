@@ -10,9 +10,19 @@ on:
         description: "Package version. Defaults to the tag name or bin/sshfling VERSION."
         required: false
         type: string
+      generate_test_signing_key:
+        description: "Generate an ephemeral repository signing key for test package sites. Do not use for production tags."
+        required: false
+        default: false
+        type: boolean
+      publish:
+        description: "Deploy the verified package site to GitHub Pages. Leave false for dry-run verification."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: public-package-web-${{ github.ref }}
@@ -25,10 +35,11 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve version
         id: version
+        shell: bash
         env:
           INPUT_VERSION: ${{ github.event.inputs.version || '' }}
         run: |
@@ -58,7 +69,7 @@ jobs:
             HEAD
 
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: linux-packages
           path: |
@@ -71,10 +82,11 @@ jobs:
     name: macOS package
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve version
         id: version
+        shell: bash
         env:
           INPUT_VERSION: ${{ github.event.inputs.version || '' }}
         run: |
@@ -88,7 +100,7 @@ jobs:
         run: ./packaging/build-pkg.sh
 
       - name: Upload macOS artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: macos-package
           path: dist/*.pkg
@@ -98,23 +110,17 @@ jobs:
     name: Windows package
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve version
         id: version
-        shell: pwsh
+        shell: bash
         env:
           INPUT_VERSION: ${{ github.event.inputs.version || '' }}
         run: |
-          if ($env:INPUT_VERSION) {
-            $version = $env:INPUT_VERSION
-          } elseif ($env:GITHUB_REF_TYPE -eq "tag") {
-            $version = $env:GITHUB_REF_NAME.TrimStart("v")
-          } else {
-            $match = Select-String -Path "bin/sshfling" -Pattern '^VERSION = "([^"]+)"' | Select-Object -First 1
-            $version = $match.Matches[0].Groups[1].Value
-          }
-          "version=$version" >> $env:GITHUB_OUTPUT
+          set -euo pipefail
+          version="$(bash packaging/resolve-version.sh "$INPUT_VERSION")"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
 
       - name: Install WiX Toolset
         shell: pwsh
@@ -126,10 +132,10 @@ jobs:
         shell: pwsh
         env:
           SSHFLING_VERSION: ${{ steps.version.outputs.version }}
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build-msi.ps1
+        run: powershell -NoProfile -File packaging/build-msi.ps1
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: windows-package
           path: |
@@ -137,48 +143,211 @@ jobs:
             dist/*.zip
           if-no-files-found: error
 
-  pages:
-    name: Publish package web
+  package-web:
+    name: Verify package web
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     needs:
       - linux
       - macos
       - windows
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Download package artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: package-dist
           merge-multiple: true
 
+      - name: Validate repository signing configuration
+        env:
+          HAS_REPO_GPG_PRIVATE_KEY: ${{ secrets.SSHFLING_REPO_GPG_PRIVATE_KEY != '' }}
+          HAS_REPO_GPG_FINGERPRINT: ${{ secrets.SSHFLING_REPO_GPG_FINGERPRINT != '' }}
+          GENERATE_TEST_SIGNING_KEY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.generate_test_signing_key == 'true' }}
+          PUBLISH_PACKAGE_SITE: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+          if [[ "$PUBLISH_PACKAGE_SITE" == "true" && "$REF_TYPE" != "tag" ]]; then
+            echo "Package site publishing is only allowed from a protected version tag." >&2
+            exit 2
+          fi
+          if [[ "$PUBLISH_PACKAGE_SITE" == "true" && "$HAS_REPO_GPG_PRIVATE_KEY" != "true" ]]; then
+            echo "Package site publishing requires SSHFLING_REPO_GPG_PRIVATE_KEY for stable repository signing." >&2
+            exit 2
+          fi
+          if [[ "$PUBLISH_PACKAGE_SITE" == "true" && "$HAS_REPO_GPG_FINGERPRINT" != "true" ]]; then
+            echo "Package site publishing requires SSHFLING_REPO_GPG_FINGERPRINT as the approved public trust anchor." >&2
+            exit 2
+          fi
+          if [[ "$PUBLISH_PACKAGE_SITE" == "true" && "$GENERATE_TEST_SIGNING_KEY" == "true" ]]; then
+            echo "Ephemeral repository signing keys are not allowed for package site publishing." >&2
+            exit 2
+          fi
+
       - name: Install repository tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends dpkg-dev createrepo-c openssl
+          sudo apt-get install -y --no-install-recommends dpkg-dev createrepo-c gnupg openssl rpm
 
       - name: Build public package site
         env:
           VERSION: ${{ needs.linux.outputs.version }}
           REPOSITORY: ${{ github.repository }}
           OWNER: ${{ github.repository_owner }}
+          SSHFLING_REPO_GPG_PRIVATE_KEY: ${{ secrets.SSHFLING_REPO_GPG_PRIVATE_KEY }}
+          SSHFLING_REPO_GPG_KEY_ID: ${{ secrets.SSHFLING_REPO_GPG_KEY_ID }}
+          SSHFLING_REPO_GPG_FINGERPRINT: ${{ secrets.SSHFLING_REPO_GPG_FINGERPRINT }}
+          SSHFLING_REPO_GPG_PASSPHRASE: ${{ secrets.SSHFLING_REPO_GPG_PASSPHRASE }}
+          SSHFLING_GENERATE_REPO_SIGNING_KEY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.generate_test_signing_key == 'true' && '1' || '' }}
+          REQUIRE_REPO_SIGNATURES: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
         run: |
           bash packaging/build-public-web.sh package-dist public
           bash packaging/verify-public-web.sh public
 
-      - name: Publish gh-pages branch
+      - name: Write package site evidence
+        run: |
+          set -euo pipefail
+          {
+            echo "# SSHFling package site evidence"
+            echo
+            echo "Version: ${{ needs.linux.outputs.version }}"
+            echo "Ref: ${GITHUB_REF_NAME}"
+            echo "Commit: ${GITHUB_SHA}"
+            if [[ -f public/sshfling-repo-fingerprint.txt ]]; then
+              echo "Repository signing fingerprint: \`$(tr -d '[:space:]' < public/sshfling-repo-fingerprint.txt)\`"
+            fi
+            echo
+            echo "| Download | Bytes | SHA-256 |"
+            echo "| --- | ---: | --- |"
+            while IFS= read -r -d '' file; do
+              name="${file#public/downloads/}"
+              bytes="$(wc -c <"$file" | tr -d '[:space:]')"
+              hash="$(sha256sum "$file" | awk '{print $1}')"
+              printf "| \`%s\` | %s | \`%s\` |\n" "$name" "$bytes" "$hash"
+            done < <(find public/downloads -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z)
+          } > public/RELEASE-EVIDENCE.md
+          cat public/RELEASE-EVIDENCE.md >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Generate and validate package site evidence gate
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUIRE_REPO_SIGNATURES: ${{ github.event_name == 'push' || github.event.inputs.publish == 'true' }}
+        run: |
+          set -euo pipefail
+          python3 tools/generate_release_evidence.py \
+            --mode package-site \
+            --public-dir public \
+            --version "${{ needs.linux.outputs.version }}" \
+            --owner "${{ github.repository_owner }}" \
+            --source-commit "$GITHUB_SHA"
+          make release-matrix-validate \
+            RELEASE_MATRIX=docs/release/enterprise-release-evidence/generated/package-site-matrix.csv \
+            RELEASE_MANIFEST=docs/release/enterprise-release-evidence/generated/package-site-manifest.json
+
+      - name: Upload package site release evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-site-release-evidence
+          path: docs/release/enterprise-release-evidence/generated
+          if-no-files-found: error
+
+      - name: Write package site attestation subjects
+        run: |
+          set -euo pipefail
+          find public -type f -print0 | sort -z | xargs -0 sha256sum >"$RUNNER_TEMP/package-site-subjects.sha256"
+
+      - name: Attest package site provenance
+        if: github.ref_type == 'tag' && (github.event_name == 'push' || github.event.inputs.publish == 'true')
+        uses: actions/attest@v4
+        with:
+          subject-checksums: ${{ runner.temp }}/package-site-subjects.sha256
+
+      - name: Upload verified package web artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: public-package-web
+          path: public
+          if-no-files-found: error
+          include-hidden-files: true
+
+  deploy-pages:
+    name: Deploy package web
+    if: github.ref_type == 'tag' && (github.event_name == 'push' || github.event.inputs.publish == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    needs:
+      - linux
+      - package-web
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download verified package web artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: public-package-web
+          path: public
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: public
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+      - name: Verify deployed package site
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
           VERSION: ${{ needs.linux.outputs.version }}
         run: |
           set -euo pipefail
-          cd public
-          git init
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b gh-pages
-          git add .
-          git commit -m "Publish package repository ${VERSION}"
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push -f origin gh-pages
+          base_url="${PAGE_URL%/}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          fetch() {
+            local path="$1"
+            local output="$2"
+            local url="${base_url}/${path}"
+            local _attempt
+            for _attempt in {1..12}; do
+              if curl -fsSL "$url" -o "$output"; then
+                return 0
+              fi
+              sleep 10
+            done
+            curl -fsSL "$url" -o "$output"
+          }
+
+          fetch index.html "$tmp/index.html"
+          fetch install.sh "$tmp/install.sh"
+          fetch apt/InRelease "$tmp/InRelease"
+          fetch apt/Release.gpg "$tmp/Release.gpg"
+          fetch rpm/repodata/repomd.xml.asc "$tmp/repomd.xml.asc"
+          fetch downloads/SHA256SUMS "$tmp/downloads-SHA256SUMS"
+
+          grep -Fq "SSHFling ${VERSION} packages" "$tmp/index.html"
+          grep -Fq "signed-by=/usr/share/keyrings/sshfling-repo.gpg" "$tmp/index.html"
+          grep -Fq "repo_gpgcheck=1" "$tmp/index.html"
+          grep -Fq "signed-by=/usr/share/keyrings/sshfling-repo.gpg" "$tmp/install.sh"
+          grep -Fq "repo_gpgcheck=1" "$tmp/install.sh"
+          grep -Fq "BEGIN PGP SIGNED MESSAGE" "$tmp/InRelease"
+          grep -Fq "BEGIN PGP SIGNATURE" "$tmp/Release.gpg"
+          grep -Fq "BEGIN PGP SIGNATURE" "$tmp/repomd.xml.asc"
+          grep -Fq "sshfling-${VERSION}.tar.gz" "$tmp/downloads-SHA256SUMS"
+          forbidden_apt="trusted=""yes"
+          forbidden_rpm="gpgcheck=""0"
+          ! grep -R -I -F -e "$forbidden_apt" -e "$forbidden_rpm" "$tmp"

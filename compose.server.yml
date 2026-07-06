@@ -10,9 +10,30 @@ services:
       SSH_SESSION_SECONDS: "${SSH_SESSION_SECONDS:-60}"
       AUTHORIZED_KEYS_FILE: /run/secrets/ssh_authorized_keys
     ports:
-      - "${SSH_PORT_ON_HOST:-2222}:22"
+      - "${SSH_BIND_ADDRESS:-127.0.0.1}:${SSH_PORT_ON_HOST:-2222}:22"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - NET_BIND_SERVICE
+      - SETGID
+      - SETUID
+      - SYS_CHROOT
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /etc/ssh:rw,noexec,nosuid,nodev,size=1m
+      - /home/deploy/.ssh:rw,noexec,nosuid,nodev,size=1m
+      - /run:rw,noexec,nosuid,nodev,size=16m
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
     secrets:
-      - ssh_authorized_keys
+      - source: ssh_authorized_keys
+        target: ssh_authorized_keys
+        mode: 0444
     networks:
       timed-ssh-net:
         aliases:

@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-packages-${{ github.ref }}
@@ -25,7 +25,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve version
         id: version
@@ -58,7 +58,7 @@ jobs:
             HEAD
 
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: linux-packages
           path: |
@@ -71,7 +71,7 @@ jobs:
     name: macOS package
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve version
         id: version
@@ -88,7 +88,7 @@ jobs:
         run: ./packaging/build-pkg.sh
 
       - name: Upload macOS artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: macos-package
           path: dist/*.pkg
@@ -98,23 +98,17 @@ jobs:
     name: Windows package
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Resolve version
         id: version
-        shell: pwsh
+        shell: bash
         env:
           INPUT_VERSION: ${{ github.event.inputs.version || '' }}
         run: |
-          if ($env:INPUT_VERSION) {
-            $version = $env:INPUT_VERSION
-          } elseif ($env:GITHUB_REF_TYPE -eq "tag") {
-            $version = $env:GITHUB_REF_NAME.TrimStart("v")
-          } else {
-            $match = Select-String -Path "bin/sshfling" -Pattern '^VERSION = "([^"]+)"' | Select-Object -First 1
-            $version = $match.Matches[0].Groups[1].Value
-          }
-          "version=$version" >> $env:GITHUB_OUTPUT
+          set -euo pipefail
+          version="$(bash packaging/resolve-version.sh "$INPUT_VERSION")"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
 
       - name: Install WiX Toolset
         shell: pwsh
@@ -126,10 +120,10 @@ jobs:
         shell: pwsh
         env:
           SSHFLING_VERSION: ${{ steps.version.outputs.version }}
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build-msi.ps1
+        run: powershell -NoProfile -File packaging/build-msi.ps1
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: windows-package
           path: |
@@ -141,25 +135,79 @@ jobs:
     name: Publish GitHub release
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     needs:
       - linux
       - macos
       - windows
     steps:
+      - uses: actions/checkout@v7
+
       - name: Download package artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: release-dist
           merge-multiple: true
 
-      - name: Create checksums
+      - name: Create checksums and release evidence
         run: |
           set -euo pipefail
           cd release-dist
-          sha256sum * > SHA256SUMS
+          checksums="$RUNNER_TEMP/release-SHA256SUMS"
+          find . -maxdepth 1 -type f ! -name SHA256SUMS ! -name RELEASE-EVIDENCE.md -printf '%P\0' | sort -z | xargs -0 sha256sum -- > "$checksums"
+          mv "$checksums" SHA256SUMS
+          evidence="$RUNNER_TEMP/release-evidence.md"
+          {
+            echo "# SSHFling release package evidence"
+            echo
+            echo "Version: ${{ needs.linux.outputs.version }}"
+            echo "Ref: ${GITHUB_REF_NAME}"
+            echo "Commit: ${GITHUB_SHA}"
+            echo
+            echo "| File | Bytes | SHA-256 |"
+            echo "| --- | ---: | --- |"
+            while IFS= read -r -d '' file; do
+              name="${file#./}"
+              bytes="$(wc -c <"$file" | tr -d '[:space:]')"
+              hash="$(sha256sum "$file" | awk '{print $1}')"
+              printf "| \`%s\` | %s | \`%s\` |\n" "$name" "$bytes" "$hash"
+            done < <(find . -maxdepth 1 -type f ! -name SHA256SUMS ! -name RELEASE-EVIDENCE.md -print0 | sort -z)
+          } > "$evidence"
+          mv "$evidence" RELEASE-EVIDENCE.md
+          cat RELEASE-EVIDENCE.md >>"$GITHUB_STEP_SUMMARY"
+          cd ..
+          find release-dist -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum >"$RUNNER_TEMP/release-subjects.sha256"
+
+      - name: Generate and validate release evidence gate
+        run: |
+          set -euo pipefail
+          python3 tools/generate_release_evidence.py \
+            --mode release-assets \
+            --artifacts-dir release-dist \
+            --version "${{ needs.linux.outputs.version }}" \
+            --source-commit "$GITHUB_SHA"
+          make release-matrix-validate \
+            RELEASE_MATRIX=docs/release/enterprise-release-evidence/generated/release-assets-matrix.csv \
+            RELEASE_MANIFEST=docs/release/enterprise-release-evidence/generated/release-assets-manifest.json
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-evidence
+          path: docs/release/enterprise-release-evidence/generated
+          if-no-files-found: error
+
+      - name: Attest release package provenance
+        uses: actions/attest@v4
+        with:
+          subject-checksums: ${{ runner.temp }}/release-subjects.sha256
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: release-dist/*
           generate_release_notes: true

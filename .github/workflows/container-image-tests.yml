@@ -8,9 +8,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to package and validate."
+        description: "Version to package and validate. Defaults to bin/sshfling VERSION."
         required: false
-        default: "0.1.11"
         type: string
 
 permissions:

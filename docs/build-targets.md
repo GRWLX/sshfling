@@ -50,7 +50,7 @@ These files are generated into the public package site. Some can be used directl
 
 ## Automated Verification
 
-`packaging/verify-public-web.sh` checks the generated package site for every target above. The public web release workflow runs this verifier before publishing `gh-pages`.
+`packaging/verify-public-web.sh` checks the generated package site for every target above. The public web release workflow runs this verifier before uploading the GitHub Pages artifact.
 
 `tests/cross-os/validate-cli.sh` and `tests/cross-os/validate-cli.ps1` verify the stable runtime contract used by release validation, including the 24-hour policy default, copied wrapper and systemd templates, active-session PID fields, and detached job start/list/kill PID behavior.
 
@@ -69,8 +69,8 @@ with the same version input:
 5. `Package install tests`
 6. `Cross OS validation`
 
-After `Release packages with public web` publishes `gh-pages`, the downstream
-install workflows validate the newly published package site.
+After `Release packages with public web` deploys the GitHub Pages package site,
+the downstream install workflows validate the newly published package site.
 
 `.github/workflows/cross-os-validation.yml` is the broad manual post-release
 workflow that installs or builds the published package outputs on:
@@ -82,9 +82,11 @@ workflow that installs or builds the published package outputs on:
 - Slackware 15.0 from the generated SlackBuild.
 - Void Linux from the generated `xbps-src` template.
 - FreeBSD 14.4, OpenBSD 7.9, and NetBSD 10.1 source-runtime smoke tests.
-- pfSense/OPNsense FreeBSD-family substrate coverage for every public x86_64
-  FreeBSD VM release currently supported by VMActions: 12.4, 13.2, 13.3, 13.4,
-  13.5, 14.0, 14.1, 14.2, 14.3, 14.4, 15.0, and 15.1. See
+- pfSense/OPNsense FreeBSD-family substrate coverage for enterprise-safe public
+  x86_64 FreeBSD VM releases currently supported by VMActions: 13.2, 13.3,
+  13.4, 13.5, 14.0, 14.1, 14.2, 14.3, 14.4, 15.0, and 15.1. FreeBSD 12.x
+  firewall lines are documented as historical coverage only because the public
+  CI bootstrap path now depends on an unsigned archive. See
   [firewall-os.md](firewall-os.md) and
   [firewall-os-versions.md](firewall-os-versions.md).
 - macOS from the published `.pkg` and generated Homebrew formula.

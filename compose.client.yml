@@ -11,9 +11,22 @@ services:
       SSH_PORT: "${SSH_PORT:-22}"
       SSH_USER: "${SSH_USER:-deploy}"
       SSH_PRIVATE_KEY: /run/secrets/ssh_private_key
+      SSH_KNOWN_HOSTS: "${SSH_KNOWN_HOSTS:-}"
+      SSH_KNOWN_HOSTS_FILE: "${SSH_KNOWN_HOSTS_FILE:-}"
+      SSH_HOST_KEY_SHA256: "${SSH_HOST_KEY_SHA256:-}"
       SSH_COMMAND: "${SSH_COMMAND:-whoami && hostname && date -u}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
     secrets:
-      - ssh_private_key
+      - source: ssh_private_key
+        target: ssh_private_key
+        mode: 0444
     networks:
       - timed-ssh-net
 

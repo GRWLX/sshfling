@@ -4,8 +4,16 @@ set -euo pipefail
 package_dist="${1:?package dist directory is required}"
 public_dir="${2:?public directory is required}"
 base_url="${3:?base URL is required}"
-version="${4:?version is required}"
 repository="${5:?repository is required}"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# shellcheck source=packaging/version.sh
+source "$repo_root/packaging/version.sh"
+version="$(assert_sshfling_version_matches_source "${4:?version is required}" "$repo_root")"
+manifest_timestamp="${SOURCE_DATE_EPOCH:-}"
+if [[ -z "$manifest_timestamp" ]]; then
+  manifest_timestamp="$(git -C "$repo_root" log -1 --format=%ct 2>/dev/null || date -u +%s)"
+fi
 
 owner="${repository%%/*}"
 release_url="https://github.com/${repository}/releases/download/v${version}"
@@ -107,7 +115,7 @@ cat >"$public_dir/arch/PKGBUILD" <<PKGBUILD
 pkgname=sshfling
 pkgver=${version}
 pkgrel=1
-pkgdesc="Temporary SSH certificate issuer and access CLI"
+pkgdesc="Temporary SSH access broker and CLI"
 arch=('any')
 url="${base_url}"
 license=('LicenseRef-SSHFling-Commercial')
@@ -133,7 +141,7 @@ PKGBUILD
 
 cat >"$public_dir/arch/.SRCINFO" <<SRCINFO
 pkgbase = sshfling
-	pkgdesc = Temporary SSH certificate issuer and access CLI
+	pkgdesc = Temporary SSH access broker and CLI
 	pkgver = ${version}
 	pkgrel = 1
 	url = ${base_url}
@@ -158,7 +166,7 @@ cat >"$public_dir/alpine/APKBUILD" <<APKBUILD
 pkgname=sshfling
 pkgver=${version}
 pkgrel=0
-pkgdesc="Temporary SSH certificate issuer and access CLI"
+pkgdesc="Temporary SSH access broker and CLI"
 url="${base_url}"
 arch="noarch"
 license="LicenseRef-SSHFling-Commercial"
@@ -191,7 +199,7 @@ CATEGORIES=	security sysutils
 MASTER_SITES=	${base_url}/downloads/
 
 MAINTAINER=	44076838+GRWLX@users.noreply.github.com
-COMMENT=	Temporary SSH certificate issuer and access CLI
+COMMENT=	Temporary SSH access broker and CLI
 WWW=		${base_url}
 
 LICENSE=	SSHFLING_COMMERCIAL
@@ -242,15 +250,15 @@ do-install:
 MAKEFILE
 
 cat >"$public_dir/freebsd/security/sshfling/distinfo" <<DISTINFO
-TIMESTAMP = $(date -u +%s)
+TIMESTAMP = ${manifest_timestamp}
 SHA256 (${source_tar}) = ${source_sha}
 SIZE (${source_tar}) = ${source_size}
 DISTINFO
 
 cat >"$public_dir/freebsd/security/sshfling/pkg-descr" <<PKGDESCR
-SSHFling issues short-lived OpenSSH user certificates and installs a forced
-session wrapper so temporary SSH sessions are capped by a server-side
-wall-clock timeout.
+SSHFling grants short-lived SSH access with default password grants, optional
+OpenSSH user certificates, and a forced session wrapper so temporary SSH
+sessions are capped by a server-side wall-clock timeout.
 PKGDESCR
 
 cat >"$public_dir/freebsd/security/sshfling/pkg-plist" <<PLIST
@@ -282,7 +290,7 @@ PLIST
 
 openbsd_sha="$(openssl dgst -sha256 -binary "$source_path" | base64 | tr -d '\n')"
 cat >"$public_dir/openbsd/security/sshfling/Makefile" <<MAKEFILE
-COMMENT =	temporary SSH certificate issuer and access CLI
+COMMENT =	temporary SSH access broker and CLI
 DISTNAME =	sshfling-${version}
 CATEGORIES =	security sysutils
 
@@ -340,9 +348,9 @@ SIZE (${source_tar}) = ${source_size}
 DISTINFO
 
 cat >"$public_dir/openbsd/security/sshfling/pkg/DESCR" <<DESCR
-SSHFling issues short-lived OpenSSH user certificates and installs a forced
-session wrapper so temporary SSH sessions are capped by a server-side
-wall-clock timeout.
+SSHFling grants short-lived SSH access with default password grants, optional
+OpenSSH user certificates, and a forced session wrapper so temporary SSH
+sessions are capped by a server-side wall-clock timeout.
 DESCR
 
 cat >"$public_dir/openbsd/security/sshfling/pkg/PLIST" <<PLIST
@@ -381,7 +389,7 @@ MASTER_SITES=	${base_url}/downloads/
 
 MAINTAINER=	44076838+GRWLX@users.noreply.github.com
 HOMEPAGE=	${base_url}
-COMMENT=	Temporary SSH certificate issuer and access CLI
+COMMENT=	Temporary SSH access broker and CLI
 LICENSE=	sshfling-commercial-license
 
 USE_LANGUAGES=	# none
@@ -420,9 +428,9 @@ do-install:
 MAKEFILE
 
 cat >"$public_dir/pkgsrc/security/sshfling/DESCR" <<DESCR
-SSHFling issues short-lived OpenSSH user certificates and installs a forced
-session wrapper so temporary SSH sessions are capped by a server-side
-wall-clock timeout.
+SSHFling grants short-lived SSH access with default password grants, optional
+OpenSSH user certificates, and a forced session wrapper so temporary SSH
+sessions are capped by a server-side wall-clock timeout.
 DESCR
 
 cat >"$public_dir/pkgsrc/security/sshfling/PLIST" <<PLIST
@@ -463,7 +471,7 @@ DISTINFO
 
 cat >"$public_dir/nix/flake.nix" <<NIX
 {
-  description = "SSHFling temporary SSH certificate issuer and access CLI";
+  description = "SSHFling temporary SSH access broker and CLI";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -499,7 +507,7 @@ cat >"$public_dir/nix/flake.nix" <<NIX
               runHook postInstall
             '';
             meta = with pkgs.lib; {
-              description = "Temporary SSH certificate issuer and access CLI";
+              description = "Temporary SSH access broker and CLI";
               homepage = "${base_url}";
               license = licenses.unfree;
               mainProgram = "sshfling";
@@ -557,9 +565,9 @@ cat >"$public_dir/guix/sshfling.scm" <<GUIX
          ("systemd" "share/sshfling/templates/systemd"))))
     (inputs (list python openssh shadow procps util-linux))
     (home-page "${base_url}")
-    (synopsis "Temporary SSH certificate issuer and access CLI")
+    (synopsis "Temporary SSH access broker and CLI")
     (description
-     "SSHFling issues short-lived OpenSSH user certificates and installs a forced session wrapper so temporary SSH sessions are capped by a server-side wall-clock timeout.")
+     "SSHFling grants short-lived SSH access with default password grants, optional OpenSSH user certificates, and a forced session wrapper so temporary SSH sessions are capped by a server-side wall-clock timeout.")
     (license #f)))
 GUIX
 
@@ -569,7 +577,7 @@ pkgname=sshfling
 version=${version}
 revision=1
 depends="python3 openssh shadow procps-ng util-linux"
-short_desc="Temporary SSH certificate issuer and access CLI"
+short_desc="Temporary SSH access broker and CLI"
 maintainer="${maintainer}"
 license="LicenseRef-SSHFling-Commercial"
 homepage="${base_url}"
@@ -594,7 +602,7 @@ EAPI=8
 
 inherit python-r1 systemd
 
-DESCRIPTION="Temporary SSH certificate issuer and access CLI"
+DESCRIPTION="Temporary SSH access broker and CLI"
 HOMEPAGE="${base_url}"
 SRC_URI="${base_url}/downloads/${source_tar}"
 
@@ -660,11 +668,11 @@ sed -i "s/__VERSION__/${version}/g" "$public_dir/slackware/sshfling.SlackBuild"
 chmod 0755 "$public_dir/slackware/sshfling.SlackBuild"
 
 cat >"$public_dir/slackware/slack-desc" <<'SLACKDESC'
-sshfling: sshfling (temporary SSH certificate issuer)
+sshfling: sshfling (temporary SSH access broker)
 sshfling:
-sshfling: SSHFling issues short-lived OpenSSH user certificates and installs
-sshfling: a forced session wrapper so temporary SSH sessions are capped by a
-sshfling: server-side wall-clock timeout.
+sshfling: SSHFling grants short-lived SSH access with default password grants,
+sshfling: optional OpenSSH user certificates, and a forced session wrapper so
+sshfling: temporary SSH sessions are capped by a server-side wall-clock timeout.
 sshfling:
 sshfling: Homepage: https://grwlx.github.io/sshfling/
 sshfling:
@@ -677,7 +685,7 @@ cat >"$public_dir/opensuse/sshfling.spec" <<SPEC
 Name:           sshfling
 Version:        ${version}
 Release:        1%{?dist}
-Summary:        Temporary SSH certificate issuer and access CLI
+Summary:        Temporary SSH access broker and CLI
 License:        LicenseRef-SSHFling-Commercial
 URL:            ${base_url}
 Source0:        ${base_url}/downloads/${source_tar}
@@ -689,9 +697,9 @@ Requires:       procps
 Requires:       util-linux
 
 %description
-SSHFling issues short-lived OpenSSH user certificates and installs a forced
-session wrapper so temporary SSH sessions are capped by a server-side
-wall-clock timeout.
+SSHFling grants short-lived SSH access with default password grants, optional
+OpenSSH user certificates, and a forced session wrapper so temporary SSH
+sessions are capped by a server-side wall-clock timeout.
 
 %prep
 %autosetup
@@ -723,11 +731,11 @@ cat >"$public_dir/snap/snapcraft.yaml" <<SNAP
 name: sshfling
 base: core24
 version: '${version}'
-summary: Temporary SSH certificate issuer and access CLI
+summary: Temporary SSH access broker and CLI
 description: |
-  SSHFling issues short-lived OpenSSH user certificates and installs a forced
-  session wrapper so temporary SSH sessions are capped by a server-side
-  wall-clock timeout.
+  SSHFling grants short-lived SSH access with default password grants, optional
+  OpenSSH user certificates, and a forced session wrapper so temporary SSH
+  sessions are capped by a server-side wall-clock timeout.
 license: Proprietary
 grade: stable
 confinement: classic
@@ -765,7 +773,7 @@ SNAP
 
 cat >"$public_dir/termux/packages/sshfling/build.sh" <<TERMUX
 TERMUX_PKG_HOMEPAGE=${base_url}
-TERMUX_PKG_DESCRIPTION="Temporary SSH certificate issuer and access CLI"
+TERMUX_PKG_DESCRIPTION="Temporary SSH access broker and CLI"
 TERMUX_PKG_LICENSE="LicenseRef-SSHFling-Commercial"
 TERMUX_PKG_MAINTAINER="${maintainer}"
 TERMUX_PKG_VERSION=${version}
@@ -830,7 +838,7 @@ if [[ -n "$windows_zip_name" ]]; then
   cat >"$public_dir/scoop/sshfling.json" <<SCOOP
 {
   "version": "${version}",
-  "description": "Temporary SSH certificate issuer and access CLI",
+  "description": "Temporary SSH access broker and CLI",
   "homepage": "${base_url}",
   "license": {
     "identifier": "Proprietary",
@@ -866,7 +874,7 @@ PackageLocale: en-US
 Publisher: ${owner}
 PackageName: SSHFling
 License: SSHFling Commercial License
-ShortDescription: Temporary SSH certificate issuer and access CLI
+ShortDescription: Temporary SSH access broker and CLI
 PackageUrl: https://github.com/${repository}
 LicenseUrl: https://github.com/${repository}/blob/main/LICENSE
 ManifestType: defaultLocale
@@ -916,8 +924,8 @@ WINGET_INDEX
     <projectUrl>https://github.com/${repository}</projectUrl>
     <packageSourceUrl>https://github.com/${repository}</packageSourceUrl>
     <requireLicenseAcceptance>true</requireLicenseAcceptance>
-    <description>Temporary SSH certificate issuer and access CLI.</description>
-    <summary>Temporary SSH certificate issuer and access CLI.</summary>
+    <description>Temporary SSH access broker and CLI.</description>
+    <summary>Temporary SSH access broker and CLI.</summary>
     <tags>ssh openssh certificate temporary-access cli</tags>
   </metadata>
   <files>
@@ -1005,7 +1013,9 @@ cat >"$public_dir/community.html" <<HTML
   <h2>Fast Commands</h2>
   <pre><code>curl -fsSLO ${base_url}/arch/PKGBUILD &amp;&amp; makepkg -si
 scoop install ${base_url}/scoop/sshfling.json
-irm ${base_url}/chocolatey/install.ps1 | iex</code></pre>
+\$chocoInstaller = Join-Path \$env:TEMP "sshfling-chocolatey-install.ps1"
+Invoke-WebRequest -Uri "${base_url}/chocolatey/install.ps1" -OutFile \$chocoInstaller
+&amp; \$chocoInstaller</code></pre>
 </body>
 </html>
 HTML

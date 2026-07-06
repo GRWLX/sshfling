@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version="${SSHFLING_VERSION:-0.1.11}"
 identifier="${SSHFLING_PKG_IDENTIFIER:-io.sshfling.cli}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=packaging/version.sh
+source "$repo_root/packaging/version.sh"
+version="$(assert_sshfling_version_matches_source "${SSHFLING_VERSION:-}" "$repo_root")"
 dist_dir="$repo_root/dist"
 build_root="$repo_root/build/pkg"
 payload="$build_root/payload"

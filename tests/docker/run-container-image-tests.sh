@@ -34,8 +34,11 @@ safe_name() {
 
 start_container() {
   local image="$1"
+  local safe_image
+  local name
   shift
-  local name="sshfling-$(safe_name "$image")-$$-${#containers[@]}"
+  safe_image="$(safe_name "$image")"
+  name="sshfling-${safe_image}-$$-${#containers[@]}"
   docker rm -f "$name" >/dev/null 2>&1 || true
   docker run -d --name "$name" "$@" "$image" sh -lc 'sleep 3600' >/dev/null
   containers+=("$name")
@@ -52,6 +55,8 @@ make_source_tar() {
   tar \
     --exclude=.git \
     --exclude=.github \
+    --exclude=.codex \
+    --exclude='.codex-*' \
     --exclude=build \
     --exclude=dist \
     --exclude=public \
@@ -183,13 +188,13 @@ test_opensuse() {
   docker cp "$tmp/site/downloads/sshfling-${version}.tar.gz" "$name:/tmp/sshfling-${version}.tar.gz"
   docker cp "$tmp/site/opensuse/sshfling.spec" "$name:/tmp/sshfling.spec"
   docker exec "$name" sh -lc "set -eu
-    zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks refresh >/dev/null
-    zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks install rpm-build tar gzip python3 openssh shadow procps util-linux >/dev/null
+    zypper --non-interactive --gpg-auto-import-keys refresh >/dev/null
+    zypper --non-interactive --gpg-auto-import-keys install rpm-build tar gzip python3 openssh shadow procps util-linux >/dev/null
     mkdir -p /root/rpmbuild/SOURCES /root/rpmbuild/SPECS
     cp /tmp/sshfling-${version}.tar.gz /root/rpmbuild/SOURCES/
     cp /tmp/sshfling.spec /root/rpmbuild/SPECS/
     rpmbuild --define '_topdir /root/rpmbuild' -ba /root/rpmbuild/SPECS/sshfling.spec >/tmp/opensuse-rpmbuild.log
-    zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks install /root/rpmbuild/RPMS/noarch/sshfling-${version}-1.noarch.rpm >/dev/null
+    rpm -Uvh /root/rpmbuild/RPMS/noarch/sshfling-${version}-1.noarch.rpm >/dev/null
     sh /tmp/validate-cli.sh sshfling '$version'"
 }
 
@@ -235,7 +240,7 @@ test_alpine() {
     su builder -c 'cd /build && abuild checksum && abuild -r' >/tmp/alpine-build.log
     apk_file=\"\$(find /home/builder/packages -name 'sshfling-${version}-r0.apk' -print -quit)\"
     test -n \"\$apk_file\"
-    apk add --allow-untrusted \"\$apk_file\" >/dev/null
+    apk add \"\$apk_file\" >/dev/null
     sh /tmp/validate-cli.sh sshfling '$version'"
 }
 
@@ -249,7 +254,15 @@ test_slackware() {
   docker cp "$tmp/site/slackware/sshfling.SlackBuild" "$name:/tmp/slacktest/sshfling.SlackBuild"
   docker cp "$tmp/site/slackware/slack-desc" "$name:/tmp/slacktest/slack-desc"
   docker exec "$name" /bin/sh -lc "set -eu
-    wget --no-check-certificate -qO /tmp/python3.txz https://mirrors.slackware.com/slackware/slackware64-15.0/slackware64/d/python3-3.9.10-x86_64-1.txz
+    slackware_bootstrap_mirror=http://slackware.osuosl.org/slackware64-15.0
+    slackware_https_mirror=https://slackware.osuosl.org/slackware64-15.0
+    printf '%s\n' \"\${slackware_bootstrap_mirror}/\" >/etc/slackpkg/mirrors
+    slackpkg -batch=on -default_answer=y update >/tmp/slackpkg-update.log 2>&1 || { cat /tmp/slackpkg-update.log; exit 1; }
+    slackpkg -batch=on -default_answer=y install ca-certificates >/tmp/slackpkg-ca-certificates.log 2>&1 || { cat /tmp/slackpkg-ca-certificates.log; exit 1; }
+    if command -v update-ca-certificates >/dev/null 2>&1; then update-ca-certificates >/tmp/update-ca-certificates.log 2>&1 || true; fi
+    ssl_ca=/etc/ssl/certs/ca-certificates.crt
+    test -s \"\$ssl_ca\"
+    wget --ca-certificate=\"\$ssl_ca\" -qO /tmp/python3.txz \"\$slackware_https_mirror/slackware64/d/python3-3.9.10-x86_64-1.txz\"
     installpkg /tmp/python3.txz >/tmp/install-python3.log
     cd /tmp/slacktest
     chmod +x sshfling.SlackBuild

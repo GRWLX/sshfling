@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import html
 import http.server
+import ipaddress
 import json
 import os
 import urllib.parse
@@ -19,10 +20,11 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
-VERSION = "0.1.11"
+VERSION = "0.1.12"
 DEFAULT_NETWORK = "timed-ssh-net"
 DEFAULT_SESSION_WRAPPER = "/usr/local/libexec/sshfling-session"
 DEFAULT_ISSUER_LISTEN = "127.0.0.1:8787"
@@ -33,6 +35,14 @@ DEFAULT_TEMP_USERNAME_PREFIX = "s"
 DEFAULT_DETACHED_DIR = ".sshfling/detached"
 MAX_TIME_SECONDS = 86400
 MAX_CONNECTIONS = 10
+MAX_DETACHED_JOBS = 10
+FORCED_SESSION_WRAPPER = "sshfling-session"
+FORCED_SESSION_ALLOW_DETACHED_ARG = "--allow-detached-start"
+MIN_BEARER_TOKEN_LENGTH = 32
+MAX_HTTP_BODY_BYTES = 16384
+ISSUER_POST_RATE_LIMIT = 20
+WEB_LOGIN_RATE_LIMIT = 10
+RATE_LIMIT_WINDOW_SECONDS = 60
 UTC = getattr(dt, "UTC", dt.timezone.utc)
 
 TEMPLATE_ENTRIES = [
@@ -76,6 +86,126 @@ def emit_json(payload):
 
 def command_path(name):
     return shutil.which(name)
+
+
+def is_loopback_host(host):
+    value = (host or "").strip().strip("[]").lower()
+    if value in {"localhost", "localhost.localdomain"}:
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
+def env_truthy(name):
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def validate_bearer_token(token, label):
+    token = (token or "").strip()
+    if not token:
+        raise SSHFlingError(f"Set {label} before starting the issuer service.", 2)
+    normalized = re.sub(r"[^a-z0-9]+", "", token.lower())
+    placeholder_markers = {"changeme", "placeholder", "replaceme", "yourtoken", "exampletoken", "testtoken"}
+    if token == "replace-with-a-long-random-token" or any(marker in normalized for marker in placeholder_markers):
+        raise SSHFlingError(f"{label} still contains the placeholder token.", 2)
+    if len(token) < MIN_BEARER_TOKEN_LENGTH:
+        raise SSHFlingError(f"{label} must be at least {MIN_BEARER_TOKEN_LENGTH} characters.", 2)
+    if any(ch.isspace() for ch in token):
+        raise SSHFlingError(f"{label} must not contain whitespace.", 2)
+    return token
+
+
+def bearer_token_matches(header, token):
+    actual = (header or "").encode("utf-8", "surrogatepass")
+    expected = f"Bearer {token}".encode("utf-8")
+    return hmac.compare_digest(actual, expected)
+
+
+def read_http_body(handler, max_bytes):
+    try:
+        length = int(handler.headers.get("Content-Length", "0"))
+    except ValueError as exc:
+        raise SSHFlingError("Invalid Content-Length.", 400) from exc
+    if length < 0:
+        raise SSHFlingError("Invalid Content-Length.", 400)
+    if length > max_bytes:
+        raise SSHFlingError("Request body too large.", 413)
+    return handler.rfile.read(length)
+
+
+def rate_limit_allowed(server, bucket, key, limit, window_seconds):
+    now = time.time()
+    lock = getattr(server, "rate_limit_lock", None)
+    if lock is None:
+        server.rate_limit_lock = threading.Lock()
+        lock = server.rate_limit_lock
+    with lock:
+        store = getattr(server, "rate_limits", None)
+        if store is None:
+            store = {}
+            server.rate_limits = store
+        window_key = (bucket, key)
+        attempts = [ts for ts in store.get(window_key, []) if now - ts < window_seconds]
+        if len(attempts) >= limit:
+            store[window_key] = attempts
+            return False
+        attempts.append(now)
+        store[window_key] = attempts
+        return True
+
+
+def rate_limit_reset(server, bucket, key):
+    lock = getattr(server, "rate_limit_lock", None)
+    store = getattr(server, "rate_limits", None)
+    if lock is None or store is None:
+        return
+    with lock:
+        store.pop((bucket, key), None)
+
+
+def remote_addr(handler):
+    try:
+        return handler.client_address[0]
+    except (AttributeError, IndexError, TypeError):
+        return "unknown"
+
+
+def audit_log(event, **fields):
+    record = {
+        "event": event,
+        "program": "sshfling",
+        "pid": os.getpid(),
+    }
+    if hasattr(os, "geteuid"):
+        record["euid"] = os.geteuid()
+    try:
+        record["local_user"] = getpass.getuser()
+    except Exception:
+        pass
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if isinstance(value, Path):
+            value = str(value)
+        elif isinstance(value, (list, tuple, set)):
+            value = ",".join(str(item) for item in value)
+        record[key] = value
+
+    logger = command_path("logger")
+    if not logger:
+        return
+    try:
+        subprocess.run(
+            [logger, "-t", "sshfling", "--", json.dumps(record, sort_keys=True, separators=(",", ":"))],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=2,
+        )
+    except Exception:
+        pass
 
 
 def is_usable_server_host(value):
@@ -762,6 +892,13 @@ def cmd_policy_install(args):
     require_root("policy install")
     policy = write_policy(args.policy_file, args.max_time, args.max_connections, args.user)
     active = effective_policy(policy, args.user)
+    audit_log(
+        "policy_updated",
+        user=args.user or "default",
+        max_time_seconds=active["max_time_seconds"],
+        max_connections=active["max_connections"],
+        policy_file=policy.get("path"),
+    )
     if args.json:
         emit_json({"ok": True, "policy": policy, "effective": active})
     else:
@@ -792,6 +929,19 @@ def cmd_cert_issue(args):
         session_wrapper=args.session_wrapper,
         policy_file=args.policy_file,
         login_user=args.login_user,
+        permit_pty=not args.no_pty,
+    )
+    audit_log(
+        "access_grant_created",
+        auth="certificate",
+        via="cli-cert-issue",
+        principal=result["principal"],
+        login_user=args.login_user or result["principal"],
+        seconds=result["seconds"],
+        valid_before=result["valid_before"],
+        key_id=result["key_id"],
+        serial=result["serial"],
+        source_address=args.source_address,
         permit_pty=not args.no_pty,
     )
 
@@ -836,7 +986,7 @@ def create_temp_client_key(username, session_dir):
 
 
 def random_username(prefix=DEFAULT_TEMP_USERNAME_PREFIX):
-    return f"{prefix}{secrets.randbelow(1000):03d}"
+    return f"{prefix}{secrets.randbelow(1000000):06d}"
 
 
 def default_login_shell():
@@ -889,6 +1039,48 @@ def maybe_connect_argv(argv):
     return None
 
 
+def audit_command_name(argv):
+    subcommands = {
+        "doctor",
+        "setup",
+        "shutdown",
+        "list",
+        "ca",
+        "cert",
+        "policy",
+        "host",
+        "serve",
+        "web",
+        "web-hash",
+        "init",
+        "key",
+        "network",
+        "server",
+        "client",
+        "test-timeout",
+        "compose",
+        "package",
+        "password",
+        "detached",
+    }
+    for token in argv:
+        if token == "--":
+            break
+        if token in subcommands:
+            return token
+        if is_ssh_connect_target(token):
+            return "connect"
+    if any(token in {"-k", "--kill"} or token.startswith("--kill=") for token in argv):
+        return "kill"
+    if not argv or any(token in {"-t", "--time", "-p", "--password", "--certificate", "--username"} for token in argv):
+        return "setup"
+    if any(token in {"--help", "-h"} for token in argv):
+        return "help"
+    if "--version" in argv:
+        return "version"
+    return "unknown"
+
+
 def cmd_connect(before_args, target, after_args):
     ssh_bin = os.environ.get("SSHFLING_SSH_BIN", "ssh")
     ssh_args = [
@@ -898,6 +1090,14 @@ def cmd_connect(before_args, target, after_args):
         "-o",
         "PubkeyAuthentication=no",
     ] + before_args + [target] + after_args
+    target_user, target_host = target.split("@", 1)
+    audit_log(
+        "client_connect",
+        target_user=target_user,
+        target_host=target_host,
+        ssh_arg_count=len(before_args),
+        remote_arg_count=len(after_args),
+    )
 
     if os.environ.get("SSHFLING_CONNECT_DRY_RUN"):
         print(shlex.join(ssh_args))
@@ -928,6 +1128,10 @@ def require_password_host_tools():
         )
 
 
+def unix_user_exists(username):
+    return run(["id", "-u", username], capture=True, check=False).returncode == 0
+
+
 def set_user_password(username, password):
     run_with_input(["chpasswd"], f"{username}:{password}\n", capture=True)
     if command_path("usermod"):
@@ -937,7 +1141,7 @@ def set_user_password(username, password):
 
 
 def ensure_unix_user(username):
-    if run(["id", "-u", username], capture=True, check=False).returncode == 0:
+    if unix_user_exists(username):
         return {"user": username, "created": False}
     run(["useradd", "--create-home", "--shell", default_login_shell(), username])
     return {"user": username, "created": True}
@@ -976,12 +1180,18 @@ def cmd_setup_password(args):
     if seconds > active_policy["max_time_seconds"]:
         raise SSHFlingError(f"Password lifetime cannot exceed {format_duration(active_policy['max_time_seconds'])}.", 2)
 
-    previous_metadata = read_password_grant_metadata(args.password_grant_dir, args.username)
+    existing_user = unix_user_exists(args.username)
+    if existing_user and not args.allow_existing_user:
+        raise SSHFlingError(
+            "Refusing to create a password grant for an existing Unix user. Use --allow-existing-user only for a documented break-glass case.",
+            2,
+            username=args.username,
+        )
     pre_prune = prune_password_grants(args.password_grant_dir, username=args.username, dry_run=args.dry_run)
     expires_at = int(time.time()) + seconds
     password = secrets.token_urlsafe(18)
     if args.dry_run:
-        user_result = {"user": args.username, "created": run(["id", "-u", args.username], capture=True, check=False).returncode != 0, "dry_run": True}
+        user_result = {"user": args.username, "created": not existing_user, "dry_run": True}
     else:
         user_result = ensure_unix_user(args.username)
         set_user_password(args.username, password)
@@ -991,7 +1201,7 @@ def cmd_setup_password(args):
     config_path = config_dir / f"91-sshfling-password-{args.username}.conf"
     force_command = password_force_command(args.username, seconds, expires_at, str(wrapper_path), args.policy_file)
     config = password_grant_config(args.username, force_command)
-    created_user = bool(user_result.get("created")) or bool((previous_metadata or {}).get("created_user"))
+    created_user = bool(user_result.get("created"))
     metadata = {
         "version": 1,
         "auth": "password",
@@ -1045,6 +1255,18 @@ def cmd_setup_password(args):
         "ssh_command": f"sshfling {args.username}@{server_host}",
         "results": results,
     }
+    audit_log(
+        "access_grant_created",
+        auth="password",
+        via="cli-setup",
+        username=args.username,
+        seconds=seconds,
+        expires_at=expires_at,
+        expires_at_utc=payload["expires_at_utc"],
+        created_user=created_user,
+        existing_user=existing_user,
+        dry_run=args.dry_run,
+    )
 
     if args.json:
         emit_json(payload)
@@ -1057,10 +1279,47 @@ def cmd_setup_password(args):
     return 0
 
 
+def certificate_setup_options(args):
+    options = []
+    for attr, label in [
+        ("ca_key", "--ca-key"),
+        ("login_user", "--login-user"),
+        ("public_key", "--public-key"),
+        ("public_key_file", "--public-key-file"),
+        ("out", "--out"),
+        ("session_dir", "--session-dir"),
+        ("key_id", "--key-id"),
+        ("source_address", "--source-address"),
+    ]:
+        if attr in {"ca_key", "session_dir"}:
+            if getattr(args, f"{attr}_explicit", False):
+                options.append(label)
+        elif getattr(args, attr, None):
+            options.append(label)
+    if getattr(args, "no_pty", False):
+        options.append("--no-pty")
+    return options
+
+
 def cmd_setup(args):
+    if getattr(args, "password", False) and getattr(args, "certificate", False):
+        raise SSHFlingError("Choose either password mode or --certificate, not both.", 2)
+    if getattr(args, "certificate", False):
+        return cmd_setup_certificate(args)
+
+    cert_options = certificate_setup_options(args)
+    if cert_options:
+        raise SSHFlingError(
+            "Certificate setup options require --certificate.",
+            2,
+            options=cert_options,
+        )
+
+    return cmd_setup_password(args)
+
+
+def cmd_setup_certificate(args):
     require_root("temporary SSH access")
-    if getattr(args, "password", False):
-        return cmd_setup_password(args)
     if not args.username:
         args.username = random_username()
     ca_key = Path(args.ca_key).expanduser().resolve()
@@ -1103,6 +1362,20 @@ def cmd_setup(args):
         result["ssh_command"] = f"ssh -i {key_hint} {login_user}@{server_host}"
     else:
         result["ssh_command"] = f"ssh {login_user}@{server_host}"
+    audit_log(
+        "access_grant_created",
+        auth="certificate",
+        via="cli-setup",
+        principal=result["principal"],
+        login_user=login_user,
+        seconds=result["seconds"],
+        valid_before=result["valid_before"],
+        key_id=result["key_id"],
+        serial=result["serial"],
+        generated_key=bool(result.get("generated_key")),
+        source_address=args.source_address,
+        permit_pty=not args.no_pty,
+    )
 
     if args.json:
         emit_json(result)
@@ -1336,6 +1609,13 @@ def cmd_kill(args):
         session_username = kill_value
         login_user = getattr(args, "login_user", None)
     payload = kill_sshfling_sessions(login_user, session_username)
+    audit_log(
+        "sessions_killed",
+        login_user=login_user,
+        username=session_username,
+        killed=payload["killed"],
+        pids=payload["pids"],
+    )
     if args.json:
         emit_json(payload)
     else:
@@ -1416,6 +1696,174 @@ def detached_command_from(args):
     return command
 
 
+def remaining_seconds_from_expires_at(expires_at):
+    if not expires_at:
+        return None
+    try:
+        return max(0, int(expires_at) - utc_timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+def proc_cmdline(pid):
+    try:
+        raw = Path(f"/proc/{int(pid)}/cmdline").read_bytes()
+    except (OSError, ValueError):
+        return []
+    return [part.decode("utf-8", "replace") for part in raw.split(b"\0") if part]
+
+
+def proc_environ(pid):
+    try:
+        raw = Path(f"/proc/{int(pid)}/environ").read_bytes()
+    except (OSError, ValueError):
+        return {}
+    env = {}
+    for item in raw.split(b"\0"):
+        if not item or b"=" not in item:
+            continue
+        key, value = item.split(b"=", 1)
+        env[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")
+    return env
+
+
+def proc_parent_pid(pid):
+    fields = proc_stat_fields(pid)
+    if not fields:
+        return None
+    try:
+        return int(fields[1])
+    except (IndexError, ValueError):
+        return None
+
+
+def proc_stat_fields(pid):
+    try:
+        text = Path(f"/proc/{int(pid)}/stat").read_text()
+    except (OSError, ValueError):
+        return None
+    try:
+        return text.rsplit(")", 1)[1].strip().split()
+    except IndexError:
+        return None
+
+
+def proc_boot_time():
+    try:
+        for line in Path("/proc/stat").read_text().splitlines():
+            if line.startswith("btime "):
+                return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def proc_start_epoch(pid):
+    fields = proc_stat_fields(pid)
+    if not fields:
+        return None
+    try:
+        start_ticks = int(fields[19])
+        ticks_per_second = os.sysconf("SC_CLK_TCK")
+    except (IndexError, OSError, ValueError):
+        return None
+    boot_time = proc_boot_time()
+    if boot_time is None:
+        return None
+    return int(boot_time + (start_ticks / ticks_per_second))
+
+
+def process_ancestry(max_depth=64):
+    if os.name == "nt" or not hasattr(os, "getppid"):
+        return []
+    ancestry = []
+    seen = set()
+    pid = os.getppid()
+    for _ in range(max_depth):
+        if pid <= 1 or pid in seen:
+            break
+        seen.add(pid)
+        ppid = proc_parent_pid(pid)
+        if ppid is None:
+            break
+        ancestry.append({"pid": pid, "ppid": ppid, "argv": proc_cmdline(pid), "environ": proc_environ(pid)})
+        pid = ppid
+    return ancestry
+
+
+def forced_session_wrapper_arg_index(argv):
+    for index in (0, 1):
+        if index < len(argv) and Path(argv[index]).name == FORCED_SESSION_WRAPPER:
+            return index
+    return None
+
+
+def arg_value(args, name):
+    for index, arg in enumerate(args):
+        if arg == name and index + 1 < len(args):
+            return args[index + 1]
+    return None
+
+
+def forced_session_remaining_from_wrapper(proc, wrapper_args):
+    max_seconds = arg_value(wrapper_args, "--max-seconds")
+    expires_at = arg_value(wrapper_args, "--expires-at")
+    try:
+        max_seconds = int(max_seconds) if max_seconds is not None else 300
+    except ValueError:
+        max_seconds = None
+    try:
+        expires_at = int(expires_at) if expires_at is not None else None
+    except ValueError:
+        expires_at = None
+
+    deadline = None
+    if max_seconds is not None:
+        started_at = proc_start_epoch(proc.get("pid"))
+        if started_at is not None:
+            deadline = started_at + max_seconds
+    if expires_at is not None:
+        deadline = expires_at if deadline is None else min(deadline, expires_at)
+    return remaining_seconds_from_expires_at(deadline)
+
+
+def sshfling_forced_session_context():
+    for proc in process_ancestry():
+        argv = proc.get("argv") or []
+        wrapper_index = forced_session_wrapper_arg_index(argv)
+        if wrapper_index is None:
+            continue
+        wrapper_args = argv[wrapper_index + 1 :]
+        env = proc.get("environ") or {}
+        remaining = remaining_seconds_from_expires_at(
+            env.get("SSHFLING_FORCED_SESSION_EXPIRES_AT") or env.get("SSHFLING_SESSION_EXPIRES_AT")
+        )
+        if remaining is None:
+            remaining = forced_session_remaining_from_wrapper(proc, wrapper_args)
+        return {
+            "forced": True,
+            "allow_detached": FORCED_SESSION_ALLOW_DETACHED_ARG in wrapper_args,
+            "remaining_seconds": remaining,
+            "source": f"ancestor:{proc.get('pid')}",
+        }
+
+    if (
+        os.environ.get("SSHFLING_FORCED_SESSION") == "1"
+        or os.environ.get("SSHFLING_SESSION_ACTIVE") == "1"
+        or "SSH_ORIGINAL_COMMAND" in os.environ
+    ):
+        return {
+            "forced": True,
+            "allow_detached": False,
+            "remaining_seconds": remaining_seconds_from_expires_at(
+                os.environ.get("SSHFLING_FORCED_SESSION_EXPIRES_AT") or os.environ.get("SSHFLING_SESSION_EXPIRES_AT")
+            ),
+            "source": "environment",
+        }
+
+    return {"forced": False, "allow_detached": False, "remaining_seconds": None, "source": None}
+
+
 def start_new_process_kwargs(detached=False):
     if os.name == "nt":
         flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -1473,6 +1921,25 @@ def detached_metadata_claims_active(job, now=None):
         return True
 
 
+def active_detached_job_claims(root, exclude_name=None):
+    root = detached_root(root)
+    jobs = []
+    if not root.exists():
+        return jobs
+    for path in sorted(root.glob("*.json")):
+        try:
+            job = read_json_file(path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if job.get("managed_by") != "sshfling" or not job.get("name"):
+            continue
+        if exclude_name and job.get("name") == exclude_name:
+            continue
+        if detached_metadata_claims_active(job):
+            jobs.append(job)
+    return jobs
+
+
 def load_detached_jobs(root):
     root = detached_root(root)
     jobs = []
@@ -1492,6 +1959,19 @@ def load_detached_jobs(root):
 
 def cmd_detached_start(args):
     seconds = lifetime_seconds(args, MAX_TIME_SECONDS)
+    forced_context = sshfling_forced_session_context()
+    if forced_context["forced"]:
+        if not forced_context["allow_detached"]:
+            raise SSHFlingError(
+                "Refusing to start detached work from inside an SSH forced-command session. An administrator must add --allow-detached-start to the trusted sshfling-session ForceCommand only if this handoff is intentional.",
+                75,
+                source=forced_context.get("source"),
+            )
+        session_remaining = forced_context.get("remaining_seconds")
+        if session_remaining is not None:
+            if session_remaining < 1:
+                raise SSHFlingError("The current sshfling SSH session is already expired.", 75)
+            seconds = min(seconds, session_remaining)
     if seconds < 1:
         raise SSHFlingError("Detached job lifetime must be positive.", 2)
     if seconds > MAX_TIME_SECONDS:
@@ -1513,6 +1993,14 @@ def cmd_detached_start(args):
                 2,
                 status=existing.get("status"),
             )
+    active_jobs = active_detached_job_claims(paths["root"], exclude_name=args.name)
+    if len(active_jobs) >= MAX_DETACHED_JOBS:
+        raise SSHFlingError(
+            f"Maximum detached sshfling jobs reached ({MAX_DETACHED_JOBS}).",
+            75,
+            limit=MAX_DETACHED_JOBS,
+            active=[job.get("name") for job in active_jobs],
+        )
 
     root = paths["root"]
     root.mkdir(parents=True, exist_ok=True)
@@ -1592,6 +2080,17 @@ def cmd_detached_start(args):
         raise SSHFlingError(f"Detached job failed to start: {error}", 1, job=job)
 
     payload = {"ok": True, "job": job}
+    audit_log(
+        "detached_job_started",
+        name=job.get("name"),
+        status=job.get("status"),
+        pid=job.get("pid"),
+        supervisor_pid=job.get("supervisor_pid"),
+        seconds=job.get("seconds"),
+        expires_at=job.get("expires_at"),
+        forced_session=forced_context.get("forced"),
+        forced_session_source=forced_context.get("source"),
+    )
     if args.json:
         emit_json(payload)
     else:
@@ -1664,6 +2163,13 @@ def cmd_detached_kill(args):
     job["live_pids_before_kill"] = live_targets
     write_json_atomic(paths["metadata"], job)
     payload = {"ok": True, "job": job, "killed": len(targeted), "pids": targeted}
+    audit_log(
+        "detached_job_killed",
+        name=args.name,
+        killed=payload["killed"],
+        pids=targeted,
+        live_pids_before_kill=live_targets,
+    )
     if args.json:
         emit_json(payload)
     else:
@@ -1766,6 +2272,34 @@ def install_file(src, dst, mode=0o755, dry_run=False):
     shutil.copy2(src, dst)
     dst.chmod(mode)
     return {"path": str(dst), "source": str(src)}
+
+
+def snapshot_file(path):
+    path = Path(path)
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return {"exists": False}
+    if path.is_dir():
+        return {"exists": True, "directory": True}
+    return {"exists": True, "content": path.read_bytes(), "mode": stat.st_mode & 0o7777}
+
+
+def restore_file_snapshot(path, snapshot):
+    path = Path(path)
+    if snapshot.get("directory"):
+        return {"path": str(path), "status": "left-directory"}
+    if snapshot.get("exists"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(snapshot["content"])
+        path.chmod(snapshot.get("mode", 0o644))
+        return {"path": str(path), "restored": True}
+    if not path.exists():
+        return {"path": str(path), "status": "missing"}
+    if path.is_dir():
+        return {"path": str(path), "status": "left-directory"}
+    path.unlink()
+    return {"path": str(path), "removed": True}
 
 
 def reload_sshd():
@@ -1989,26 +2523,64 @@ def prune_password_grants(grant_dir, username=None, all_grants=False, delete_use
             results.append({"metadata_path": str(path), "status": "missing"})
             continue
 
-        metadata = json.loads(path.read_text())
+        try:
+            metadata = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            results.append({"metadata_path": str(path), "status": "skipped-invalid-metadata"})
+            continue
         grant_username = metadata.get("username") or path.stem
-        validate_unix_username(grant_username)
-        expires_at = int(metadata.get("expires_at", 0))
-        if not all_grants and expires_at > now:
+        try:
+            validate_unix_username(grant_username)
+        except SSHFlingError:
+            results.append({"metadata_path": str(path), "username": str(grant_username), "status": "skipped-invalid-username"})
+            continue
+        if metadata.get("managed_by") != "sshfling" or metadata.get("auth") != "password":
+            results.append(
+                {
+                    "metadata_path": str(path),
+                    "username": grant_username,
+                    "status": "skipped-unmanaged",
+                }
+            )
+            continue
+        if path.stem != grant_username:
+            results.append(
+                {
+                    "metadata_path": str(path),
+                    "username": grant_username,
+                    "status": "skipped-unmanaged",
+                    "reason": "metadata username does not match file name",
+                }
+            )
+            continue
+        try:
+            expires_at = int(metadata.get("expires_at", 0))
+        except (TypeError, ValueError):
+            results.append({"metadata_path": str(path), "username": grant_username, "status": "skipped-invalid-metadata"})
+            continue
+        if expires_at > now:
             results.append({"metadata_path": str(path), "username": grant_username, "status": "active", "expires_at": expires_at})
             continue
 
         item = {"metadata_path": str(path), "username": grant_username, "expires_at": expires_at, "status": "pruned"}
         config_path = metadata.get("config_path")
+        config_verified_for_removal = False
         if config_path:
             item["config"] = remove_password_grant_config(config_path, grant_username, dry_run)
+            config_verified_for_removal = bool(item["config"].get("removed") or item["config"].get("would_remove"))
 
-        if metadata.get("created_user"):
-            if delete_users:
+        if metadata.get("created_user") is True:
+            if delete_users and config_verified_for_removal:
                 item["user"] = delete_password_user(grant_username, dry_run)
             else:
                 item["user"] = lock_password_user(grant_username, dry_run)
+                if delete_users:
+                    item["user"]["delete_skipped"] = "managed sshd config was not verified for removal"
         else:
-            item["user"] = {"user": grant_username, "status": "left-existing-user"}
+            item["user"] = lock_password_user(grant_username, dry_run)
+            item["user"]["existing_user"] = True
+            if delete_users:
+                item["user"]["delete_skipped"] = "existing Unix user was not created by sshfling"
 
         if dry_run:
             item["metadata"] = {"path": str(path), "would_remove": True, "dry_run": True}
@@ -2033,6 +2605,14 @@ def cmd_password_prune(args):
         results.append(reload_sshd())
 
     payload = {"ok": True, "results": results, "count": len(grant_results)}
+    audit_log(
+        "password_grants_pruned",
+        username=args.username,
+        all_grants=args.all,
+        delete_users=args.delete_users,
+        dry_run=args.dry_run,
+        count=len(grant_results),
+    )
     if args.json:
         emit_json(payload)
     else:
@@ -2072,48 +2652,83 @@ Match User {args.user}
     PermitTunnel no
 """
 
-    results = []
-    results.append(install_file(resource_file("production/sshfling-session"), wrapper_path, 0o755, args.dry_run))
-    results.append(write_if_changed(trusted_ca, ca_pub.read_text(), 0o644, args.dry_run))
-    results.append(write_if_changed(principals_file, principal_lines, 0o644, args.dry_run))
-    results.append(write_if_changed(sshd_config, config, 0o644, args.dry_run))
+    rollback_paths = [wrapper_path, trusted_ca, principals_file, sshd_config]
     if args.max_time or args.max_connections:
-        current = load_policy(args.policy_file)
-        current_user_policy = effective_policy(current, args.user)
-        max_time = args.max_time if args.max_time else current_user_policy["max_time_seconds"]
-        max_connections = args.max_connections if args.max_connections else current_user_policy["max_connections"]
-        if args.dry_run:
-            results.append({"path": str(policy_file_path(args.policy_file)), "dry_run": True, "user": args.user, "max_time_seconds": max_time, "max_connections": max_connections})
-        else:
-            results.append(write_policy(args.policy_file, max_time, max_connections, args.user))
+        rollback_paths.append(policy_file_path(args.policy_file))
+    rollback_snapshots = [] if args.dry_run else [(path, snapshot_file(path)) for path in rollback_paths]
+    created_user_for_rollback = False
 
-    if args.create_user and not args.dry_run:
-        if run(["id", "-u", args.user], capture=True, check=False).returncode != 0:
-            run(["useradd", "--create-home", "--shell", default_login_shell(), args.user])
-            if command_path("openssl"):
-                password = run(["openssl", "rand", "-base64", "32"], capture=True).stdout.strip()
-                password_hash = run(["openssl", "passwd", "-6", password], capture=True).stdout.strip()
-                run(["usermod", "--password", password_hash, args.user])
-            results.append({"created_user": args.user})
+    results = []
+    try:
+        results.append(install_file(resource_file("production/sshfling-session"), wrapper_path, 0o755, args.dry_run))
+        results.append(write_if_changed(trusted_ca, ca_pub.read_text(), 0o644, args.dry_run))
+        results.append(write_if_changed(principals_file, principal_lines, 0o644, args.dry_run))
+        results.append(write_if_changed(sshd_config, config, 0o644, args.dry_run))
+        if args.max_time or args.max_connections:
+            current = load_policy(args.policy_file)
+            current_user_policy = effective_policy(current, args.user)
+            max_time = args.max_time if args.max_time else current_user_policy["max_time_seconds"]
+            max_connections = args.max_connections if args.max_connections else current_user_policy["max_connections"]
+            if args.dry_run:
+                results.append({"path": str(policy_file_path(args.policy_file)), "dry_run": True, "user": args.user, "max_time_seconds": max_time, "max_connections": max_connections})
+            else:
+                results.append(write_policy(args.policy_file, max_time, max_connections, args.user))
 
-    if not args.dry_run and args.validate:
-        results.append(
-            validate_sshd_effective(
-                args.user,
-                [
-                    f"trustedusercakeys {trusted_ca}",
-                    f"authorizedprincipalsfile {principals_dir}/%u",
-                    "passwordauthentication no",
-                    "authenticationmethods publickey",
-                ],
-                sshd_config,
+        if args.create_user and not args.dry_run:
+            if run(["id", "-u", args.user], capture=True, check=False).returncode != 0:
+                run(["useradd", "--create-home", "--shell", default_login_shell(), args.user])
+                created_user_for_rollback = True
+                if command_path("openssl"):
+                    password = run(["openssl", "rand", "-base64", "32"], capture=True).stdout.strip()
+                    password_hash = run(["openssl", "passwd", "-6", password], capture=True).stdout.strip()
+                    run(["usermod", "--password", password_hash, args.user])
+                results.append({"created_user": args.user})
+
+        if not args.dry_run and args.validate:
+            results.append(
+                validate_sshd_effective(
+                    args.user,
+                    [
+                        f"trustedusercakeys {trusted_ca}",
+                        f"authorizedprincipalsfile {principals_dir}/%u",
+                        "passwordauthentication no",
+                        "authenticationmethods publickey",
+                    ],
+                    sshd_config,
+                )
             )
-        )
 
-    if not args.dry_run and args.reload:
-        results.append(reload_sshd())
+        if not args.dry_run and args.reload:
+            results.append(reload_sshd())
+    except Exception as exc:
+        rollback = []
+        if not args.dry_run:
+            for path, snapshot in reversed(rollback_snapshots):
+                try:
+                    rollback.append(restore_file_snapshot(path, snapshot))
+                except Exception as rollback_exc:
+                    rollback.append({"path": str(path), "rollback_error": str(rollback_exc)})
+            if created_user_for_rollback:
+                try:
+                    rollback.append(delete_password_user(args.user))
+                except SSHFlingError as rollback_exc:
+                    rollback.append({"user": args.user, "rollback_error": rollback_exc.message})
+        if isinstance(exc, SSHFlingError):
+            exc.details["rollback"] = rollback
+        raise
 
     payload = {"ok": True, "results": results}
+    audit_log(
+        "host_config_installed",
+        login_user=args.user,
+        principals=principals,
+        trusted_ca=trusted_ca,
+        principals_file=principals_file,
+        sshd_config=sshd_config,
+        session_wrapper=wrapper_path,
+        dry_run=args.dry_run,
+        reload=args.reload,
+    )
     if args.json:
         emit_json(payload)
     else:
@@ -2154,6 +2769,17 @@ def cmd_host_uninstall(args):
         results.append(reload_sshd())
 
     payload = {"ok": True, "results": results}
+    audit_log(
+        "host_config_uninstalled",
+        login_user=args.user,
+        principals=principals,
+        remove_ca=args.remove_ca,
+        remove_wrapper=args.remove_wrapper,
+        remove_policy_user=args.remove_policy_user,
+        delete_user=args.delete_user,
+        dry_run=args.dry_run,
+        reload=args.reload,
+    )
     if args.json:
         emit_json(payload)
     else:
@@ -2184,15 +2810,21 @@ class IssuerHandler(http.server.BaseHTTPRequestHandler):
             self.send_json(404, {"ok": False, "error": "not found"})
             return
 
+        if not rate_limit_allowed(self.server, "issuer", remote_addr(self), ISSUER_POST_RATE_LIMIT, RATE_LIMIT_WINDOW_SECONDS):
+            self.send_json(429, {"ok": False, "error": "too many requests"})
+            return
+
         expected = self.server.auth_token
         actual = self.headers.get("Authorization", "")
-        if actual != f"Bearer {expected}":
+        if not bearer_token_matches(actual, expected):
             self.send_json(401, {"ok": False, "error": "unauthorized"})
             return
 
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            body = self.rfile.read(length).decode("utf-8")
+            body_bytes = read_http_body(self, MAX_HTTP_BODY_BYTES)
+            if not body_bytes:
+                raise SSHFlingError("Missing request body.", 400)
+            body = body_bytes.decode("utf-8")
             request = json.loads(body)
             principal = request.get("principal")
             seconds = int(request.get("seconds", self.server.default_seconds))
@@ -2203,6 +2835,8 @@ class IssuerHandler(http.server.BaseHTTPRequestHandler):
             public_key = request.get("public_key", "").strip()
             if not public_key:
                 raise SSHFlingError("Missing public_key.", 400)
+            if "login_user" in request and request.get("login_user") not in (None, "", principal):
+                raise SSHFlingError("login_user cannot be set through the issuer API.", 400)
 
             result = sign_user_certificate(
                 ca_key=self.server.ca_key,
@@ -2213,26 +2847,39 @@ class IssuerHandler(http.server.BaseHTTPRequestHandler):
                 source_address=request.get("source_address"),
                 session_wrapper=self.server.session_wrapper,
                 policy_file=self.server.policy_file,
-                login_user=request.get("login_user") or principal,
+                login_user=principal,
+                permit_pty=bool(request.get("permit_pty", True)),
+            )
+            audit_log(
+                "access_grant_created",
+                auth="certificate",
+                via="issuer-api",
+                remote_addr=remote_addr(self),
+                principal=result["principal"],
+                login_user=principal,
+                seconds=result["seconds"],
+                valid_before=result["valid_before"],
+                key_id=result["key_id"],
+                serial=result["serial"],
+                source_address=request.get("source_address"),
                 permit_pty=bool(request.get("permit_pty", True)),
             )
             self.send_json(200, result)
         except SSHFlingError as exc:
             self.send_json(exc.code if exc.code >= 100 else 400, {"ok": False, "error": exc.message})
-        except Exception as exc:
-            self.send_json(500, {"ok": False, "error": str(exc)})
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+            self.send_json(400, {"ok": False, "error": "invalid request"})
+        except Exception:
+            self.send_json(500, {"ok": False, "error": "internal server error"})
 
     def log_message(self, fmt, *args):
         eprint(f"{self.address_string()} - {fmt % args}")
 
 
 def cmd_serve(args):
-    require_root("serve")
     policy = load_policy(args.policy_file)
     default_policy_caps = effective_policy(policy)
-    token = args.token or os.environ.get(args.token_env)
-    if not token:
-        raise SSHFlingError(f"Set {args.token_env} or pass --token before starting the issuer service.", 2)
+    token = validate_bearer_token(args.token or os.environ.get(args.token_env), args.token_env)
     if args.max_seconds > default_policy_caps["max_time_seconds"]:
         raise SSHFlingError(f"Maximum issuer lifetime cannot exceed {format_duration(default_policy_caps['max_time_seconds'])}.", 2)
     if args.default_seconds > args.max_seconds:
@@ -2241,6 +2888,9 @@ def cmd_serve(args):
     if ":" not in args.listen:
         raise SSHFlingError("--listen must be host:port.", 2)
     host, port_text = args.listen.rsplit(":", 1)
+    allow_remote = args.allow_remote or env_truthy("SSHFLING_ALLOW_REMOTE")
+    if not is_loopback_host(host) and not allow_remote:
+        raise SSHFlingError("Refusing non-local issuer bind without --allow-remote or SSHFLING_ALLOW_REMOTE=1.", 2)
     port = int(port_text)
 
     allowed = set()
@@ -2257,7 +2907,19 @@ def cmd_serve(args):
     server.default_seconds = args.default_seconds
     server.session_wrapper = args.session_wrapper
     server.policy_file = policy["path"]
+    server.rate_limits = {}
+    server.rate_limit_lock = threading.Lock()
 
+    audit_log(
+        "issuer_service_started",
+        listen_host=host,
+        listen_port=port,
+        allow_remote=allow_remote,
+        allowed_principals=sorted(allowed),
+        max_seconds=args.max_seconds,
+        default_seconds=args.default_seconds,
+        policy_file=policy["path"],
+    )
     eprint(f"sshflingd listening on {host}:{port}; allowed principals: {', '.join(sorted(allowed))}")
     try:
         server.serve_forever()
@@ -2328,6 +2990,11 @@ def parse_cookie(header):
             key, value = part.strip().split("=", 1)
             cookies[key] = value
     return cookies
+
+
+def web_session_cookie(value, max_age, secure=False):
+    secure_attr = "; Secure" if secure else ""
+    return f"sshfling_web={value}; Path=/; HttpOnly; SameSite=Strict{secure_attr}; Max-Age={max_age}"
 
 
 def render_web_page(title, body):
@@ -2476,8 +3143,7 @@ class WebHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def read_form(self):
-        length = min(int(self.headers.get("Content-Length", "0")), 16384)
-        raw = self.rfile.read(length).decode("utf-8")
+        raw = read_http_body(self, MAX_HTTP_BODY_BYTES).decode("utf-8")
         parsed = urllib.parse.parse_qs(raw, keep_blank_values=True)
         return {key: values[-1] for key, values in parsed.items()}
 
@@ -2526,14 +3192,28 @@ class WebHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
-        form = self.read_form()
+        try:
+            form = self.read_form()
+        except SSHFlingError as exc:
+            self.send_html(exc.code if exc.code >= 100 else 400, render_web_page("Bad Request", f"<section>{html.escape(exc.message)}</section>"))
+            return
+        except UnicodeDecodeError:
+            self.send_html(400, render_web_page("Bad Request", "<section>Invalid request body.</section>"))
+            return
         if parsed.path == "/login":
+            client = remote_addr(self)
+            if not rate_limit_allowed(self.server, "web-login", client, WEB_LOGIN_RATE_LIMIT, RATE_LIMIT_WINDOW_SECONDS):
+                self.send_html(429, render_login("Too many login attempts."))
+                return
             username = form.get("username", "")
             password = form.get("password", "")
             if username == self.server.web_user and verify_web_password(password, self.server.password_hash, self.server.plain_password):
+                rate_limit_reset(self.server, "web-login", client)
                 token = make_web_session(username, self.server.session_secret)
-                self.redirect("/", {"Set-Cookie": f"sshfling_web={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800"})
+                audit_log("web_login", result="success", remote_addr=client, username=username)
+                self.redirect("/", {"Set-Cookie": web_session_cookie(token, 28800, self.server.cookie_secure)})
             else:
+                audit_log("web_login", result="failure", remote_addr=client, username=username)
                 self.send_html(401, render_login("Invalid login."))
             return
 
@@ -2546,18 +3226,34 @@ class WebHandler(http.server.BaseHTTPRequestHandler):
 
         try:
             if parsed.path == "/logout":
-                self.redirect("/login", {"Set-Cookie": "sshfling_web=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"})
+                self.redirect("/login", {"Set-Cookie": web_session_cookie("", 0, self.server.cookie_secure)})
                 return
             if parsed.path == "/policy":
                 user = form.get("user", "").strip() or None
                 max_time = duration_seconds(form.get("max_time", ""))
                 max_connections = positive_int(form.get("max_connections", ""))
                 write_policy(self.server.policy_file, max_time, max_connections, user)
+                audit_log(
+                    "web_policy_updated",
+                    actor=payload.get("user"),
+                    user=user or "default",
+                    max_time_seconds=max_time,
+                    max_connections=max_connections,
+                    remote_addr=remote_addr(self),
+                )
                 self.redirect("/?message=policy+saved")
                 return
             if parsed.path == "/kill":
                 username = form.get("username", "").strip() or None
                 result = kill_sshfling_sessions(session_username=username)
+                audit_log(
+                    "web_sessions_killed",
+                    actor=payload.get("user"),
+                    username=username,
+                    killed=result["killed"],
+                    pids=result["pids"],
+                    remote_addr=remote_addr(self),
+                )
                 self.redirect(f"/?message=killed+{result['killed']}+session(s)")
                 return
             self.send_html(404, render_web_page("Not Found", "<section>Not found</section>"))
@@ -2599,7 +3295,18 @@ def cmd_web(args):
     server.plain_password = plain_password
     server.session_secret = session_secret_text.encode("utf-8")
     server.policy_file = str(policy_file_path(args.policy_file))
+    server.cookie_secure = not is_loopback_host(host)
+    server.rate_limits = {}
+    server.rate_limit_lock = threading.Lock()
 
+    audit_log(
+        "web_service_started",
+        listen_host=host,
+        listen_port=port,
+        allow_remote=args.allow_remote,
+        cookie_secure=server.cookie_secure,
+        policy_file=server.policy_file,
+    )
     eprint(f"sshfling web listening on http://{host}:{port}")
     try:
         server.serve_forever()
@@ -2737,7 +3444,7 @@ def cmd_package_build(args):
                     }
                 )
                 continue
-            cmd = [pwsh, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)]
+            cmd = [pwsh, "-NoProfile", "-File", str(script)]
         elif package_type == "pkg":
             script = root / "packaging/build-pkg.sh"
             cmd = ["bash", str(script)]
@@ -2806,15 +3513,22 @@ def lifetime_seconds(args, default=300):
     return default
 
 
+class StoreExplicit(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        setattr(namespace, f"{self.dest}_explicit", True)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="sshfling",
-        usage="sshfling [-t TIME] [--username USERNAME] [-k] [command ...]",
+        usage="sshfling [-t TIME] [--username USERNAME] [--certificate] [-k] [command ...]",
         description="Grant or kill temporary SSH access.",
         epilog="""examples:
   sudo sshfling
   sudo sshfling -t 10m
   sudo sshfling -t 5m --username temp-remote
+  sudo sshfling --certificate -t 10m --public-key-file ~/.ssh/id_ed25519.pub
   sudo sshfling list
   sudo sshfling -k s432
   sudo sshfling web
@@ -2827,52 +3541,56 @@ def build_parser():
     parser.add_argument("--version", action="version", version=f"sshfling {VERSION}")
     parser.add_argument("--json", action="store_true", help="Emit stable JSON where supported.")
     parser.add_argument("-t", "--time", type=duration_seconds, help="Grant access for this long, for example 30s, 5m, 1h, or 24h.")
-    parser.add_argument("--username", help="Temporary SSH username. Defaults to a random name like s123.")
-    parser.add_argument("--login-user", help="Actual Unix login account if different from --username.")
-    parser.add_argument("-p", "--password", action="store_true", help="Create temporary password SSH access instead of certificate access.")
+    parser.add_argument("--username", help="Temporary SSH username. Defaults to a random name like s123456.")
+    parser.add_argument("--login-user", action=StoreExplicit, help="Actual Unix login account if different from --username.")
+    parser.add_argument("-p", "--password", action="store_true", help="Create temporary password SSH access. This is the default; kept for compatibility.")
+    parser.add_argument("--certificate", action="store_true", help="Create temporary certificate SSH access instead of the default password access.")
     parser.add_argument("-k", "--kill", nargs="?", const=True, metavar="USERNAME", help="Kill active sshfling SSH session(s), optionally by name like s432.")
     parser.add_argument(
         "--project-dir",
         default=".",
         help="Deployment directory. Defaults to the current directory.",
     )
-    parser.add_argument("--ca-key", default=str(default_ca_key_path()), help=argparse.SUPPRESS)
+    parser.add_argument("--ca-key", action=StoreExplicit, default=str(default_ca_key_path()), help=argparse.SUPPRESS)
     parser.add_argument("--public-key", help=argparse.SUPPRESS)
     parser.add_argument("--public-key-file", help=argparse.SUPPRESS)
     parser.add_argument("--out", help=argparse.SUPPRESS)
-    parser.add_argument("--session-dir", default=DEFAULT_SESSION_DIR, help=argparse.SUPPRESS)
+    parser.add_argument("--session-dir", action=StoreExplicit, default=DEFAULT_SESSION_DIR, help=argparse.SUPPRESS)
     parser.add_argument("--key-id", help=argparse.SUPPRESS)
     parser.add_argument("--source-address", help=argparse.SUPPRESS)
     parser.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help=argparse.SUPPRESS)
     parser.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help=argparse.SUPPRESS)
     parser.add_argument("--password-sshd-config-dir", default="/etc/ssh/sshd_config.d", help=argparse.SUPPRESS)
     parser.add_argument("--password-grant-dir", default=DEFAULT_PASSWORD_GRANT_DIR, help=argparse.SUPPRESS)
+    parser.add_argument("--allow-existing-user", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-validate", dest="validate", action="store_false", help=argparse.SUPPRESS)
     parser.add_argument("--dry-run", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--no-pty", action="store_true", help=argparse.SUPPRESS)
-    parser.set_defaults(validate=True)
+    parser.set_defaults(validate=True, ca_key_explicit=False, login_user_explicit=False, session_dir_explicit=False)
 
     subparsers = parser.add_subparsers(dest="command")
 
     doctor = subparsers.add_parser("doctor", help="Check local tooling and deployment files.")
     doctor.set_defaults(func=cmd_doctor)
 
-    setup = subparsers.add_parser("setup", help="Create a temporary SSH login. Normal use only needs --time and optionally --username.")
+    setup = subparsers.add_parser("setup", help="Create a temporary SSH login. Password access is the default.")
     setup.add_argument("-t", "--time", type=duration_seconds, required=True, help="Access lifetime, for example 30s, 5m, 1h, or 24h.")
-    setup.add_argument("--username", help="Temporary SSH username. Defaults to a random name like s123.")
-    setup.add_argument("--login-user", help="Actual Unix login account if different from --username.")
-    setup.add_argument("-p", "--password", action="store_true", help="Create temporary password SSH access instead of certificate access.")
-    setup.add_argument("--ca-key", default=str(default_ca_key_path()), help="CA private key path.")
+    setup.add_argument("--username", help="Temporary SSH username. Defaults to a random name like s123456.")
+    setup.add_argument("--login-user", action=StoreExplicit, help="Actual Unix login account if different from --username.")
+    setup.add_argument("-p", "--password", action="store_true", help="Create temporary password SSH access. This is the default; kept for compatibility.")
+    setup.add_argument("--certificate", action="store_true", help="Create temporary certificate SSH access instead of the default password access.")
+    setup.add_argument("--ca-key", action=StoreExplicit, default=str(default_ca_key_path()), help="CA private key path.")
     setup.add_argument("--public-key", help="Public key text to sign.")
     setup.add_argument("--public-key-file", help="Public key file to sign. If omitted, sshfling generates a temporary keypair.")
     setup.add_argument("--out", help="Certificate output path. Defaults beside the public key.")
-    setup.add_argument("--session-dir", default=DEFAULT_SESSION_DIR, help=argparse.SUPPRESS)
+    setup.add_argument("--session-dir", action=StoreExplicit, default=DEFAULT_SESSION_DIR, help=argparse.SUPPRESS)
     setup.add_argument("--key-id", help="Audit identifier stored in the certificate.")
     setup.add_argument("--source-address", help="Optional CIDR source-address certificate restriction.")
     setup.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help="Forced command wrapper path on target hosts.")
     setup.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help=argparse.SUPPRESS)
     setup.add_argument("--password-sshd-config-dir", default="/etc/ssh/sshd_config.d", help=argparse.SUPPRESS)
     setup.add_argument("--password-grant-dir", default=DEFAULT_PASSWORD_GRANT_DIR, help=argparse.SUPPRESS)
+    setup.add_argument("--allow-existing-user", action="store_true", help="Allow password mode to reset an existing Unix user's password. Use only for documented break-glass cases.")
     setup.add_argument("--no-validate", dest="validate", action="store_false", help="Skip sshd -t validation in password mode.")
     setup.add_argument("--dry-run", action="store_true", help="Show intended password-mode changes without writing files.")
     setup.add_argument("--no-pty", action="store_true", help="Do not permit interactive PTY sessions.")
@@ -2883,7 +3601,7 @@ def build_parser():
     password_prune = password_sub.add_parser("prune", help="Remove expired temporary password grants.")
     password_prune.add_argument("--username", help="Only prune this temporary password username.")
     password_prune.add_argument("--password-grant-dir", default=DEFAULT_PASSWORD_GRANT_DIR, help=argparse.SUPPRESS)
-    password_prune.add_argument("--all", action="store_true", help="Prune active and expired tracked password grants.")
+    password_prune.add_argument("--all", action="store_true", help="Scan all tracked password grants and prune expired grants.")
     password_prune.add_argument("--delete-users", action="store_true", help="Delete sshfling-created Unix users instead of locking them.")
     password_prune.add_argument("--dry-run", action="store_true", help="Show grants that would be pruned without changing files.")
     password_prune.set_defaults(func=cmd_password_prune)
@@ -2985,6 +3703,7 @@ def build_parser():
     serve.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help=argparse.SUPPRESS)
     serve.add_argument("--token-env", default="SSHFLING_ISSUER_TOKEN", help="Environment variable containing the bearer token.")
     serve.add_argument("--token", help="Bearer token. Prefer --token-env for production.")
+    serve.add_argument("--allow-remote", action="store_true", help="Allow binding the issuer to a non-local address. Put it behind TLS, mTLS, or a private network.")
     serve.set_defaults(func=cmd_serve)
 
     web = subparsers.add_parser("web", help="Run the local admin web console.")
@@ -3095,6 +3814,7 @@ def normalize_init_path(args):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    audit_log("command_invoked", command=audit_command_name(argv), argc=len(argv))
     connect_args = maybe_connect_argv(argv)
     if connect_args:
         before_args, target, after_args = connect_args

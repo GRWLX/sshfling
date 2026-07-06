@@ -4,18 +4,34 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version to install-test."
-        required: true
-        default: "0.1.11"
+        description: "Release version to install-test. Defaults to bin/sshfling VERSION."
+        required: false
         type: string
 
 permissions:
   contents: read
 
 jobs:
+  validate-version:
+    name: Validate version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve requested version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version || '' }}
+        run: |
+          set -euo pipefail
+          version="$(bash packaging/resolve-version.sh "$INPUT_VERSION")"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
   linux-public-repos:
     name: Linux public repo installs
     runs-on: ubuntu-latest
+    needs: validate-version
     strategy:
       fail-fast: false
       matrix:
@@ -24,50 +40,53 @@ jobs:
             image: debian:bookworm-slim
             command: |
               apt-get update >/dev/null
-              apt-get install -y --no-install-recommends ca-certificates curl >/dev/null
-              echo "deb [trusted=yes] https://grwlx.github.io/sshfling/apt ./" >/etc/apt/sources.list.d/sshfling.list
-              apt-get update >/dev/null
-              apt-get install -y --no-install-recommends sshfling >/dev/null
+              apt-get install -y --no-install-recommends ca-certificates curl sudo >/dev/null
+              curl -fsSL https://grwlx.github.io/sshfling/install.sh -o /tmp/sshfling-install.sh
+              bash /tmp/sshfling-install.sh apt
           - name: ubuntu
             image: ubuntu:24.04
             command: |
               apt-get update >/dev/null
-              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl >/dev/null
-              echo "deb [trusted=yes] https://grwlx.github.io/sshfling/apt ./" >/etc/apt/sources.list.d/sshfling.list
-              apt-get update >/dev/null
-              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends sshfling >/dev/null
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl sudo >/dev/null
+              curl -fsSL https://grwlx.github.io/sshfling/install.sh -o /tmp/sshfling-install.sh
+              bash /tmp/sshfling-install.sh apt
           - name: fedora
             image: fedora:latest
             command: |
-              printf "%s\n" "[sshfling]" "name=SSHFling" "baseurl=https://grwlx.github.io/sshfling/rpm" "enabled=1" "gpgcheck=0" >/etc/yum.repos.d/sshfling.repo
-              dnf install -y sshfling >/dev/null
+              dnf install -y ca-certificates curl sudo >/dev/null
+              curl -fsSL https://grwlx.github.io/sshfling/install.sh -o /tmp/sshfling-install.sh
+              bash /tmp/sshfling-install.sh dnf
           - name: rocky
             image: rockylinux:9
             command: |
-              printf "%s\n" "[sshfling]" "name=SSHFling" "baseurl=https://grwlx.github.io/sshfling/rpm" "enabled=1" "gpgcheck=0" >/etc/yum.repos.d/sshfling.repo
-              dnf install -y sshfling >/dev/null
+              dnf install -y ca-certificates curl sudo >/dev/null
+              curl -fsSL https://grwlx.github.io/sshfling/install.sh -o /tmp/sshfling-install.sh
+              bash /tmp/sshfling-install.sh dnf
           - name: alma
             image: almalinux:9
             command: |
-              printf "%s\n" "[sshfling]" "name=SSHFling" "baseurl=https://grwlx.github.io/sshfling/rpm" "enabled=1" "gpgcheck=0" >/etc/yum.repos.d/sshfling.repo
-              dnf install -y sshfling >/dev/null
+              dnf install -y ca-certificates curl sudo >/dev/null
+              curl -fsSL https://grwlx.github.io/sshfling/install.sh -o /tmp/sshfling-install.sh
+              bash /tmp/sshfling-install.sh dnf
           - name: ubi
             image: registry.access.redhat.com/ubi9/ubi
             command: |
-              printf "%s\n" "[sshfling]" "name=SSHFling" "baseurl=https://grwlx.github.io/sshfling/rpm" "enabled=1" "gpgcheck=0" >/etc/yum.repos.d/sshfling.repo
-              dnf install -y sshfling >/dev/null
+              dnf install -y ca-certificates curl sudo >/dev/null
+              curl -fsSL https://grwlx.github.io/sshfling/install.sh -o /tmp/sshfling-install.sh
+              bash /tmp/sshfling-install.sh dnf
     steps:
       - name: Install and check ${{ matrix.name }}
         run: |
           set -euo pipefail
           docker run --rm "${{ matrix.image }}" bash -lc 'set -euo pipefail
           ${{ matrix.command }}
-          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
           sshfling --version'
 
   linux-community-builds:
     name: Linux community package builds
     runs-on: ubuntu-latest
+    needs: validate-version
     strategy:
       fail-fast: false
       matrix:
@@ -95,40 +114,42 @@ jobs:
               cp /home/builder/.abuild/*.rsa.pub /etc/apk/keys/
               chown -R builder:builder /build
               su builder -c "cd /build && abuild checksum && abuild -r" >/tmp/alpine-build.log
-              apk_file="$(find /home/builder/packages -name "sshfling-${{ inputs.version }}-r0.apk" -print -quit)"
+              apk_file="$(find /home/builder/packages -name "sshfling-${{ needs.validate-version.outputs.version }}-r0.apk" -print -quit)"
               test -n "$apk_file"
-              apk add --allow-untrusted "$apk_file" >/dev/null
+              apk add "$apk_file" >/dev/null
     steps:
       - name: Build/install ${{ matrix.name }}
         run: |
           set -euo pipefail
           docker run --rm "${{ matrix.image }}" sh -lc 'set -eu
           ${{ matrix.command }}
-          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
           sshfling --version'
 
   opensuse-spec:
     name: openSUSE OBS spec build
     runs-on: ubuntu-latest
+    needs: validate-version
     timeout-minutes: 20
     steps:
       - name: Build and install generated openSUSE spec
         run: |
           set -euo pipefail
           docker run --rm opensuse/tumbleweed bash -lc 'set -euo pipefail
-          zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks refresh >/dev/null
-          zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks install rpm-build curl tar gzip python3 openssh shadow procps util-linux >/dev/null
+          zypper --non-interactive --gpg-auto-import-keys refresh >/dev/null
+          zypper --non-interactive --gpg-auto-import-keys install rpm-build curl tar gzip python3 openssh shadow procps util-linux >/dev/null
           mkdir -p /root/rpmbuild/SOURCES /root/rpmbuild/SPECS
-          curl -fsSL https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz -o /root/rpmbuild/SOURCES/sshfling-${{ inputs.version }}.tar.gz
+          curl -fsSL https://grwlx.github.io/sshfling/downloads/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz -o /root/rpmbuild/SOURCES/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
           curl -fsSL https://grwlx.github.io/sshfling/opensuse/sshfling.spec -o /root/rpmbuild/SPECS/sshfling.spec
           rpmbuild --define "_topdir /root/rpmbuild" -ba /root/rpmbuild/SPECS/sshfling.spec >/tmp/opensuse-rpmbuild.log
-          zypper --non-interactive --gpg-auto-import-keys --no-gpg-checks install /root/rpmbuild/RPMS/noarch/sshfling-${{ inputs.version }}-1.noarch.rpm >/dev/null
-          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          rpm -Uvh /root/rpmbuild/RPMS/noarch/sshfling-${{ needs.validate-version.outputs.version }}-1.noarch.rpm >/dev/null
+          sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
           sshfling --version'
 
   nix-flake:
     name: Nix flake build
     runs-on: ubuntu-latest
+    needs: validate-version
     steps:
       - name: Build generated Nix flake
         env:
@@ -140,33 +161,43 @@ jobs:
           docker run --rm -e NIX_CONFIG -v "$PWD/nix-test:/work" nixos/nix:2.24.9 sh -lc 'set -eu
           cd /work
           NIXPKGS_ALLOW_UNFREE=1 nix --extra-experimental-features "nix-command flakes" build --impure .#default -o result
-          ./result/bin/sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          ./result/bin/sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
           ./result/bin/sshfling --version'
 
   slackware-slackbuild:
     name: Slackware SlackBuild
     runs-on: ubuntu-latest
+    needs: validate-version
     steps:
       - name: Build/install generated SlackBuild
         run: |
           set -euo pipefail
           docker run --rm vbatts/slackware:15.0 /bin/sh -lc 'set -eu
-          wget --no-check-certificate -qO /tmp/python3.txz https://mirrors.slackware.com/slackware/slackware64-15.0/slackware64/d/python3-3.9.10-x86_64-1.txz
+          slackware_bootstrap_mirror=http://slackware.osuosl.org/slackware64-15.0
+          slackware_https_mirror=https://slackware.osuosl.org/slackware64-15.0
+          printf "%s\n" "${slackware_bootstrap_mirror}/" >/etc/slackpkg/mirrors
+          slackpkg -batch=on -default_answer=y update >/tmp/slackpkg-update.log 2>&1 || { cat /tmp/slackpkg-update.log; exit 1; }
+          slackpkg -batch=on -default_answer=y install ca-certificates >/tmp/slackpkg-ca-certificates.log 2>&1 || { cat /tmp/slackpkg-ca-certificates.log; exit 1; }
+          if command -v update-ca-certificates >/dev/null 2>&1; then update-ca-certificates >/tmp/update-ca-certificates.log 2>&1 || true; fi
+          ssl_ca=/etc/ssl/certs/ca-certificates.crt
+          test -s "$ssl_ca"
+          wget --ca-certificate="$ssl_ca" -qO /tmp/python3.txz "$slackware_https_mirror/slackware64/d/python3-3.9.10-x86_64-1.txz"
           installpkg /tmp/python3.txz >/tmp/install-python3.log
           mkdir -p /tmp/slacktest
           cd /tmp/slacktest
-          wget --no-check-certificate -qO sshfling.SlackBuild https://grwlx.github.io/sshfling/slackware/sshfling.SlackBuild
-          wget --no-check-certificate -qO slack-desc https://grwlx.github.io/sshfling/slackware/slack-desc
-          wget --no-check-certificate -qO sshfling-${{ inputs.version }}.tar.gz https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz
+          wget --ca-certificate="$ssl_ca" -qO sshfling.SlackBuild https://grwlx.github.io/sshfling/slackware/sshfling.SlackBuild
+          wget --ca-certificate="$ssl_ca" -qO slack-desc https://grwlx.github.io/sshfling/slackware/slack-desc
+          wget --ca-certificate="$ssl_ca" -qO sshfling-${{ needs.validate-version.outputs.version }}.tar.gz https://grwlx.github.io/sshfling/downloads/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
           chmod +x sshfling.SlackBuild
           ./sshfling.SlackBuild >/tmp/slackbuild.log
-          installpkg /tmp/sshfling-${{ inputs.version }}-noarch-1_SBo.txz >/tmp/installpkg.log
-          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          installpkg /tmp/sshfling-${{ needs.validate-version.outputs.version }}-noarch-1_SBo.txz >/tmp/installpkg.log
+          sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
           sshfling --version'
 
   void-template:
     name: Void xbps-src template
     runs-on: ubuntu-latest
+    needs: validate-version
     steps:
       - name: Build/install generated Void template
         run: |
@@ -186,12 +217,13 @@ jobs:
             exit 1
           }
           xbps-install -y --repository=/void-packages/hostdir/binpkgs sshfling >/dev/null
-          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
           sshfling --version'
 
   freebsd-source-smoke:
     name: FreeBSD source runtime
     runs-on: ubuntu-latest
+    needs: validate-version
     steps:
       - uses: vmactions/freebsd-vm@v1
         with:
@@ -203,15 +235,16 @@ jobs:
             set -eu
             tmp="$(mktemp -d)"
             cd "$tmp"
-            curl -fsSLO https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz
-            tar -xzf sshfling-${{ inputs.version }}.tar.gz
-            install -m 0755 sshfling-${{ inputs.version }}/bin/sshfling /usr/local/bin/sshfling
-            sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+            curl -fsSLO https://grwlx.github.io/sshfling/downloads/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
+            tar -xzf sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
+            install -m 0755 sshfling-${{ needs.validate-version.outputs.version }}/bin/sshfling /usr/local/bin/sshfling
+            sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
             sshfling --version
 
   openbsd-source-smoke:
     name: OpenBSD source runtime
     runs-on: ubuntu-latest
+    needs: validate-version
     steps:
       - uses: vmactions/openbsd-vm@v1
         with:
@@ -228,15 +261,16 @@ jobs:
             fi
             tmp="$(mktemp -d)"
             cd "$tmp"
-            curl -fsSLO https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz
-            tar -xzf sshfling-${{ inputs.version }}.tar.gz
-            install -m 0755 sshfling-${{ inputs.version }}/bin/sshfling /usr/local/bin/sshfling
-            sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+            curl -fsSLO https://grwlx.github.io/sshfling/downloads/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
+            tar -xzf sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
+            install -m 0755 sshfling-${{ needs.validate-version.outputs.version }}/bin/sshfling /usr/local/bin/sshfling
+            sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
             sshfling --version
 
   netbsd-source-smoke:
     name: NetBSD source runtime
     runs-on: ubuntu-latest
+    needs: validate-version
     steps:
       - uses: vmactions/netbsd-vm@v1
         with:
@@ -259,27 +293,29 @@ jobs:
             fi
             tmp="$(mktemp -d)"
             cd "$tmp"
-            curl -fsSLO https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.tar.gz
-            tar -xzf sshfling-${{ inputs.version }}.tar.gz
-            install -m 0755 sshfling-${{ inputs.version }}/bin/sshfling /usr/pkg/bin/sshfling
-            sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+            curl -fsSLO https://grwlx.github.io/sshfling/downloads/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
+            tar -xzf sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
+            install -m 0755 sshfling-${{ needs.validate-version.outputs.version }}/bin/sshfling /usr/pkg/bin/sshfling
+            sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
             sshfling --version
 
   macos-pkg:
     name: macOS pkg install
     runs-on: macos-latest
+    needs: validate-version
     steps:
       - name: Install published pkg
         run: |
           set -euo pipefail
-          curl -fsSL "https://grwlx.github.io/sshfling/downloads/sshfling-${{ inputs.version }}.pkg" -o /tmp/sshfling.pkg
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/sshfling-${{ needs.validate-version.outputs.version }}.pkg" -o /tmp/sshfling.pkg
           sudo installer -pkg /tmp/sshfling.pkg -target /
-          /usr/local/bin/sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          /usr/local/bin/sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
           /usr/local/bin/sshfling --version
 
   macos-homebrew:
     name: Homebrew formula install
     runs-on: macos-latest
+    needs: validate-version
     steps:
       - name: Install published formula
         run: |
@@ -290,19 +326,20 @@ jobs:
           mkdir -p "$tap_dir/Formula"
           cp /tmp/sshfling.rb "$tap_dir/Formula/sshfling.rb"
           brew install grwlx/sshfling-test/sshfling
-          sshfling --version | grep -q "sshfling ${{ inputs.version }}"
+          sshfling --version | grep -q "sshfling ${{ needs.validate-version.outputs.version }}"
           sshfling --version
 
   windows-msi:
     name: Windows MSI install
     runs-on: windows-latest
+    needs: validate-version
     timeout-minutes: 10
     steps:
       - name: Install published MSI
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $version = "${{ inputs.version }}"
+          $version = "${{ needs.validate-version.outputs.version }}"
           $msi = Join-Path $env:TEMP "sshfling-$version.msi"
           Invoke-WebRequest -Uri "https://grwlx.github.io/sshfling/downloads/sshfling-$version.msi?run=${{ github.run_id }}" -OutFile $msi
           Start-Process msiexec.exe -Wait -ArgumentList "/i", $msi, "/qn", "/norestart"
@@ -324,13 +361,14 @@ jobs:
   windows-zip:
     name: Windows zip run
     runs-on: windows-latest
+    needs: validate-version
     timeout-minutes: 10
     steps:
       - name: Run published Windows zip
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $version = "${{ inputs.version }}"
+          $version = "${{ needs.validate-version.outputs.version }}"
           $zip = Join-Path $env:TEMP "sshfling-$version-windows.zip"
           $dest = Join-Path $env:TEMP "sshfling-zip"
           Invoke-WebRequest -Uri "https://grwlx.github.io/sshfling/downloads/sshfling-$version-windows.zip?run=${{ github.run_id }}" -OutFile $zip

@@ -56,6 +56,56 @@ grep -q -- "PubkeyAuthentication=no" "$work/connect-dry-run.out"
 grep -q -- "-p 2222" "$work/connect-dry-run.out"
 grep -q -- "s234@1.0.0.1 whoami" "$work/connect-dry-run.out"
 
+log "issuer security helper checks"
+python3 - "$work/rootless-policy.json" <<'PY'
+import argparse
+import importlib.machinery
+import importlib.util
+import os
+import sys
+
+loader = importlib.machinery.SourceFileLoader("sshfling_module", "bin/sshfling")
+spec = importlib.util.spec_from_loader(loader.name, loader)
+sshfling = importlib.util.module_from_spec(spec)
+loader.exec_module(sshfling)
+
+valid_token = "0123456789abcdef0123456789abcdef"
+for token in ["short-token", "replace-with-a-long-random-token", "your-token-goes-here-0123456789abcdef"]:
+    try:
+        sshfling.validate_bearer_token(token, "SSHFLING_ISSUER_TOKEN")
+    except sshfling.SSHFlingError:
+        pass
+    else:
+        raise AssertionError(f"weak issuer token accepted: {token}")
+
+assert sshfling.validate_bearer_token(valid_token, "SSHFLING_ISSUER_TOKEN") == valid_token
+assert sshfling.bearer_token_matches("Bearer " + valid_token, valid_token)
+assert not sshfling.bearer_token_matches("Bearer " + valid_token[:-1] + "x", valid_token)
+
+class FakeHTTPServer:
+    def __init__(self, address, handler):
+        self.address = address
+        self.handler = handler
+    def serve_forever(self):
+        return None
+
+sshfling.is_admin = lambda: False
+sshfling.http.server.ThreadingHTTPServer = FakeHTTPServer
+args = argparse.Namespace(
+    policy_file=os.path.abspath(sys.argv[1]),
+    token=valid_token,
+    token_env="SSHFLING_ISSUER_TOKEN",
+    max_seconds=60,
+    default_seconds=30,
+    listen="127.0.0.1:0",
+    allow_remote=False,
+    allowed_principal=["deploy"],
+    ca_key="/tmp/nonroot-ca",
+    session_wrapper=sshfling.DEFAULT_SESSION_WRAPPER,
+)
+assert sshfling.cmd_serve(args) == 0
+PY
+
 log "install user-specific policy caps root connections at two"
 bin/sshfling policy install --user root --max-time 1h --max-connections 2 >"$work/policy.out"
 grep -q "user: root" "$work/policy.out"
@@ -74,13 +124,20 @@ for _ in $(seq 1 50); do
 done
 python3 - "$work/web-policy.json" <<'PY'
 import http.cookiejar
+import importlib.machinery
+import importlib.util
 import json
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
 policy_path = sys.argv[1]
+loader = importlib.machinery.SourceFileLoader("sshfling_module", "bin/sshfling")
+spec = importlib.util.spec_from_loader(loader.name, loader)
+sshfling = importlib.util.module_from_spec(spec)
+loader.exec_module(sshfling)
 jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 base = "http://127.0.0.1:8899"
@@ -89,6 +146,17 @@ def post(path, data):
     encoded = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(base + path, data=encoded, method="POST")
     return opener.open(req, timeout=5).read().decode()
+
+def post_status(path, data):
+    encoded = urllib.parse.urlencode(data).encode()
+    req = urllib.request.Request(base + path, data=encoded, method="POST")
+    try:
+        with opener.open(req, timeout=5) as response:
+            response.read()
+            return response.status
+    except urllib.error.HTTPError as exc:
+        exc.read()
+        return exc.code
 
 login_page = opener.open(base + "/login", timeout=5).read().decode()
 assert "Login" in login_page
@@ -102,6 +170,23 @@ assert policy["users"]["root"]["max_connections"] == 2
 dashboard = opener.open(base + "/", timeout=5).read().decode()
 assert "root" in dashboard
 assert "25s" in dashboard
+post("/logout", {"csrf": csrf})
+
+oversized = b"username=admin&password=" + b"x" * (sshfling.MAX_HTTP_BODY_BYTES + 1)
+req = urllib.request.Request(base + "/login", data=oversized, method="POST")
+try:
+    opener.open(req, timeout=5).read()
+except urllib.error.HTTPError as exc:
+    assert exc.code == 413, exc.code
+else:
+    raise AssertionError("oversized login body was accepted")
+
+for index in range(sshfling.WEB_LOGIN_RATE_LIMIT + 1):
+    status = post_status("/login", {"username": "admin", "password": "wrong"})
+    if index < sshfling.WEB_LOGIN_RATE_LIMIT:
+        assert status == 401, (index, status)
+    else:
+        assert status == 429, status
 PY
 kill "$web_pid" 2>/dev/null || true
 wait "$web_pid" 2>/dev/null || true
@@ -111,7 +196,7 @@ log "non-root access grant is rejected"
 install -d -m 0755 "$work/nonroot"
 ssh-keygen -q -t ed25519 -N "" -C "nonroot-test" -f "$work/nonroot/client"
 set +e
-su nobody -s /bin/sh -c "cd /opt/sshfling && bin/sshfling -t 1m --ca-key '$work/nonroot/ca' --username denied --public-key-file '$work/nonroot/client.pub'" >"$work/nonroot.out" 2>"$work/nonroot.err"
+su nobody -s /bin/sh -c "cd /opt/sshfling && bin/sshfling --certificate -t 1m --ca-key '$work/nonroot/ca' --username denied --public-key-file '$work/nonroot/client.pub'" >"$work/nonroot.out" 2>"$work/nonroot.err"
 nonroot_code="$?"
 set -e
 if [[ "$nonroot_code" -ne 77 ]]; then
@@ -151,6 +236,7 @@ fi
 log "issue temp cert with --username and -t"
 set +e
 bin/sshfling \
+  --certificate \
   --ca-key "$work/ca_user_ed25519" \
   --username too-long \
   -t 25h >"$work/too-long.out" 2>"$work/too-long.err"
@@ -161,7 +247,7 @@ if [[ "$too_long_code" -eq 0 ]]; then
 fi
 grep -q "cannot exceed 24 hours" "$work/too-long.err"
 
-bin/sshfling --json -t 8s \
+bin/sshfling --json --certificate -t 8s \
   --ca-key "$work/ca_user_ed25519" \
   --username temp-remote \
   --login-user root >"$work/setup.json"
@@ -203,8 +289,8 @@ log "ssh login succeeds before expiry"
 "${ssh_base[@]}" 'whoami' >"$work/whoami.out"
 grep -q '^root$' "$work/whoami.out"
 
-log "password grant prints sshfling connect command and accepts password login"
-bin/sshfling --json -p -t 20s \
+log "default password grant prints sshfling connect command and accepts password login"
+bin/sshfling --json -t 20s \
   --username s234 >"$work/password-setup.json"
 python3 - "$work/password-setup.json" "$work/password.env" <<'PY'
 import json
@@ -223,6 +309,20 @@ with open(sys.argv[2], "w") as out:
 PY
 # shellcheck source=/dev/null
 source "$work/password.env"
+
+bin/sshfling --json --password --dry-run -t 20s \
+  --username s235compat >"$work/password-compat.json"
+python3 - "$work/password-compat.json" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1]))
+assert payload["ok"] is True
+assert payload["auth"] == "password"
+assert payload["username"] == "s235compat"
+assert payload["seconds"] == 20
+assert payload["password"]
+PY
+
 grep -q "Match User s234" /etc/ssh/sshd_config.d/91-sshfling-password-s234.conf
 grep -q "ForceCommand /usr/local/libexec/sshfling-session --max-seconds 20 --max-connections 1 --username s234 --login-user s234 --policy-file /etc/sshfling/policy.json --expires-at" /etc/ssh/sshd_config.d/91-sshfling-password-s234.conf
 test -f /var/lib/sshfling/password-grants/s234.json
@@ -317,9 +417,39 @@ test ! -e /var/lib/sshfling/password-grants/s234.json
 grep -Eq '^s234:!' /etc/shadow
 sshd -t
 
+log "password prune --all --delete-users removes only expired managed users"
+bin/sshfling --json -t 60s \
+  --username s235active >"$work/password-active.json"
+bin/sshfling --json -t 1s \
+  --username s236expired >"$work/password-expired-grant.json"
+sleep 2
+bin/sshfling --json password prune --all --delete-users >"$work/password-prune-all.json"
+python3 - "$work/password-prune-all.json" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1]))
+assert payload["ok"] is True
+by_user = {item.get("username"): item for item in payload["results"] if item.get("username")}
+assert by_user["s235active"]["status"] == "active", by_user
+expired = by_user["s236expired"]
+assert expired["status"] == "pruned", by_user
+assert expired["config"]["removed"] is True, expired
+assert expired["metadata"]["removed"] is True, expired
+assert expired["user"]["deleted"] is True, expired
+PY
+id -u s235active >/dev/null
+if id -u s236expired >/dev/null 2>&1; then
+  fail "expired password prune did not delete s236expired"
+fi
+test -e /etc/ssh/sshd_config.d/91-sshfling-password-s235active.conf
+test ! -e /etc/ssh/sshd_config.d/91-sshfling-password-s236expired.conf
+test -e /var/lib/sshfling/password-grants/s235active.json
+test ! -e /var/lib/sshfling/password-grants/s236expired.json
+sshd -t
+
 log "list and kill named sessions with max connections policy"
 for name in s101 s102 s103; do
-  bin/sshfling --json -t 30s \
+  bin/sshfling --json --certificate -t 30s \
     --ca-key "$work/ca_user_ed25519" \
     --username "$name" \
     --login-user root >"$work/$name.json"
@@ -420,7 +550,7 @@ if [[ "$s102_code" -eq 0 ]]; then
 fi
 
 log "forced session timeout kills long command"
-bin/sshfling --json -t 8s \
+bin/sshfling --json --certificate -t 8s \
   --ca-key "$work/ca_user_ed25519" \
   --username temp-remote \
   --login-user root >"$work/timeout-setup.json"
@@ -461,7 +591,8 @@ grep -q 'time limit reached after 8 seconds' "$work/timeout.err"
 
 log "issuer API returns a temp certificate"
 ssh-keygen -q -t ed25519 -N "" -C "api-client" -f "$work/api-client"
-SSHFLING_ISSUER_TOKEN=test-token bin/sshfling serve \
+issuer_token="0123456789abcdef0123456789abcdef"
+SSHFLING_ISSUER_TOKEN="$issuer_token" bin/sshfling serve \
   --listen 127.0.0.1:8877 \
   --ca-key "$work/ca_user_ed25519" \
   --allowed-principal temp-api \
@@ -477,20 +608,58 @@ for _ in $(seq 1 50); do
   sleep 0.1
 done
 
-python3 - "$work/api-client.pub" "$work/api-response.json" <<'PY'
+python3 - "$work/api-client.pub" "$work/api-response.json" "$issuer_token" <<'PY'
+import importlib.machinery
+import importlib.util
 import json
 import sys
+import urllib.error
 import urllib.request
+
+loader = importlib.machinery.SourceFileLoader("sshfling_module", "bin/sshfling")
+spec = importlib.util.spec_from_loader(loader.name, loader)
+sshfling = importlib.util.module_from_spec(spec)
+loader.exec_module(sshfling)
+
 public_key = open(sys.argv[1]).read().strip()
-body = json.dumps({"public_key": public_key, "principal": "temp-api", "seconds": 30}).encode()
-req = urllib.request.Request(
-    "http://127.0.0.1:8877/v1/certificates",
-    data=body,
-    headers={"Authorization": "Bearer test-token", "Content-Type": "application/json"},
-    method="POST",
-)
-payload = urllib.request.urlopen(req, timeout=5).read().decode()
+token = sys.argv[3]
+url = "http://127.0.0.1:8877/v1/certificates"
+
+def post_body(body, bearer_token=token):
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Authorization": f"Bearer {bearer_token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return response.status, response.read().decode()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode()
+
+def post_json(payload, bearer_token=token):
+    return post_body(json.dumps(payload).encode(), bearer_token)
+
+status, _ = post_json({"public_key": public_key, "principal": "temp-api", "seconds": 30, "login_user": "root"})
+assert status == 400, status
+
+oversized = b'{"public_key":"' + (b"x" * (sshfling.MAX_HTTP_BODY_BYTES + 1)) + b'","principal":"temp-api"}'
+status, _ = post_body(oversized)
+assert status == 413, status
+
+status, payload = post_json({"public_key": public_key, "principal": "temp-api", "seconds": 30})
+assert status == 200, (status, payload)
 open(sys.argv[2], "w").write(payload)
+
+seen_rate_limit = False
+wrong_token = "fedcba9876543210fedcba9876543210"
+for _ in range(sshfling.ISSUER_POST_RATE_LIMIT + 2):
+    status, _ = post_json({"public_key": public_key, "principal": "temp-api", "seconds": 30}, wrong_token)
+    if status == 429:
+        seen_rate_limit = True
+        break
+assert seen_rate_limit, "issuer POST rate limit did not trigger"
 PY
 
 python3 - "$work/api-response.json" "$work/api-client-cert.pub" <<'PY'
@@ -507,8 +676,8 @@ kill "$issuer_pid" 2>/dev/null || true
 wait "$issuer_pid" 2>/dev/null || true
 trap cleanup EXIT
 
-log "setup can generate a random username by default"
-bin/sshfling --json -t 20s \
+log "certificate setup can generate a random username"
+bin/sshfling --json --certificate -t 20s \
   --ca-key "$work/ca_user_ed25519" \
   >"$work/random-setup.json"
 python3 - "$work/random-setup.json" <<'PY'
@@ -517,14 +686,14 @@ import re
 import sys
 payload = json.load(open(sys.argv[1]))
 assert payload["ok"] is True
-assert re.fullmatch(r"s[0-9]{3}", payload["username"]), payload["username"]
+assert re.fullmatch(r"s[0-9]{6}", payload["username"]), payload["username"]
 assert payload["generated_key"] is True
 assert payload["private_key"]
 assert payload["out"]
 PY
 
-log "bare sshfling defaults to 24 hours with a short random username"
-bin/sshfling --json \
+log "certificate setup defaults to 24 hours with a random username"
+bin/sshfling --json --certificate \
   --ca-key "$work/ca_user_ed25519" \
   >"$work/default-setup.json"
 python3 - "$work/default-setup.json" <<'PY'
@@ -534,13 +703,31 @@ import sys
 payload = json.load(open(sys.argv[1]))
 assert payload["ok"] is True
 assert payload["seconds"] == 86400
-assert re.fullmatch(r"s[0-9]{3}", payload["username"]), payload["username"]
+assert re.fullmatch(r"s[0-9]{6}", payload["username"]), payload["username"]
+PY
+
+log "bare sshfling defaults to password access"
+bin/sshfling --json --dry-run >"$work/default-password-setup.json"
+python3 - "$work/default-password-setup.json" <<'PY'
+import json
+import re
+import sys
+payload = json.load(open(sys.argv[1]))
+assert payload["ok"] is True
+assert payload["auth"] == "password"
+assert payload["seconds"] == 86400
+assert re.fullmatch(r"s[0-9]{6}", payload["username"]), payload["username"]
+assert payload["password"]
+assert "generated_key" not in payload
+assert "private_key" not in payload
+assert "out" not in payload
 PY
 
 log "custom user-specific install policy caps default and requested time"
 bin/sshfling policy install --policy-file "$work/short-policy.json" --user root --max-time 45s --max-connections 2 >/dev/null
 set +e
 bin/sshfling --policy-file "$work/short-policy.json" \
+  --certificate \
   --ca-key "$work/ca_user_ed25519" \
   --username s201 \
   --login-user root \
@@ -551,7 +738,7 @@ if [[ "$short_too_long_code" -eq 0 ]]; then
   fail "expected policy max-time 45s to reject 46s"
 fi
 grep -q "cannot exceed 45s" "$work/short-too-long.err"
-bin/sshfling --json \
+bin/sshfling --json --certificate \
   --policy-file "$work/short-policy.json" \
   --login-user root \
   --ca-key "$work/ca_user_ed25519" >"$work/short-default.json"
@@ -577,7 +764,7 @@ wait "$sshd_pid" 2>/dev/null || true
 sshd_pid="$!"
 sleep 0.5
 
-bin/sshfling --json -t 20s \
+bin/sshfling --json --certificate -t 20s \
   --ca-key "$work/ca_user_ed25519" \
   --username sshflingtmp >"$work/created-setup.json"
 python3 - "$work/created-setup.json" "$work/created.env" <<'PY'

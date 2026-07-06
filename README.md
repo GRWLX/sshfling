@@ -4,39 +4,48 @@
 
 ## Server / Service Side
 
-Install:
+Install from the signed APT repository:
 
 ```bash
-curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash
+sudo install -d -m 0755 /usr/share/keyrings
+curl -fsSL https://grwlx.github.io/sshfling/sshfling-repo.gpg | sudo tee /usr/share/keyrings/sshfling-repo.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/sshfling-repo.gpg] https://grwlx.github.io/sshfling/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
+sudo apt update
+sudo apt install -y sshfling
 ```
 
 Uninstall the package/CLI:
 
 ```bash
-curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall
+sudo apt remove -y sshfling
+sudo rm -f /etc/apt/sources.list.d/sshfling.list
+sudo apt update
 ```
 
-See [Uninstall and cleanup](#uninstall-and-cleanup) for host SSH configuration and local state removal.
+See [Repository and package registration](docs/repos.md) for DNF/Yum,
+Homebrew, macOS, Windows, and convenience wrapper examples. See [Uninstall and
+cleanup](#uninstall-and-cleanup) for host SSH configuration and local state
+removal.
 
-Certificate access:
+Password access:
 
 ```bash
 sudo sshfling
 ```
 
-Shorter certificate access:
+Shorter password access:
 
 ```bash
 sudo sshfling -t 10m
 ```
 
-Or password access:
+Certificate access:
 
 ```bash
-sudo sshfling -p -t 10m
+sudo sshfling --certificate -t 10m
 ```
 
-The server prints the temporary username, generated password when using `-p`, expiry, and the client command. Access expires automatically.
+The server prints the temporary username, expiry, and the client command. Password access also prints a generated password. Certificate access prints or writes the generated key and certificate material. Access expires automatically.
 
 See active sessions or cut them off:
 
@@ -50,19 +59,11 @@ sudo sshfling shutdown
 
 Use the command printed by the server.
 
-Certificate access:
+Password access:
 
-```bash
-ssh -i /path/to/generated/key user@1.0.0.1
-```
-
-Or password access:
-
-Install `sshfling` on the client:
-
-```bash
-curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash
-```
+Install `sshfling` on the client with the signed package repository shown
+above, or use the platform-specific package registration examples in
+[docs/repos.md](docs/repos.md).
 
 Run the server-printed command:
 
@@ -72,7 +73,15 @@ sshfling s234@1.0.0.1
 
 Then type the generated password when OpenSSH prompts for it. Client mode does not require root.
 
-On the server side, `-p` is short for `--password`. On the client side, `sshfling -p 2222 user@host` is passed through to OpenSSH as the SSH port option.
+Certificate access:
+
+```bash
+ssh -i /path/to/generated/key user@1.0.0.1
+```
+
+On the server side, `-p` is short for `--password`; password access is already the default, so the flag is kept for compatibility. Use `--certificate` to create certificate access. On the client side, `sshfling -p 2222 user@host` is passed through to OpenSSH as the SSH port option.
+
+Certificate setup options such as `--ca-key`, `--public-key-file`, `--out`, `--login-user`, `--source-address`, and `--no-pty` require `--certificate`. Without `--certificate`, the server-side setup path creates a password grant or fails before creating certificate material.
 
 The server-side grant prints the detected server address in the client command. If a host has multiple addresses and you need to override that detection, set `SSHFLING_SERVER_HOST` for the grant command.
 
@@ -82,12 +91,13 @@ Rules:
 - The maximum grant time is 24 hours.
 - `sshfling` with no `-t` uses the maximum: 24 hours.
 - Up to 10 active sshfling SSH sessions are allowed, depending on install policy.
-- If no SSH public key is provided, certificate mode creates a temporary keypair automatically.
-- Password mode creates a real Unix account password, tracks the grant, auto-expires access, and allows only one active session for that temporary username.
+- Password mode is the default. It creates a real Unix account password, tracks the grant, auto-expires access, and allows only one active session for that temporary username.
+- Certificate mode is opt-in with `--certificate`. If no SSH public key is provided, certificate mode creates a temporary keypair automatically.
+- SSHFling discloses use in system logs through `logger` with the `sshfling` and `sshfling-session` tags. Audit records include grant/session metadata such as user, principal, lifetime, serial, and outcome, but not passwords, bearer tokens, cookies, private keys, public key material, or raw remote commands.
 
-Under the hood, certificate mode uses OpenSSH user certificates and a host-side timeout wrapper. Password mode writes a temporary sshd `Match User` block that forces the same timeout wrapper.
+Under the hood, password mode writes a temporary sshd `Match User` block that forces the timeout wrapper. Certificate mode uses OpenSSH user certificates and the same host-side timeout wrapper.
 
-SSHFling also fits AI-assisted operations where the target server should not run an AI CLI, agent, SDK, or vendor daemon. An operator can grant a short-lived standard SSH session to a human or AI tool from a workstation, while the server continues to rely on OpenSSH certificates, local policy, and a forced command wrapper for timeout enforcement. See [AI-assisted temporary server access](docs/ai-temporary-access.md) and [Codex and enterprise detached workflows](docs/codex-enterprise-workflow.md).
+SSHFling also fits AI-assisted operations where the target server should not run an AI CLI, agent, SDK, or vendor daemon. An operator can grant a short-lived standard SSH session to a human or AI tool from a workstation, while the server continues to rely on OpenSSH, local policy, and a forced command wrapper for timeout enforcement. See [AI-assisted temporary server access](docs/ai-temporary-access.md) and [Codex and enterprise detached workflows](docs/codex-enterprise-workflow.md).
 
 It also includes a Docker Compose test harness with two projects:
 
@@ -96,10 +106,17 @@ It also includes a Docker Compose test harness with two projects:
 
 Every SSH session is capped by `SSH_SESSION_SECONDS`.
 
-For production hosts, Docker is only a test harness. The production mode uses OpenSSH user certificates:
+For production hosts, Docker is only a test harness. The normal production grant is a temporary password grant:
+
+- `sudo sshfling` creates a tracked temporary Unix password grant.
+- `sudo sshfling -t 10m --username ticket-1234` creates a shorter named password grant.
+- `sudo sshfling password prune` removes expired tracked password grants.
+
+OpenSSH user certificates are available explicitly:
 
 - `sshfling ca init` creates an SSH user CA keypair.
 - `sshfling host install` configures a target host to trust the CA for one Unix user.
+- `sudo sshfling --certificate` creates a temporary certificate grant.
 - `sshfling cert issue` signs a user's public key for a short lifetime.
 - `sshfling serve` runs a small authenticated certificate issuer service.
 
@@ -113,7 +130,7 @@ The normal command is:
 sudo sshfling
 ```
 
-That creates or reuses the CA key, creates a temporary username, creates a temporary keypair/certificate, and prints the SSH command. Use `-t` to choose a shorter time.
+That creates a temporary Unix password grant, prints a generated password, and prints the `sshfling user@host` client command. Use `-t` to choose a shorter time.
 
 Optional username:
 
@@ -121,13 +138,19 @@ Optional username:
 sudo sshfling -t 10m --username ticket-1234
 ```
 
-Password-based temporary access:
+Explicit certificate temporary access:
+
+```bash
+sudo sshfling --certificate -t 10m --username ticket-1234
+```
+
+Explicit password flag:
 
 ```bash
 sudo sshfling -p -t 10m --username s234
 ```
 
-That prints a one-time grant with a generated password and this client command:
+That is equivalent to the default password grant and prints this client command:
 
 ```bash
 sshfling s234@1.0.0.1
@@ -172,7 +195,10 @@ sudo sshfling policy install --user deploy --max-time 30m --max-connections 3
 Run the local web console:
 
 ```bash
-export SSHFLING_WEB_PASSWORD_HASH="$(SSHFLING_WEB_PASSWORD='change-me' sshfling web-hash)"
+web_password="$(openssl rand -base64 24)"
+export SSHFLING_WEB_PASSWORD_HASH="$(SSHFLING_WEB_PASSWORD="$web_password" sshfling web-hash)"
+printf 'temporary web password: %s\n' "$web_password"
+unset web_password
 sudo --preserve-env=SSHFLING_WEB_PASSWORD_HASH sshfling web
 ```
 
@@ -194,7 +220,7 @@ Copy `/etc/sshfling/ca_user_ed25519.pub` to each target host, then on each targe
 sudo sshfling host install \
   --ca-pub ./ca_user_ed25519.pub \
   --username temp-remote \
-  --create-user \
+  --create-user
 ```
 
 Remove the host SSH configuration:
@@ -206,7 +232,7 @@ sudo sshfling host uninstall --username temp-remote --reload
 Issue a temporary certificate for a client public key:
 
 ```bash
-sshfling cert issue \
+sudo sshfling cert issue \
   --ca-key /etc/sshfling/ca_user_ed25519 \
   --public-key-file ~/.ssh/id_ed25519.pub \
   --username temp-remote \
@@ -217,7 +243,7 @@ sshfling cert issue \
 Connect before the certificate expires:
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 deploy@host.example.com
+ssh -i ~/.ssh/id_ed25519 temp-remote@host.example.com
 ```
 
 Run the issuer API service:
@@ -230,14 +256,28 @@ sshfling serve --ca-key /etc/sshfling/ca_user_ed25519 --allowed-principal deploy
 Run it with systemd after installing a package:
 
 ```bash
-sudo useradd --system --home /var/lib/sshflingd --shell /usr/sbin/nologin sshflingd
-sudo install -d -m 0750 -o sshflingd -g sshflingd /etc/sshfling
+sudo groupadd --system sshflingd
+sudo useradd --system --gid sshflingd --home /var/lib/sshflingd --shell /usr/sbin/nologin sshflingd
+sudo install -d -m 0750 -o root -g sshflingd /etc/sshfling
 sudo sshfling ca init --ca-key /etc/sshfling/ca_user_ed25519
-sudo chown sshflingd:sshflingd /etc/sshfling/ca_user_ed25519 /etc/sshfling/ca_user_ed25519.pub
-sudo install -m 0600 -o root -g root /usr/share/doc/sshfling/sshflingd.env.example /etc/sshfling/sshflingd.env
+sudo chown root:sshflingd /etc/sshfling/ca_user_ed25519
+sudo chmod 0640 /etc/sshfling/ca_user_ed25519
+sudo chown root:root /etc/sshfling/ca_user_ed25519.pub
+sudo chmod 0644 /etc/sshfling/ca_user_ed25519.pub
+sudo install -m 0640 -o root -g sshflingd /usr/share/doc/sshfling/sshflingd.env.example /etc/sshfling/sshflingd.env
 sudo sed -i "s/replace-with-a-long-random-token/$(openssl rand -hex 32)/" /etc/sshfling/sshflingd.env
+sudo chown root:sshflingd /etc/sshfling/sshflingd.env
+sudo chmod 0640 /etc/sshfling/sshflingd.env
 sudo systemctl enable --now sshflingd
 ```
+
+Keep `/etc/sshfling` root-owned and only group-readable by `sshflingd`. The daemon should not own or write the CA key, token file, or policy file; use the `sshflingd` group for read access, or a local systemd credential drop-in if you prefer `LoadCredential=` for CA/token material.
+
+The packaged service listens on `127.0.0.1:8787` by default. If an approved
+private-network deployment needs `SSHFLING_LISTEN` to use a non-loopback
+address, set `SSHFLING_ALLOW_REMOTE=1` in
+`/etc/sshfling/sshflingd.env` and protect the issuer behind TLS, mTLS, a VPN,
+or equivalent network controls.
 
 Request a certificate from the service:
 
@@ -251,32 +291,43 @@ curl -sS \
 
 ## Uninstall and Cleanup
 
-Package uninstall removes the `sshfling` command and packaged templates. It does not remove host SSH configuration that was created with `sshfling host install`, temporary password grant state, local CA keys, or `/etc/sshfling` policy/config files.
+Package uninstall removes the `sshfling` command and packaged templates. It does not remove host SSH configuration that was created with `sshfling host install`, temporary password grant state, local CA keys, or `/etc/sshfling` policy/config files. Package-manager dependencies such as Python, OpenSSH client/server packages, account-management tools, `procps`, or `util-linux` are controlled by the host package manager and fleet policy; uninstall does not guarantee that dependency state is restored to the exact preinstall state.
 
-Linux and Homebrew:
+Convenience wrapper for Linux and Homebrew package uninstall:
 
 ```bash
-curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL https://grwlx.github.io/sshfling/install.sh -o "$tmp/install.sh"
+bash "$tmp/install.sh" uninstall
 ```
 
-Force a specific uninstall path:
+Convenience wrapper with a specific uninstall path:
 
 ```bash
-curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall apt
-curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall dnf
-curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall brew
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL https://grwlx.github.io/sshfling/install.sh -o "$tmp/install.sh"
+bash "$tmp/install.sh" uninstall apt
+bash "$tmp/install.sh" uninstall dnf
+bash "$tmp/install.sh" uninstall brew
 ```
 
 macOS pkg:
 
 ```bash
-curl -fsSL https://grwlx.github.io/sshfling/macos/uninstall-pkg.sh | sudo bash
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL https://grwlx.github.io/sshfling/macos/uninstall-pkg.sh -o "$tmp/uninstall-pkg.sh"
+sudo bash "$tmp/uninstall-pkg.sh"
 ```
 
 Windows MSI:
 
 ```powershell
-irm https://grwlx.github.io/sshfling/windows/uninstall.ps1 | iex
+$Uninstaller = Join-Path $env:TEMP "sshfling-uninstall.ps1"
+Invoke-WebRequest -Uri "https://grwlx.github.io/sshfling/windows/uninstall.ps1" -OutFile $Uninstaller
+& $Uninstaller
 ```
 
 Remove host SSH configuration created by `sshfling host install`:
@@ -306,9 +357,12 @@ sudo sshfling host uninstall --username temp-remote --delete-user --reload
 Clean up temporary password grants:
 
 ```bash
-sudo sshfling password prune --all
+sudo sshfling password prune
 sudo sshfling password prune --all --delete-users
+sudo sshfling password prune --username s234 --delete-users
 ```
+
+Prune only removes expired grants. `--all` scans the tracked grant store but leaves active grants in place. By default, expired SSHFling-created Unix users are locked and expired; `--delete-users` deletes expired SSHFling-created users. Existing users that were explicitly allowed with `--allow-existing-user` are locked and expired but are never deleted by `--delete-users`.
 
 If you installed from a source checkout with `./scripts/install-local.sh`, remove that local install with:
 
@@ -346,7 +400,7 @@ Build packages from this source checkout:
 ```bash
 ./packaging/build-deb.sh
 ./packaging/build-rpm.sh
-powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build-msi.ps1
+powershell -NoProfile -File packaging/build-msi.ps1
 ./packaging/build-pkg.sh
 ```
 
@@ -359,12 +413,16 @@ Package outputs go to `dist/`.
 
 Repo registration instructions are in [docs/repos.md](docs/repos.md).
 The current OS/package target matrix is in [docs/build-targets.md](docs/build-targets.md).
+Enterprise publishing guidance is in [docs/release-checklist.md](docs/release-checklist.md),
+[docs/release-evidence.md](docs/release-evidence.md),
+[docs/enterprise-readiness.md](docs/enterprise-readiness.md), and the
+[docs/wiki](docs/wiki/Home.md) pages.
 
 GitHub Actions workflows are included for public distribution:
 
 - `Container image tests` builds packages into Docker-based install targets and runs the SSHFling server/client image smoke tests through `make test-containers`.
 - `Release packages without web` builds release artifacts only.
-- `Release packages with public web` publishes a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, macOS `.pkg`, Windows MSI installs, and community package manifests for BSDs, Arch/AUR, Alpine, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey.
+- `Release packages with public web` verifies a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, macOS `.pkg`, Windows MSI installs, and community package manifests for BSDs, Arch/AUR, Alpine, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey. Manual runs are dry-run verification unless `publish=true`; tag runs publish after verification and protected Pages approval.
 - `Package install tests` installs from the published package site and verifies the requested `sshfling` version across Linux package repos and community package manifests.
 - `Cross OS validation` installs or builds those outputs across Linux, BSD, macOS, and Windows and checks the 24-hour policy default, copied service templates, active-session PID fields, and detached job PID lifecycle.
 

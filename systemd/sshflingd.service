@@ -1,5 +1,5 @@
 [Unit]
-Description=SSHFling temporary SSH certificate issuer
+Description=SSHFling temporary SSH access broker
 Documentation=file:/usr/share/doc/sshfling/README.md
 After=network-online.target
 Wants=network-online.target
@@ -10,13 +10,34 @@ EnvironmentFile=/etc/sshfling/sshflingd.env
 ExecStart=/usr/bin/sshfling serve --listen ${SSHFLING_LISTEN} --ca-key ${SSHFLING_CA_KEY} --allowed-principal ${SSHFLING_ALLOWED_PRINCIPALS} --default-seconds ${SSHFLING_DEFAULT_SECONDS} --max-seconds ${SSHFLING_MAX_SECONDS} --session-wrapper ${SSHFLING_SESSION_WRAPPER}
 User=sshflingd
 Group=sshflingd
+UMask=0077
+WorkingDirectory=/var/lib/sshflingd
+StateDirectory=sshflingd
+RuntimeDirectory=sshflingd
 Restart=on-failure
 RestartSec=3
+CapabilityBoundingSet=
+AmbientCapabilities=
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/etc/sshfling
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ReadOnlyPaths=/etc/sshfling
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallErrorNumber=EPERM
+SystemCallFilter=@system-service
 
 [Install]
 WantedBy=multi-user.target

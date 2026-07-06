@@ -10,7 +10,7 @@ fail() {
   exit 1
 }
 
-script_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+script_dir="$(CDPATH=; cd -- "$(dirname -- "$0")/.." && pwd)"
 "$script_dir/cross-os/validate-cli.sh" "$cmd" "$version"
 
 tmp="${TMPDIR:-/tmp}/sshfling-firewall-$$"
@@ -81,7 +81,7 @@ PY
 
 if [ "$(id -u)" = "0" ]; then
   set +e
-  "$cmd" --password --dry-run --username sshflingtest -t 60s 2>"$tmp/password.err" >"$tmp/password.out"
+  "$cmd" --dry-run --username sshflingtest -t 60s 2>"$tmp/password.err" >"$tmp/password.out"
   rc=$?
   set -e
   if [ "$rc" -eq 0 ]; then

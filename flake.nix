@@ -1,5 +1,5 @@
 {
-  description = "SSHFling temporary SSH certificate issuer and access CLI";
+  description = "SSHFling temporary SSH access broker and CLI";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -15,7 +15,7 @@
         in {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "sshfling";
-            version = "0.1.11";
+            version = "0.1.12";
             src = self;
             nativeBuildInputs = [ pkgs.makeWrapper ];
             dontBuild = true;
@@ -32,7 +32,7 @@
               runHook postInstall
             '';
             meta = with pkgs.lib; {
-              description = "Temporary SSH certificate issuer and access CLI";
+              description = "Temporary SSH access broker and CLI";
               homepage = "https://github.com/GRWLX/sshfling";
               license = licenses.unfree;
               mainProgram = "sshfling";
