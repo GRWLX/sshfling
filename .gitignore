@@ -23,6 +23,8 @@ known_hosts
 htmlcov/
 .DS_Store
 *.log
+packaging/dotnet/**/bin/
+packaging/dotnet/**/obj/
 secrets/*
 !secrets/.gitkeep
 build/
@@ -40,6 +42,8 @@ security_best_practices_report.md
 *.rpm
 *.msi
 *.pkg
+*.nupkg
+*.snupkg
 *.zip
 __pycache__/
 *.pyc

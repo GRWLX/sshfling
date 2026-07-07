@@ -189,6 +189,7 @@ SPEC
 }
 
 build_direct_downloads() {
+  printf 'NuGet global tool placeholder for release rehearsal\n' >"$package_dist/SSHFling.Tool.$version.nupkg"
   printf 'macOS pkg placeholder for release rehearsal\n' >"$package_dist/sshfling-$version.pkg"
   printf 'Windows MSI placeholder for release rehearsal\n' >"$package_dist/sshfling-$version.msi"
   printf 'Windows zip placeholder for release rehearsal\n' >"$package_dist/sshfling-$version-windows.zip"

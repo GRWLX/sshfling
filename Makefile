@@ -10,7 +10,7 @@ RELEASE_SECURITY_LOCAL_OUTPUT_DIR ?= build/release-security-local
 RELEASE_MATRIX_VALIDATE_FLAGS ?=
 RELEASE_SCANNER_BIN_DIR ?= $(if $(RUNNER_TEMP),$(RUNNER_TEMP),$(CURDIR)/build)/release-scanners/bin
 
-.PHONY: install-local uninstall-local test test-containers test-release-security-scan release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg clean
+.PHONY: install-local uninstall-local test test-containers test-release-security-scan release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet clean
 
 install-local:
 	install -d "$(PREFIX)/bin" "$(TEMPLATE_DIR)/scripts" "$(TEMPLATE_DIR)/secrets" "$(TEMPLATE_DIR)/ssh-client" "$(TEMPLATE_DIR)/ssh-server" "$(TEMPLATE_DIR)/production" "$(TEMPLATE_DIR)/systemd"
@@ -75,7 +75,7 @@ release-matrix-validate:
 check-package-version:
 	@bash -c 'source packaging/version.sh; assert_sshfling_version_matches_source "$$1" "$$2" >/dev/null' _ "$(VERSION)" "$(CURDIR)"
 
-package: package-deb package-rpm package-msi package-pkg
+package: package-deb package-rpm package-msi package-pkg package-dotnet
 
 package-deb: check-package-version
 	SSHFLING_VERSION="$(VERSION)" bash packaging/build-deb.sh
@@ -88,6 +88,9 @@ package-msi: check-package-version
 
 package-pkg: check-package-version
 	SSHFLING_VERSION="$(VERSION)" bash packaging/build-pkg.sh
+
+package-dotnet: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-dotnet.sh
 
 clean:
 	rm -rf build dist

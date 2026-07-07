@@ -331,6 +331,7 @@ release_files=(
   "sshfling_${release_version}_all.deb"
   "sshfling-${release_version}-1.noarch.rpm"
   "sshfling-${release_version}.tar.gz"
+  "SSHFling.Tool.${release_version}.nupkg"
   "sshfling-${release_version}.pkg"
   "sshfling-${release_version}.msi"
   "sshfling-${release_version}-windows.zip"

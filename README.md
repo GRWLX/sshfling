@@ -38,10 +38,11 @@ sudo apt update
 ```
 
 See [Install and uninstall runbook](docs/install-uninstall.md) for DEB/RPM,
-public repository, macOS, Windows, BSD/community, container, dependency, and
-original-state instructions. See [Repository and package registration](docs/repos.md)
-for package publishing details, [OpenSSH dependency policy](docs/openssh-dependencies.md)
-for dependency ownership, version, install, uninstall, and original-state
+public repository, .NET global tool, macOS, Windows, BSD/community, container,
+dependency, and original-state instructions. See
+[Repository and package registration](docs/repos.md) for package publishing
+details, [OpenSSH dependency policy](docs/openssh-dependencies.md) for
+dependency ownership, version, install, uninstall, and original-state
 expectations, and [Uninstall and cleanup](#uninstall-and-cleanup) for host SSH
 configuration and local state removal.
 
@@ -391,6 +392,14 @@ sudo bash "$tmp/uninstall-pkg.sh"
 
 The macOS pkg uninstall helper removes `/usr/local/bin/sshfling` and `/usr/local/share/sshfling`, then forgets the pkg receipt. It intentionally preserves `/etc/sshfling` because that directory can contain local policy, CA material, or operator-managed configuration.
 
+.NET global tool:
+
+```bash
+dotnet tool uninstall --global SSHFling.Tool
+```
+
+The .NET global tool uninstall removes the user-level tool registration only. It does not remove SSHFling project directories, host SSH configuration, CA material, temporary grant state, Python, OpenSSH, Docker, or shared host dependencies.
+
 Windows MSI:
 
 ```powershell
@@ -481,6 +490,7 @@ Build packages from this source checkout:
 ```bash
 ./packaging/build-deb.sh
 ./packaging/build-rpm.sh
+./packaging/build-dotnet.sh
 powershell -NoProfile -File packaging/build-msi.ps1
 ./packaging/build-pkg.sh
 ```
@@ -489,6 +499,8 @@ Package outputs go to `dist/`.
 
 - `.deb` needs `dpkg-deb`.
 - `.rpm` needs `rpmbuild`.
+- `.nupkg` needs the .NET 10 SDK to build. The installed .NET global tool
+  still requires Python 3 and OpenSSH tools on the target host.
 - `.msi` needs Windows PowerShell and WiX Toolset v3.
 - `.pkg` needs macOS `pkgbuild` and `productbuild`.
 
@@ -507,7 +519,7 @@ GitHub Actions workflows are included for public distribution:
 
 - `Container image tests` builds packages into Docker-based install targets and runs the SSHFling server/client image smoke tests through `make test-containers`.
 - `Release packages without web` builds release artifacts only.
-- `Release packages with public web` verifies a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, macOS `.pkg`, Windows MSI installs, and community package manifests for BSDs, Arch/AUR, Alpine, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey. Manual runs are dry-run verification unless `publish=true`; tag runs publish only when stable repository signing secrets are present and the configured Pages environment permits deployment.
+- `Release packages with public web` verifies a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, .NET global tool, macOS `.pkg`, Windows MSI installs, and community package manifests for BSDs, Arch/AUR, Alpine, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey. Manual runs are dry-run verification unless `publish=true`; tag runs publish only when stable repository signing secrets are present and the configured Pages environment permits deployment.
 - `Package install tests` installs from the published package site and verifies the requested `sshfling` version across Linux package repos and community package manifests.
 - `Cross OS validation` installs or builds those outputs across Linux, BSD,
   macOS, and Windows and checks the explicit grant lifetime requirement,
@@ -567,7 +579,7 @@ NIXPKGS_ALLOW_UNFREE=1 nix run --impure github:GRWLX/sshfling
 
 For this tool, native packages are the right default for deployment fleets because the command wraps Docker, writes deployment files, and is likely to be installed by admins.
 
-NPM would be good for developer-first distribution, especially `npm install -g sshfling`, but it would add a Node runtime expectation. NuGet is only a good fit if this becomes a .NET global tool. Homebrew is the best macOS developer path, winget/Intune are better Windows distribution paths, and APT/YUM are best for Linux fleets.
+NPM would be good for developer-first distribution, especially `npm install -g sshfling`, but it would add a Node runtime expectation. The NuGet package is a .NET global tool wrapper for developer and admin convenience; it still depends on host Python and OpenSSH. Homebrew is the best macOS developer path, winget/Intune are better Windows distribution paths, and APT/YUM are best for Linux fleets.
 
 ## License
 

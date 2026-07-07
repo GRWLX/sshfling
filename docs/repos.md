@@ -254,6 +254,25 @@ policy/configuration stored outside the install directory. For the portable
 Windows zip, delete the extracted directory and remove only PATH entries your
 deployment added.
 
+## Public .NET Global Tool
+
+The public package site publishes `downloads/SSHFling.Tool.VERSION.nupkg` as a
+NuGet global tool package. It is a direct-download package, not a NuGet feed;
+download it, verify `downloads/SHA256SUMS`, and install from the verified local
+directory:
+
+```bash
+dotnet tool install --global SSHFling.Tool --add-source "$verified_download_dir" --version "$VERSION"
+```
+
+The installed command is `sshfling`. The .NET package does not bundle Python,
+OpenSSH, Docker, host account-management tools, or host SSH configuration.
+Uninstall removes the .NET tool registration only:
+
+```bash
+dotnet tool uninstall --global SSHFling.Tool
+```
+
 ## Public Community Manifests
 
 The Pages workflow also generates ready-to-use or ready-to-submit package definitions at `${BASE_URL}/community.html`:

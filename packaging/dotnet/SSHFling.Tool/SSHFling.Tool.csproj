@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>sshfling</ToolCommandName>
+    <PackageId>SSHFling.Tool</PackageId>
+    <Version>0.0.0</Version>
+    <Authors>GRWLX</Authors>
+    <Company>GRWLX</Company>
+    <Description>Temporary SSH access broker and CLI packaged as a .NET global tool.</Description>
+    <PackageTags>ssh;openssh;temporary-access;cli;dotnet-tool</PackageTags>
+    <PackageProjectUrl>https://github.com/GRWLX/sshfling</PackageProjectUrl>
+    <PackageReadmeFile>tools/$(TargetFramework)/any/templates/README.md</PackageReadmeFile>
+    <PackageLicenseFile>tools/$(TargetFramework)/any/templates/LICENSE</PackageLicenseFile>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <RepositoryUrl>https://github.com/GRWLX/sshfling</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="../../../bin/sshfling" Link="sshfling.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../.env.example" Link="templates/.env.example" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../LICENSE" Link="templates/LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../README.md" Link="templates/README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../compose.server.yml" Link="templates/compose.server.yml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../compose.client.yml" Link="templates/compose.client.yml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../scripts/install-local.sh" Link="templates/scripts/install-local.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../scripts/uninstall-local.sh" Link="templates/scripts/uninstall-local.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../scripts/create-network.sh" Link="templates/scripts/create-network.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../scripts/generate-ssh-key.sh" Link="templates/scripts/generate-ssh-key.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../ssh-client/Dockerfile" Link="templates/ssh-client/Dockerfile" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../ssh-client/entrypoint.sh" Link="templates/ssh-client/entrypoint.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../ssh-server/Dockerfile" Link="templates/ssh-server/Dockerfile" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../ssh-server/entrypoint.sh" Link="templates/ssh-server/entrypoint.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../ssh-server/limited-session.sh" Link="templates/ssh-server/limited-session.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../ssh-server/sshd_config" Link="templates/ssh-server/sshd_config" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../production/sshfling-session" Link="templates/production/sshfling-session" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../systemd/sshflingd.service" Link="templates/systemd/sshflingd.service" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../systemd/sshflingd.env.example" Link="templates/systemd/sshflingd.env.example" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+  </ItemGroup>
+</Project>

@@ -290,6 +290,9 @@ touch "$public_dir/.nojekyll"
 cp "$package_dist"/*.deb "$public_dir/apt/"
 cp "$package_dist"/*.rpm "$public_dir/rpm/"
 cp "$package_dist"/*.tar.gz "$public_dir/downloads/"
+if compgen -G "$package_dist/*.nupkg" >/dev/null; then
+  cp "$package_dist"/*.nupkg "$public_dir/downloads/"
+fi
 cp "$package_dist"/*.pkg "$public_dir/downloads/"
 cp "$package_dist"/*.msi "$public_dir/downloads/"
 if compgen -G "$package_dist/*.zip" >/dev/null; then
@@ -724,6 +727,15 @@ sudo rm -f /etc/yum.repos.d/sshfling.repo /etc/pki/rpm-gpg/RPM-GPG-KEY-sshfling<
   <pre><code>brew install $base_url/homebrew/sshfling.rb</code></pre>
   <p>Uninstall:</p>
   <pre><code>brew uninstall sshfling</code></pre>
+  <h2>.NET global tool</h2>
+  <p>The .NET package is a NuGet global tool wrapper around the bundled SSHFling Python CLI. It requires .NET 10, Python 3, and OpenSSH tools on the target host.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+curl -fsSL $base_url/downloads/SSHFling.Tool.$version.nupkg -o "\$tmp/SSHFling.Tool.$version.nupkg"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -F "SSHFling.Tool.$version.nupkg" SHA256SUMS | sha256sum -c -)
+dotnet tool install --global SSHFling.Tool --add-source "\$tmp" --version "$version"</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>dotnet tool uninstall --global SSHFling.Tool</code></pre>
   <h2>macOS pkg</h2>
   <p>Enterprise macOS distribution should use signed and notarized packages. This helper is a convenience wrapper around the published package artifact.</p>
   <pre><code>tmp="\$(mktemp -d)"

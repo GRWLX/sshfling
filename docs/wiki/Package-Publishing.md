@@ -12,8 +12,8 @@ site that includes:
 - Debian and Ubuntu `.deb` packages with APT metadata.
 - RHEL, Fedora, Rocky Linux, AlmaLinux, and UBI `.rpm` packages with RPM repo
   metadata.
-- A Homebrew formula, macOS `.pkg`, Windows MSI, Windows portable zip, source
-  tarball, and checksums.
+- A Homebrew formula, .NET global tool `.nupkg`, macOS `.pkg`, Windows MSI,
+  Windows portable zip, source tarball, and checksums.
 - Community package manifests for Arch/AUR, Alpine, FreeBSD Ports, OpenBSD
   Ports, pkgsrc, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft,
   Termux, AppImage, Scoop, winget, and Chocolatey.
@@ -227,8 +227,8 @@ manifests, checksums, public install scripts, and signed-repository files when
 repo signing is enabled.
 
 For local verification, provide the same environment variables the workflow
-uses and ensure `package-dist/` contains the Linux, macOS, Windows, and source
-artifacts:
+uses and ensure `package-dist/` contains the Linux, .NET, macOS, Windows, and
+source artifacts:
 
 ```bash
 VERSION=0.1.14 \

@@ -364,6 +364,40 @@ intentionally preserves `/etc/sshfling` for policy, CA material, and
 operator-managed configuration, then forgets the package receipt. The pkg does
 not keep separate original-state records and does not bundle Python or OpenSSH.
 
+## .NET Global Tool
+
+The NuGet package ID is `SSHFling.Tool` and the installed command is
+`sshfling`. This package is a .NET wrapper around the bundled Python CLI and
+templates; it does not bundle Python, OpenSSH, Docker, host account-management
+tools, or host SSH configuration.
+
+Install from a downloaded release package after verifying the published
+checksum:
+
+```bash
+BASE_URL="https://OWNER.github.io/REPO"
+VERSION="0.1.14"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "${BASE_URL}/downloads/SSHFling.Tool.${VERSION}.nupkg" -o "$tmp/SSHFling.Tool.${VERSION}.nupkg"
+curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
+grep "  SSHFling.Tool.${VERSION}.nupkg$" "$tmp/SHA256SUMS" > "$tmp/SSHFling.Tool.SHA256SUMS"
+(cd "$tmp" && sha256sum -c SSHFling.Tool.SHA256SUMS)
+dotnet tool install --global SSHFling.Tool --add-source "$tmp" --version "$VERSION"
+sshfling --version
+```
+
+Uninstall:
+
+```bash
+dotnet tool uninstall --global SSHFling.Tool
+```
+
+Global tool uninstall removes the .NET tool shim and package from the user's
+.NET tool installation. It does not remove SSHFling project directories, host
+SSH configuration, CA material, temporary grant state, Python, OpenSSH, Docker,
+or any shared host dependencies.
+
 ## Windows MSI
 
 Install with the generated checksum and Authenticode-verifying helper from an

@@ -491,3 +491,39 @@ jobs:
           Expand-Archive -Force $zip -DestinationPath $dest
           $cmd = Join-Path $dest "sshfling.cmd"
           tests\cross-os\validate-cli.ps1 -CommandPath $cmd -Version $version
+
+  dotnet-tool:
+    name: .NET global tool run
+    runs-on: ubuntu-latest
+    needs: validate-version
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install and validate published .NET tool
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-version.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SSHFling.Tool.${version}.nupkg?run=${{ github.run_id }}" -o "$tmp/SSHFling.Tool.${version}.nupkg"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
+          grep "  SSHFling.Tool.${version}.nupkg$" "$tmp/SHA256SUMS" >"$tmp/SSHFling.Tool.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c SSHFling.Tool.SHA256SUMS)
+          dotnet tool install SSHFling.Tool \
+            --tool-path "$tmp/tool" \
+            --add-source "$tmp" \
+            --version "$version" \
+            --ignore-failed-sources
+          "$tmp/tool/sshfling" --version | grep -Fx "sshfling $version"
+          "$tmp/tool/sshfling" --project-dir "$tmp/project" doctor >/dev/null
+          "$tmp/tool/sshfling" init "$tmp/project" --force --session-seconds 60 >/dev/null
+          test -x "$tmp/project/scripts/install-local.sh"
+          test -x "$tmp/project/scripts/uninstall-local.sh"
+          test -x "$tmp/project/production/sshfling-session"
+          test -f "$tmp/project/secrets/.gitkeep"

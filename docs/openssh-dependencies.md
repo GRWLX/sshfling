@@ -113,6 +113,10 @@ to be preserved, the record can remain with the preserved account for review.
 Homebrew uninstall removes the formula's installed SSHFling files. It does not
 restore host OpenSSH or Python to an earlier state.
 
+The .NET global tool package removes the user-level `SSHFling.Tool`
+registration only. It does not uninstall Python, OpenSSH, Docker, host
+account-management tools, host SSH configuration, or SSHFling project state.
+
 The macOS pkg uninstall helper removes `/usr/local/bin/sshfling` and
 `/usr/local/share/sshfling`, then forgets the pkg receipt. It intentionally
 preserves `/etc/sshfling`.

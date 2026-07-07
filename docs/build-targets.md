@@ -22,6 +22,7 @@ These artifacts are built directly by GitHub Actions on every version tag.
 | Fedora | `.rpm` plus RPM repo metadata | `dnf install sshfling` |
 | Rocky Linux | `.rpm` plus RPM repo metadata | `dnf install sshfling` |
 | AlmaLinux | `.rpm` plus RPM repo metadata | `dnf install sshfling` |
+| Cross-platform .NET | `SSHFling.Tool.VERSION.nupkg` | `dotnet tool install --global SSHFling.Tool` from a verified local package source |
 | macOS | `.pkg` and Homebrew formula | `brew install` or `installer -pkg` |
 | Windows | `.msi` and portable zip | MSI installer, winget, Scoop, or Chocolatey |
 
@@ -122,6 +123,7 @@ workflow that installs or builds the published package outputs on:
   [firewall-os-versions.md](firewall-os-versions.md).
 - macOS from the published `.pkg` and generated Homebrew formula.
 - Windows from the published MSI and portable zip.
+- .NET global tool from the published `SSHFling.Tool.VERSION.nupkg` package.
 
 Client mode only needs Python and OpenSSH client tools. Server-side certificate
 grants need OpenSSH server tooling on the target host. Server-side password
