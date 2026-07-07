@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: package-install-tests-${{ github.ref }}-${{ inputs.version || 'source' }}
+  cancel-in-progress: true
+
 jobs:
   validate-version:
     name: Validate version
@@ -467,8 +471,23 @@ jobs:
           $ErrorActionPreference = "Stop"
           $version = "${{ needs.validate-version.outputs.version }}"
           $zip = Join-Path $env:TEMP "sshfling-$version-windows.zip"
+          $sums = Join-Path $env:TEMP "SHA256SUMS"
           $dest = Join-Path $env:TEMP "sshfling-zip"
           Invoke-WebRequest -Uri "https://grwlx.github.io/sshfling/downloads/sshfling-$version-windows.zip?run=${{ github.run_id }}" -OutFile $zip
+          Invoke-WebRequest -Uri "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -OutFile $sums
+          $zipName = "sshfling-$version-windows.zip"
+          $expected = Get-Content $sums | ForEach-Object {
+            $parts = $_ -split '\s+', 2
+            if ($parts.Count -eq 2 -and $parts[1] -eq $zipName) { $parts[0] }
+          } | Select-Object -First 1
+          if (-not $expected) {
+            throw "Missing SHA256SUMS entry for Windows zip"
+          }
+          $expectedHash = $expected.ToLowerInvariant()
+          $actualHash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "Windows zip SHA256 mismatch: expected $expectedHash got $actualHash"
+          }
           Expand-Archive -Force $zip -DestinationPath $dest
           $cmd = Join-Path $dest "sshfling.cmd"
           tests\cross-os\validate-cli.ps1 -CommandPath $cmd -Version $version

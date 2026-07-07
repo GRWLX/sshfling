@@ -9,15 +9,19 @@ published package-site evidence, repository signing metadata, and a signing-key
 fingerprint:
 
 ```bash
-APPROVED_REPO_FINGERPRINT="REPLACE_WITH_RELEASE_FINGERPRINT"
+BASE_URL="https://grwlx.github.io/sshfling"
+: "${APPROVED_REPO_FINGERPRINT:?set this from the approved release evidence}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL https://grwlx.github.io/sshfling/sshfling-repo.gpg -o "$tmp/sshfling-repo.gpg"
+curl -fsSL "$BASE_URL/sshfling-repo-fingerprint.txt" -o "$tmp/sshfling-repo-fingerprint.txt"
+published_fingerprint="$(tr -d '[:space:]' <"$tmp/sshfling-repo-fingerprint.txt" | tr '[:lower:]' '[:upper:]')"
+test "$published_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
+curl -fsSL "$BASE_URL/sshfling-repo.gpg" -o "$tmp/sshfling-repo.gpg"
 actual_fingerprint="$(gpg --batch --show-keys --with-colons "$tmp/sshfling-repo.gpg" | awk -F: '/^fpr:/ {print toupper($10); exit}')"
 test "$actual_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
 sudo install -d -m 0755 /usr/share/keyrings
 sudo install -m 0644 "$tmp/sshfling-repo.gpg" /usr/share/keyrings/sshfling-repo.gpg
-echo "deb [signed-by=/usr/share/keyrings/sshfling-repo.gpg] https://grwlx.github.io/sshfling/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
+echo "deb [signed-by=/usr/share/keyrings/sshfling-repo.gpg] $BASE_URL/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
 sudo apt update
 sudo apt install -y sshfling
 ```
@@ -50,7 +54,7 @@ sudo sshfling -t 10m
 Shorter password access:
 
 ```bash
-sudo sshfling -t 10m
+sudo sshfling -t 1m
 ```
 
 Certificate access after the user CA exists and the target host trusts it:
@@ -106,7 +110,7 @@ Rules:
 - The maximum grant time is 24 hours.
 - Up to 10 active sshfling SSH sessions are allowed, depending on install policy.
 - Password mode is the default. It creates a real Unix account password, tracks the grant, auto-expires access, and allows only one active session for that temporary username.
-- Certificate mode is opt-in with `--certificate`. Run `sshfling ca init` and configure target host trust with `sshfling host install` before issuing certificate grants. If no SSH public key is provided, certificate mode creates a temporary client keypair automatically.
+- Certificate mode is opt-in with `--certificate`. Run `sudo sshfling ca init` and configure target host trust with `sshfling host install` before issuing certificate grants. If no SSH public key is provided, certificate mode creates a temporary client keypair automatically.
 - SSHFling discloses use in system logs through `logger` with the `sshfling` and `sshfling-session` tags. Audit records include grant/session metadata such as user, principal, lifetime, serial, and outcome, but not passwords, bearer tokens, cookies, private keys, public key material, or raw remote commands.
 
 Under the hood, password mode writes a temporary sshd `Match User` block that forces the timeout wrapper. Certificate mode uses OpenSSH user certificates and the same host-side timeout wrapper.
@@ -128,10 +132,10 @@ For production hosts, Docker is only a test harness. The normal production grant
 
 OpenSSH user certificates are available explicitly:
 
-- `sshfling ca init` creates an SSH user CA keypair.
+- `sudo sshfling ca init` creates an SSH user CA keypair.
 - `sshfling host install` configures a target host to trust the CA for one Unix user.
 - `sudo sshfling --certificate -t 10m` creates a temporary certificate grant after the CA keypair exists.
-- `sshfling cert issue --certificate` signs a user's public key for a short lifetime.
+- `sudo sshfling cert issue --certificate -t 10m` signs a user's public key for a short lifetime.
 - `sshfling serve` runs a small authenticated certificate issuer service.
 
 Do not run `sshfling ca init --force` unless you are intentionally rotating the
@@ -253,7 +257,7 @@ Root can always replace binaries or edit local files. To make policy changes con
 On the issuer machine:
 
 ```bash
-sshfling ca init --ca-key /etc/sshfling/ca_user_ed25519
+sudo sshfling ca init --ca-key /etc/sshfling/ca_user_ed25519
 ```
 
 Use `--force` only for a planned CA rotation. Replacing this keypair changes
@@ -433,10 +437,12 @@ sudo sshfling password prune --username s234 --delete-users
 Prune requires exactly one selector: `--all` to scan the tracked grant store or
 `--username USER` for targeted cleanup. It only removes expired grants and leaves
 active grants in place. By default, expired SSHFling-created Unix users are
-locked and expired; `--delete-users` deletes expired SSHFling-created users.
-Existing users that were explicitly allowed with `--allow-existing-user` are
-locked and expired but are never deleted by `--delete-users`. Root-equivalent
-users are never deleted from password-grant metadata or host-user markers.
+locked and expired; `--delete-users` deletes expired SSHFling-created users only
+when SSHFling has recorded matching UID/GID/home identity evidence. Existing
+users that were explicitly allowed with `--allow-existing-user` are locked and
+expired but are never deleted by `--delete-users`. Root-equivalent users are
+never deleted from password-grant metadata or host-user markers. Identity
+mismatches preserve managed config and metadata for investigation.
 
 If you installed from a source checkout with `./scripts/install-local.sh`, remove that local install with:
 
@@ -507,25 +513,27 @@ GitHub Actions workflows are included for public distribution:
   24-hour cap, copied service templates, active-session PID fields, and
   detached job PID lifecycle.
 
-### v0.1.13 Release Readiness
+### v0.1.14 Release Readiness
 
-`v0.1.13` is the tagged hardened package publishing release at commit
-`065b03c16a81e9167120e9f41afd4c5e81a79a4a`. The previous published release is
-`v0.1.12` at commit
-`58b23b5fa9b90491c41b41fc206d8e907b00e8df`.
+`v0.1.14` is the current fixed-forward release-prep candidate. It includes
+additional prune safety, CA/certificate gating, OpenSSH dependency checks,
+DEB/RPM service-account identity preservation, macOS/Windows package trust
+gates, and release-evidence updates after the published `v0.1.13` release.
+The previous published release is `v0.1.13` at commit
+`065b03c16a81e9167120e9f41afd4c5e81a79a4a`.
 
 `v0.1.12` shipped enterprise package publishing preparation: package builders,
 public package-site verification, repository registration docs, community
 manifest generation, release checklist/evidence templates, cross-OS/package
 install validation, release matrix tooling, and enterprise operations docs.
 
-The `v0.1.13` source/package release is published, but it should not be treated
-as enterprise-ready until release evidence is attached for the final commit:
-release approval, protected tag or equivalent change-control evidence, workflow
-run URLs, artifact checksums, repository signing fingerprint, Pages deployment
-ID where package-site publishing is in scope, runtime behavior evidence for
-password, certificate, access-level, prune, and uninstall behavior, and
-macOS/Windows signing or notarization evidence where applicable.
+Do not treat `v0.1.14` as enterprise-ready or published until release evidence
+is attached for the final commit: release approval, protected tag or equivalent
+change-control evidence, workflow run URLs, artifact checksums, repository
+signing fingerprint, Pages deployment ID where package-site publishing is in
+scope, runtime behavior evidence for password, certificate, access-level,
+prune, and uninstall behavior, and macOS/Windows signing or notarization
+evidence where applicable.
 
 Release evidence generation and validation commands:
 
@@ -534,10 +542,10 @@ git status --short --branch
 make clean
 make test
 make test-containers
-make release-security-scan-strict VERSION=0.1.13
+make release-security-scan-strict VERSION=0.1.14
 make release-security-evidence-validate RELEASE_MATRIX_VALIDATE_FLAGS=--require-pass
-make package VERSION=0.1.13
-make release-assets-evidence VERSION=0.1.13
+make package VERSION=0.1.14
+make release-assets-evidence VERSION=0.1.14
 make release-matrix-validate \
   RELEASE_MATRIX=docs/release/enterprise-release-evidence/generated/release-assets-matrix.csv \
   RELEASE_MANIFEST=docs/release/enterprise-release-evidence/generated/release-assets-manifest.json \

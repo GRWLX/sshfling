@@ -60,7 +60,15 @@ sudo sshfling policy install --user deploy --access-level sudo-limited --max-tim
 sudo sshfling --certificate --username ticket-1234 --login-user deploy --access-level sudo-limited -t 10m
 ```
 
-Grant requests can ask for `--access-level` or `--role`. SSHFling rejects a requested level above the effective policy level, and treats `root`, `Administrator`, and `root-equivalent` as admin-class access. Host controls such as Unix groups, sudoers, PAM, AD, MDM, and service-manager policy remain the enforcement layer for the actual privileges. Password mode refuses root-equivalent Unix users because it creates or resets local passwords; use explicit certificate mode for approved admin/root-equivalent break-glass access.
+Grant requests can ask for `--access-level` or `--role`. SSHFling rejects a
+requested level above the effective policy level, treats `root`,
+`Administrator`, and any account that resolves to UID 0 as admin-class access,
+and accepts `root-equivalent` as an access-level alias rather than a special
+username. Host controls such as Unix groups, sudoers, PAM, AD, MDM, and
+service-manager policy remain the enforcement layer for the actual privileges.
+Password mode refuses root-equivalent Unix users because it creates or resets
+local passwords; use explicit certificate mode for approved admin/root-equivalent
+break-glass access.
 
 ## Threat-Model Checkpoints
 

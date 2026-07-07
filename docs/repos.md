@@ -5,7 +5,7 @@ The repo includes two GitHub Actions release paths:
 - `Release packages without web` builds `.deb`, `.rpm`, `.msi`, `.pkg`, a source tarball, and release checksums.
 - `Release packages with public web` builds the same package set and publishes a GitHub Pages package site with APT, RPM, Homebrew, macOS pkg, Windows MSI, and community package manifests for additional ecosystems.
 
-For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.13`.
+For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.14`.
 
 Replace `OWNER` and `REPO` in the examples below with the GitHub organization/user and repository name.
 
@@ -36,9 +36,12 @@ Publish the package site with repository signing enabled and use the signed APT
 source for production and fleet installs:
 
 ```bash
-APPROVED_REPO_FINGERPRINT="PASTE_APPROVED_RELEASE_FINGERPRINT"
+: "${APPROVED_REPO_FINGERPRINT:?set this from the approved release evidence}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "${BASE_URL}/sshfling-repo-fingerprint.txt" -o "$tmp/sshfling-repo-fingerprint.txt"
+published_fingerprint="$(tr -d '[:space:]' <"$tmp/sshfling-repo-fingerprint.txt" | tr '[:lower:]' '[:upper:]')"
+test "$published_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
 curl -fsSL "${BASE_URL}/sshfling-repo.gpg" -o "$tmp/sshfling-repo.gpg"
 actual_fingerprint="$(gpg --batch --show-keys --with-colons "$tmp/sshfling-repo.gpg" | awk -F: '/^fpr:/ {print toupper($10); exit}')"
 test "$actual_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
@@ -79,9 +82,12 @@ Yum/DNF repo for production and fleet installs on RHEL-family hosts including
 Fedora, Rocky Linux, AlmaLinux, and UBI:
 
 ```bash
-APPROVED_REPO_FINGERPRINT="PASTE_APPROVED_RELEASE_FINGERPRINT"
+: "${APPROVED_REPO_FINGERPRINT:?set this from the approved release evidence}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "${BASE_URL}/sshfling-repo-fingerprint.txt" -o "$tmp/sshfling-repo-fingerprint.txt"
+published_fingerprint="$(tr -d '[:space:]' <"$tmp/sshfling-repo-fingerprint.txt" | tr '[:lower:]' '[:upper:]')"
+test "$published_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
 curl -fsSL "${BASE_URL}/sshfling-repo.asc" -o "$tmp/sshfling-repo.asc"
 actual_fingerprint="$(gpg --batch --show-keys --with-colons "$tmp/sshfling-repo.asc" | awk -F: '/^fpr:/ {print toupper($10); exit}')"
 test "$actual_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
@@ -116,7 +122,7 @@ Uninstall:
 
 ```bash
 sudo dnf --setopt=clean_requirements_on_remove=False remove -y sshfling
-sudo rm -f /etc/yum.repos.d/sshfling.repo
+sudo rm -f /etc/yum.repos.d/sshfling.repo /etc/pki/rpm-gpg/RPM-GPG-KEY-sshfling
 ```
 
 Package uninstall removes the RPM package and repo registration; it does not
@@ -217,6 +223,7 @@ Invoke-WebRequest -Uri "$BaseUrl/windows/install.ps1" -OutFile $Installer
 Uninstall:
 
 ```powershell
+$Version = "0.1.14"
 $UninstallRoots = @(
   "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
   "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
@@ -225,6 +232,7 @@ $Products = Get-ItemProperty -Path $UninstallRoots -ErrorAction SilentlyContinue
   Where-Object {
     $_.DisplayName -eq "SSHFling" -and
     $_.Publisher -eq "SSHFling Maintainers" -and
+    $_.DisplayVersion -eq $Version -and
     $_.WindowsInstaller -eq 1 -and
     $_.URLInfoAbout -eq "https://github.com/GRWLX/sshfling"
   }
@@ -305,14 +313,18 @@ Package docs and release notes must preserve the current runtime contract:
   `--delete-users` only deletes expired SSHFling-created Unix users, existing
   users explicitly allowed with `--allow-existing-user` are locked and expired
   but never deleted, and root-equivalent users are never deleted from
-  password-grant metadata or host-user markers.
+  password-grant metadata or host-user markers. User deletion requires recorded
+  UID/GID/home identity evidence; mismatched current identities preserve config
+  and metadata for investigation.
 - `sshfling host uninstall` removes managed certificate host SSH configuration by default. Shared CA, wrapper, policy-user, and Unix-account removal are opt-in flags; Unix-account deletion requires the SSHFling host-user marker written by `host install --create-user`.
 
 Package uninstall removes SSHFling-managed package files and repository entries
-for the selected install path, but it preserves host SSH configuration, password
-grant state, CA material, and `/etc/sshfling` policy/config files for separate
-host cleanup. Dependency packages remain under the host package manager and
-fleet policy. Do not assume uninstall restores Python, OpenSSH,
+for the selected install path. Primary DEB/RPM/pkg/MSI paths preserve host SSH
+configuration, password grant state, CA material, and `/etc/sshfling`
+policy/config files for separate host cleanup. Generated community manifests
+need ecosystem-specific review because config-preservation semantics vary.
+Dependency packages remain under the host package manager and fleet policy. Do
+not assume uninstall restores Python, OpenSSH,
 account-management tools, `procps`, or `util-linux` to the exact preinstall
 state unless your configuration-management system records and enforces that
 state. Dependency cleanup must be a separate reviewed fleet action, not part of
@@ -349,7 +361,7 @@ dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz
 For local smoke tests from the source checkout root, install the package file directly:
 
 ```bash
-sudo apt install ./dist/sshfling_0.1.13_all.deb
+sudo apt install ./dist/sshfling_0.1.14_all.deb
 ```
 
 For client repo registration, sign the repo metadata with GPG, publish the public key, and use an APT source with `signed-by=`.
@@ -367,7 +379,7 @@ createrepo_c repo/rpm
 For local smoke tests from the source checkout root, install the package file directly:
 
 ```bash
-sudo dnf install ./dist/sshfling-0.1.13-1.noarch.rpm
+sudo dnf install ./dist/sshfling-0.1.14-1.noarch.rpm
 ```
 
 For client repo registration, sign RPMs and repo metadata, publish the public key, and use a Yum/DNF repo with `gpgcheck=1` and `repo_gpgcheck=1`.
@@ -377,17 +389,24 @@ For client repo registration, sign RPMs and repo metadata, publish the public ke
 For direct `.pkg` distribution:
 
 ```bash
-sudo installer -pkg dist/sshfling-0.1.13.pkg -target /
+sudo installer -pkg dist/sshfling-0.1.14.pkg -target /
 ```
 
-For Homebrew distribution, publish a source tarball and add a formula to a tap:
+For Homebrew distribution, publish a source tarball and add a generated formula
+to a tap. Build the formula from the release `SHA256SUMS` file so the committed
+tap contains the exact tarball hash:
 
-```ruby
+```bash
+VERSION="0.1.14"
+TARBALL="sshfling-${VERSION}.tar.gz"
+TARBALL_SHA256="$(awk -v file="$TARBALL" '$2 == file {print $1}' dist/SHA256SUMS)"
+test -n "$TARBALL_SHA256"
+cat >sshfling.rb <<EOF
 class Sshfling < Formula
   desc "Temporary SSH access CLI with password grants and optional certificates"
   homepage "https://example.com/sshfling"
-  url "https://example.com/sshfling-0.1.13.tar.gz"
-  sha256 "REPLACE_WITH_SHA256"
+  url "https://example.com/${TARBALL}"
+  sha256 "${TARBALL_SHA256}"
   license :cannot_represent
 
   depends_on "python@3"
@@ -403,6 +422,7 @@ class Sshfling < Formula
     system "#{bin}/sshfling", "--version"
   end
 end
+EOF
 ```
 
 Then users install with:
@@ -438,7 +458,7 @@ MSI files are not installed from APT/YUM-style repos. Common registration paths:
 Silent install:
 
 ```powershell
-msiexec /i sshfling-0.1.13.msi /qn
+msiexec /i sshfling-0.1.14.msi /qn
 ```
 
 For production, sign the MSI with an Authenticode certificate.
@@ -446,7 +466,7 @@ For production, sign the MSI with an Authenticode certificate.
 Silent uninstall:
 
 ```powershell
-msiexec /x sshfling-0.1.13.msi /qn /norestart
+msiexec /x sshfling-0.1.14.msi /qn /norestart
 ```
 
 MSI uninstall removes files and installer-managed PATH state only. It does not

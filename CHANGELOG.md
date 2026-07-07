@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.1.14 - 2026-07-07
+
+Status: release-prep source update. This version is not tagged or published
+until final workflow evidence, signing evidence, and release approval are
+attached.
+
+### Hardened
+
+- Bumped package identity for a fixed-forward `0.1.14` release candidate after
+  `v0.1.13`.
+- Hardened expired password-grant pruning so a recreated or mismatched Unix
+  identity is skipped before SSHFling removes managed config or metadata.
+- Added tests for identity-mismatch prune preservation, incomplete CA keypair
+  rejection, and explicit `cert issue --certificate -t/--time` lifetime
+  enforcement.
+- Required password-host setup to find OpenSSH server tooling up front.
+- Recorded package-created service-account UID/GID/home identity in DEB/RPM
+  package state and preserved mismatched later accounts during uninstall.
+- Added DEB/RPM container tests for service-account identity reuse safety.
+- Required macOS package signing/notarization credentials in release workflows,
+  and strengthened generated macOS installer helpers with package signature,
+  notarization, and Gatekeeper checks.
+- Added Windows ZIP checksum verification to install-validation workflows and
+  tightened Windows MSI uninstall selection with `DisplayVersion`.
+- Updated install, uninstall, repo, wiki, release checklist, and release
+  evidence templates for the new package trust, uninstall, and runtime behavior
+  gates.
+
+### Evidence Required Before Publishing
+
+- Passing `make test`, `make test-containers`, package rehearsal, release
+  security evidence generation/validation, workflow static checks, and
+  `git diff --check` from the final clean candidate.
+- Tag or protected workflow evidence for `v0.1.14`, release approval, package
+  artifact checksums, release matrix/evidence outputs, and package-site
+  verification.
+- Production APT/RPM signing fingerprint, macOS notarization output, Windows
+  Authenticode output, and approved exceptions for any unavailable external
+  OS/hardware/secrets.
+
 ## v0.1.13 - 2026-07-07
 
 Status: tagged and published source/package release at

@@ -99,24 +99,26 @@ Required platform coverage evidence:
 | FPGA and SoC | Host CPU/OS control-plane evidence only, unless bitstream, accelerator, vendor board support package, or FPGA toolchain evidence is separately approved. |
 | Deferred targets | Exception ID, owner, customer impact, expiration, compensating control, and retest trigger. |
 
-## v0.1.13 Follow-Up Checks
+## v0.1.14 Release-Prep Checks
 
-Use this sequence to rebuild or verify `v0.1.13` evidence from the tagged source
-before making an enterprise publication or readiness claim.
+Use this sequence to build or verify `v0.1.14` evidence from the final release
+candidate before making an enterprise publication or readiness claim.
 
 ```bash
 git status --short --branch
 make clean
 make test
 make test-containers
-make release-package-rehearsal VERSION=0.1.13
-make release-security-scan VERSION=0.1.13
-make release-security-evidence-validate
-make package VERSION=0.1.13
-make release-assets-evidence VERSION=0.1.13
+tools/provision-release-scanners.sh
+make release-package-rehearsal VERSION=0.1.14
+make release-security-scan-strict VERSION=0.1.14
+make release-security-evidence-validate RELEASE_MATRIX_VALIDATE_FLAGS=--require-pass
+make package VERSION=0.1.14
+make release-assets-evidence VERSION=0.1.14
 make release-matrix-validate \
   RELEASE_MATRIX=docs/release/enterprise-release-evidence/generated/release-assets-matrix.csv \
-  RELEASE_MANIFEST=docs/release/enterprise-release-evidence/generated/release-assets-manifest.json
+  RELEASE_MANIFEST=docs/release/enterprise-release-evidence/generated/release-assets-manifest.json \
+  RELEASE_MATRIX_VALIDATE_FLAGS=--require-pass
 ```
 
 Attach or link the generated security scan report, SBOM, dependency inventory,
@@ -127,8 +129,13 @@ tracked source files. If optional external scanners are skipped, record that as
 a release-ticket limitation unless `make release-security-scan-strict` is the
 approved gate.
 
+Use `RELEASE_MATRIX_VALIDATE_FLAGS="--require-pass --allow-approved-exceptions"`
+only after the generated matrix rows include complete, unexpired exception
+metadata and the release ticket contains the approver, compensating control,
+customer impact, and re-test plan.
+
 For exploratory local checks on a dirty checkout, use
-`make release-security-scan-local VERSION=0.1.13` instead of the release
+`make release-security-scan-local VERSION=0.1.14` instead of the release
 sequence above. Clean CI and tag/release workflow scans must not pass
 `--allow-dirty`.
 
@@ -136,7 +143,28 @@ If GHCR images are in scope, attach the GitHub Packages validation run, image
 digests, cosign signing evidence, SBOM/provenance evidence, and the protected
 `github-packages` environment approval or exception.
 
-For `v0.1.13`, GitHub state checked on 2026-07-07 shows a published release and
+For `v0.1.14`, attach fresh workflow evidence from the final commit. Do not
+reuse `v0.1.13` workflow results, ignored local scan output, or dirty-tree scan
+output as release evidence for this candidate. Historical `v0.1.13` evidence is
+summarized in [release-evidence.md](release-evidence.md) for traceability only.
+
+Do not treat `v0.1.14` as enterprise-ready until these version-specific items
+are present:
+
+- Clean release commit and matching tag or protected workflow input.
+- `Release packages without web`, `Release packages with public web`, `Package install tests`, `Cross OS validation`, and `Container image tests` run URLs.
+- GitHub release asset list, `SHA256SUMS`, provenance or attestation output,
+  and package-site deployment reference.
+- Platform coverage evidence for advertised OS versions, Python/OpenSSH
+  versions, CPU architectures, hardware classes, ARM/IoT targets, and FPGA/SoC
+  host control-plane claims.
+- Production APT/RPM signing-key fingerprint and evidence that generated test signing keys were not used.
+- macOS notarization and Windows Authenticode evidence, or approved exception records with expiration and re-test dates.
+- Runtime behavior docs and release notes matching password default, explicit
+  certificate mode, prune semantics, package-created account identity safety,
+  and uninstall scope.
+
+Historical `v0.1.13` state checked on 2026-07-07 showed a published release and
 asset list, a passing tag/source-commit `Release packages without web` run, a
 passing tag/source-commit `Release packages with public web` verification run,
 and successful GitHub Packages publication from
@@ -147,19 +175,6 @@ enterprise scope. `Package install tests` and `Cross OS validation` completed
 with failures for the release commit and require remediation, rerun, or approved
 exceptions before enterprise readiness. Attach the final container image test
 conclusion rather than treating an in-progress run as passing evidence.
-
-Do not treat `v0.1.13` as enterprise-ready until these version-specific items
-are present:
-
-- Clean release commit and matching tag or protected workflow input.
-- `Release packages without web`, `Release packages with public web`, `Package install tests`, `Cross OS validation`, and `Container image tests` run URLs.
-- GitHub release asset list, `SHA256SUMS`, provenance or attestation output, and package-site deployment reference.
-- Platform coverage evidence for advertised OS versions, Python/OpenSSH
-  versions, CPU architectures, hardware classes, ARM/IoT targets, and FPGA/SoC
-  host control-plane claims.
-- Production APT/RPM signing-key fingerprint and evidence that generated test signing keys were not used.
-- macOS notarization and Windows Authenticode evidence, or approved exception records with expiration and re-test dates.
-- Runtime behavior docs and release notes matching password default, explicit certificate mode, prune semantics, and uninstall scope.
 
 ## Publish Gate
 

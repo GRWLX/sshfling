@@ -144,15 +144,30 @@ try {
   if ($versionOutput -ne "sshfling $Version") {
     Fail "unexpected version output: $versionOutput"
   }
+  Write-Output "platform OS: $([System.Environment]::OSVersion.VersionString)"
+  Write-Output "platform architecture: $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)"
+  Write-Output "powershell version: $($PSVersionTable.PSVersion)"
+  $pythonVersion = (& python --version 2>&1 | Out-String).Trim()
+  Write-Output "python version: $pythonVersion"
   foreach ($tool in @("ssh", "ssh-keygen", "ssh-keyscan")) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
       Fail "missing OpenSSH client tool: $tool"
     }
   }
-  $sshVersion = (& ssh -V 2>&1 | Out-String).Trim()
+  $sshOutput = & ssh -V 2>&1
+  $sshCode = $LASTEXITCODE
+  $sshVersion = ($sshOutput | Out-String).Trim()
+  if ($sshCode -ne 0 -or -not $sshVersion) {
+    Fail "ssh -V failed or produced no version output"
+  }
   Write-Output "ssh version: $sshVersion"
   if (Get-Command sshd -ErrorAction SilentlyContinue) {
-    $sshdVersion = (& sshd -V 2>&1 | Out-String).Trim()
+    $sshdOutput = & sshd -V 2>&1
+    $sshdCode = $LASTEXITCODE
+    $sshdVersion = ($sshdOutput | Out-String).Trim()
+    if ($sshdCode -ne 0 -or -not $sshdVersion) {
+      Fail "sshd -V failed or produced no version output"
+    }
     Write-Output "sshd version: $sshdVersion"
   }
   else {
@@ -561,6 +576,63 @@ for bad_principal in ["ticket,root", "ticket\nroot", "-ticket", "ticket root"]:
     else:
         raise AssertionError(f"invalid certificate principal was accepted: {bad_principal!r}")
 
+with tempfile.TemporaryDirectory() as marker_tmp:
+    marker_root = Path(marker_tmp)
+    original_delete_user = getattr(sshfling, "delete_password_user")
+    setattr(sshfling, "delete_password_user", lambda username, dry_run=False, **kwargs: {"user": username, "would_delete": dry_run})
+    try:
+        try:
+            sshfling.delete_host_user("sshflingtmp", marker_root, dry_run=True)
+        except sshfling.SSHFlingError as exc:
+            assert "without a SSHFling-created host-user marker" in exc.message, exc.message
+        else:
+            raise AssertionError("host user deletion succeeded without a marker")
+        sshfling.write_host_user_marker(marker_root, "sshflingtmp", {
+            "managed_by": "sshfling",
+            "auth": "certificate-host",
+            "username": "sshflingtmp",
+            "created_user": True,
+        })
+        delete_result = sshfling.delete_host_user("sshflingtmp", marker_root, dry_run=True)
+        assert delete_result["would_delete"] is True, delete_result
+        assert delete_result["would_remove_marker"] is True, delete_result
+        sshfling.write_host_user_marker(marker_root, "sshflingreuse", {
+            "managed_by": "sshfling",
+            "auth": "certificate-host",
+            "username": "sshflingreuse",
+            "created_user": True,
+            "user_uid": 12345,
+            "user_gid": 12345,
+            "user_home": "/home/sshflingreuse",
+        })
+        setattr(sshfling, "delete_password_user", lambda username, dry_run=False, **kwargs: {
+            "user": username,
+            "status": "skipped-user-mismatch",
+            "expected_identity": {"uid": 12345, "gid": 12345, "home": "/home/sshflingreuse"},
+            "current_identity": {"uid": 67890, "gid": 67890, "home": "/home/sshflingreuse-new"},
+        })
+        mismatch_result = sshfling.delete_host_user("sshflingreuse", marker_root, dry_run=False)
+        assert mismatch_result["status"] == "skipped-user-mismatch", mismatch_result
+        assert mismatch_result["marker_preserved"] is True, mismatch_result
+        assert "removed_marker" not in mismatch_result, mismatch_result
+        assert "would_remove_marker" not in mismatch_result, mismatch_result
+        assert (marker_root / "sshflingreuse.json").exists(), mismatch_result
+        setattr(sshfling, "delete_password_user", lambda username, dry_run=False, **kwargs: {"user": username, "would_delete": dry_run})
+        sshfling.write_host_user_marker(marker_root, "root", {
+            "managed_by": "sshfling",
+            "auth": "certificate-host",
+            "username": "root",
+            "created_user": True,
+        })
+        try:
+            sshfling.delete_host_user("root", marker_root, dry_run=True)
+        except sshfling.SSHFlingError as exc:
+            assert "root-equivalent" in exc.message, exc.message
+        else:
+            raise AssertionError("host user deletion allowed a root-equivalent user")
+    finally:
+        setattr(sshfling, "delete_password_user", original_delete_user)
+
 with tempfile.TemporaryDirectory() as policy_tmp:
     policy_path = Path(policy_tmp) / "policy.json"
     try:
@@ -665,7 +737,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
     assert expired["status"] == "pruned", by_user
     assert expired["config"]["would_remove"] is True, expired
     assert expired["metadata"]["would_remove"] is True, expired
-    assert expired["user"]["would_delete"] is True, expired
+    assert expired["user"]["would_lock"] is True, expired
+    assert expired["user"]["delete_skipped"] == "Unix identity evidence is required before deleting an SSHFling-created user", expired
     existing = by_user["sshflingexisting"]
     assert existing["status"] == "pruned", by_user
     assert existing["user"]["would_lock"] is True, existing
@@ -682,10 +755,12 @@ with tempfile.TemporaryDirectory() as tmpdir:
     missing_file = by_user["sshflingmissingfile"]
     assert missing_file["status"] == "pruned", missing_file
     assert missing_file["config"]["status"] == "missing", missing_file
-    assert missing_file["user"]["would_delete"] is True, missing_file
+    assert missing_file["user"]["would_lock"] is True, missing_file
+    assert missing_file["user"]["delete_skipped"] == "Unix identity evidence is required before deleting an SSHFling-created user", missing_file
     identity = by_user["sshflingidentity"]
-    assert identity["status"] == "pruned", identity
-    assert identity["config"]["would_remove"] is True, identity
+    assert identity["status"] == "skipped-user-mismatch", identity
+    assert "config" not in identity, identity
+    assert "metadata" not in identity, identity
     assert identity["user"]["status"] == "skipped-user-mismatch", identity
     assert identity["user"]["expected_identity"]["uid"] == 12345, identity
     assert identity["user"]["current_identity"]["uid"] == 67890, identity
@@ -725,7 +800,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
     assert "user" not in active_results[0], active_results
     assert len(expired_results) == 1, expired_results
     assert expired_results[0]["status"] == "pruned", expired_results
-    assert expired_results[0]["user"]["would_delete"] is True, expired_results
+    assert expired_results[0]["user"]["would_lock"] is True, expired_results
+    assert expired_results[0]["user"]["delete_skipped"] == "Unix identity evidence is required before deleting an SSHFling-created user", expired_results
     assert len(root_results) == 1, root_results
     assert root_results[0]["status"] == "skipped-root-equivalent", root_results
     assert Path(root_results[0]["metadata_path"]).name == "root.json", root_results
@@ -936,6 +1012,14 @@ with tempfile.TemporaryDirectory() as tmpdir:
         ca_pub = cert_root / "ca.pub"
         ca_key.write_text("stub ca key\n", encoding="utf-8")
         ca_pub.write_text("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest ca\n", encoding="utf-8")
+        partial_ca = cert_root / "partial-ca"
+        partial_ca.write_text("stub partial ca key\n", encoding="utf-8")
+        try:
+            sshfling.create_ca_key(SimpleNamespace(ca_key=str(partial_ca), force=False))
+        except sshfling.SSHFlingError as exc:
+            assert "incomplete" in exc.message, exc.message
+        else:
+            raise AssertionError("ca init accepted an incomplete CA keypair")
         sshfling.require_root = lambda action: None
         def fake_create_temp_client_key(username, session_dir):
             cert_captured["calls"].append("create_temp_client_key")
@@ -967,6 +1051,14 @@ with tempfile.TemporaryDirectory() as tmpdir:
         sshfling.detect_server_host = lambda: "203.0.113.10"
         sshfling.audit_log = lambda *args, **kwargs: None
         sshfling.emit_json = lambda payload: cert_captured.__setitem__("payload", payload)
+        cert_issue_no_time = parser.parse_args(cert_issue_args + ["--certificate", "--ca-key", str(ca_key)])
+        try:
+            sshfling.cmd_cert_issue(cert_issue_no_time)
+        except sshfling.SSHFlingError as exc:
+            assert "explicit -t/--time" in exc.message, exc.message
+        else:
+            raise AssertionError("cert issue accepted an implicit lifetime")
+
         assert sshfling.cmd_setup(setup_args(
             certificate=True,
             username="sshflingcert",

@@ -47,9 +47,11 @@ the release notes call out an intentional breaking change:
   cleanup or `--username USER` for targeted cleanup. It removes expired tracked
   password grants only, leaves active grants in place, skips unmanaged records,
   locks expired SSHFling-created users by default, deletes those users only with
-  `--delete-users`, locks/expires existing users explicitly allowed with
-  `--allow-existing-user` without deleting them, and never mutates
-  root-equivalent users from password-grant metadata or host-user markers.
+  `--delete-users` when matching UID/GID/home identity evidence is recorded,
+  preserves config and metadata on identity mismatch, locks/expires existing
+  users explicitly allowed with `--allow-existing-user` without deleting them,
+  and never mutates root-equivalent users from password-grant metadata or
+  host-user markers.
 - Package uninstall removes package files and managed repository entries. Host
   SSH configuration, password grant state, CA material, `/etc/sshfling`
   configuration, and package-manager dependency state require separate host or
@@ -62,7 +64,7 @@ the release notes call out an intentional breaking change:
 
 - A reviewed release commit on the branch used for release tags.
 - A semantic package version with exactly three numeric components, such as
-  `0.1.13`.
+  `0.1.14`.
 - GitHub Pages configured to deploy from GitHub Actions.
 - GitHub Actions permissions for Pages deployments: `contents: read`,
   `pages: write`, and `id-token: write`.
@@ -82,11 +84,11 @@ the release notes call out an intentional breaking change:
 Validate the package version before a release run:
 
 ```bash
-bash packaging/resolve-version.sh 0.1.13
+bash packaging/resolve-version.sh 0.1.14
 ```
 
 The version must match `^[0-9]+[.][0-9]+[.][0-9]+$`. Tags use the same value
-with a leading `v`, for example `v0.1.13`.
+with a leading `v`, for example `v0.1.14`.
 
 ## Signing Setup
 
@@ -108,6 +110,35 @@ keys, and fail if the signing key fingerprint does not match the approved
 fingerprint. Rotating a production key requires client trust-store updates for
 APT and RPM consumers.
 
+Production macOS package publishing also requires these repository secrets in
+the protected `release-signing` environment:
+
+| Secret | Required | Purpose |
+| --- | --- | --- |
+| `SSHFLING_PKG_SIGN_IDENTITY` | Yes for tag builds | Developer ID Installer identity passed to `productbuild --sign`. |
+| `SSHFLING_PKG_SIGN_CERT_P12_BASE64` | Yes for tag builds | Base64-encoded Developer ID Installer certificate and private key bundle imported into the ephemeral runner keychain. |
+| `SSHFLING_PKG_SIGN_CERT_PASSWORD` | Yes for tag builds | Password for the imported P12 bundle. |
+| `SSHFLING_PKG_NOTARY_PROFILE` | Yes for tag builds | Notary profile name used by `xcrun notarytool`. |
+| `SSHFLING_PKG_NOTARY_APPLE_ID` | Yes for tag builds | Apple ID used to create the notary profile on the runner. |
+| `SSHFLING_PKG_NOTARY_TEAM_ID` | Yes for tag builds | Apple Developer Team ID for notarization. |
+| `SSHFLING_PKG_NOTARY_PASSWORD` | Yes for tag builds | App-specific password for notarization. |
+
+Production Windows MSI publishing requires these secrets in the protected
+`release-signing` environment, plus Authenticode signing evidence or an
+approved release exception before enterprise publication claims:
+
+| Secret or variable | Required | Purpose |
+| --- | --- | --- |
+| `SSHFLING_WINDOWS_REQUIRE_AUTHENTICODE=true` | Yes for tag builds | Enables fail-closed MSI signing and verification. |
+| `SSHFLING_WINDOWS_SIGN_CERT_SHA1` | Yes for tag builds | Expected Authenticode signing certificate thumbprint. |
+| `SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64` | Yes for hosted tag builds | Base64-encoded PFX certificate/private key bundle imported into the current-user certificate store. |
+| `SSHFLING_WINDOWS_SIGN_CERT_PASSWORD` | Yes for hosted tag builds | Password for the imported PFX bundle. |
+| `SSHFLING_WINDOWS_SIGN_TIMESTAMP_URL` | Optional | Timestamp server URL; defaults to DigiCert in the build script. |
+
+Release evidence must include `signtool verify` or
+`Get-AuthenticodeSignature` output for the MSI and SHA-256 verification for the
+Windows portable zip.
+
 ## Pre-Release Checks
 
 Run the local test suite before publishing:
@@ -119,8 +150,9 @@ make test
 Release security evidence requires a clean worktree:
 
 ```bash
-make release-security-scan VERSION=0.1.13
-make release-security-evidence-validate
+tools/provision-release-scanners.sh
+make release-security-scan-strict VERSION=0.1.14
+make release-security-evidence-validate RELEASE_MATRIX_VALIDATE_FLAGS=--require-pass
 ```
 
 For a local, non-release security scan while packaging changes are still dirty,
@@ -129,7 +161,7 @@ use the explicit dirty-tree target. It writes ignored evidence under
 evidence:
 
 ```bash
-make release-security-scan-local VERSION=0.1.13
+make release-security-scan-local VERSION=0.1.14
 ```
 
 Build local Linux packages when you are validating packaging changes from a
@@ -171,8 +203,8 @@ For a tag-based release, create and push an annotated version tag from the
 reviewed release commit:
 
 ```bash
-git tag -a v0.1.13 -m "SSHFling 0.1.13"
-git push origin v0.1.13
+git tag -a v0.1.14 -m "SSHFling 0.1.14"
+git push origin v0.1.14
 ```
 
 For a manual workflow dispatch, use the same version value without the leading
@@ -199,13 +231,13 @@ uses and ensure `package-dist/` contains the Linux, macOS, Windows, and source
 artifacts:
 
 ```bash
-VERSION=0.1.13 \
+VERSION=0.1.14 \
 REPOSITORY=GRWLX/sshfling \
 OWNER=GRWLX \
 SSHFLING_GENERATE_REPO_SIGNING_KEY=1 \
 bash packaging/build-public-web.sh package-dist public
 
-VERSION=0.1.13 \
+VERSION=0.1.14 \
 REPOSITORY=GRWLX/sshfling \
 bash packaging/verify-public-web.sh public
 ```
@@ -226,9 +258,12 @@ APT:
 
 ```bash
 BASE_URL="https://grwlx.github.io/sshfling"
-APPROVED_REPO_FINGERPRINT="PASTE_APPROVED_RELEASE_FINGERPRINT"
+: "${APPROVED_REPO_FINGERPRINT:?set this from the approved release evidence}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "$BASE_URL/sshfling-repo-fingerprint.txt" -o "$tmp/sshfling-repo-fingerprint.txt"
+published_fingerprint="$(tr -d '[:space:]' <"$tmp/sshfling-repo-fingerprint.txt" | tr '[:lower:]' '[:upper:]')"
+test "$published_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
 curl -fsSL "$BASE_URL/sshfling-repo.gpg" -o "$tmp/sshfling-repo.gpg"
 actual_fingerprint="$(gpg --batch --show-keys --with-colons "$tmp/sshfling-repo.gpg" | awk -F: '/^fpr:/ {print toupper($10); exit}')"
 test "$actual_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
@@ -244,9 +279,12 @@ DNF/Yum:
 
 ```bash
 BASE_URL="https://grwlx.github.io/sshfling"
-APPROVED_REPO_FINGERPRINT="PASTE_APPROVED_RELEASE_FINGERPRINT"
+: "${APPROVED_REPO_FINGERPRINT:?set this from the approved release evidence}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "$BASE_URL/sshfling-repo-fingerprint.txt" -o "$tmp/sshfling-repo-fingerprint.txt"
+published_fingerprint="$(tr -d '[:space:]' <"$tmp/sshfling-repo-fingerprint.txt" | tr '[:lower:]' '[:upper:]')"
+test "$published_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
 curl -fsSL "$BASE_URL/sshfling-repo.asc" -o "$tmp/sshfling-repo.asc"
 actual_fingerprint="$(gpg --batch --show-keys --with-colons "$tmp/sshfling-repo.asc" | awk -F: '/^fpr:/ {print toupper($10); exit}')"
 test "$actual_fingerprint" = "$APPROVED_REPO_FINGERPRINT"

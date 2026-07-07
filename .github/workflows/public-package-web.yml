@@ -106,16 +106,59 @@ jobs:
           REQUIRE_SIGNING: ${{ vars.SSHFLING_PKG_REQUIRE_SIGNING }}
           REQUIRE_NOTARIZATION: ${{ vars.SSHFLING_PKG_REQUIRE_NOTARIZATION }}
           HAS_SIGN_IDENTITY: ${{ secrets.SSHFLING_PKG_SIGN_IDENTITY != '' }}
+          HAS_SIGN_CERT_P12: ${{ secrets.SSHFLING_PKG_SIGN_CERT_P12_BASE64 != '' }}
+          HAS_SIGN_CERT_PASSWORD: ${{ secrets.SSHFLING_PKG_SIGN_CERT_PASSWORD != '' }}
           HAS_NOTARY_PROFILE: ${{ secrets.SSHFLING_PKG_NOTARY_PROFILE != '' }}
+          HAS_NOTARY_APPLE_ID: ${{ secrets.SSHFLING_PKG_NOTARY_APPLE_ID != '' }}
+          HAS_NOTARY_TEAM_ID: ${{ secrets.SSHFLING_PKG_NOTARY_TEAM_ID != '' }}
+          HAS_NOTARY_PASSWORD: ${{ secrets.SSHFLING_PKG_NOTARY_PASSWORD != '' }}
         run: |
           set -euo pipefail
-          if [[ "$REQUIRE_SIGNING" != "true" || "$HAS_SIGN_IDENTITY" != "true" ]]; then
-            echo "Release tag macOS packages require SSHFLING_PKG_REQUIRE_SIGNING=true and SSHFLING_PKG_SIGN_IDENTITY." >&2
+          if [[ "$REQUIRE_SIGNING" != "true" || "$HAS_SIGN_IDENTITY" != "true" || "$HAS_SIGN_CERT_P12" != "true" || "$HAS_SIGN_CERT_PASSWORD" != "true" ]]; then
+            echo "Release tag macOS packages require SSHFLING_PKG_REQUIRE_SIGNING=true, SSHFLING_PKG_SIGN_IDENTITY, SSHFLING_PKG_SIGN_CERT_P12_BASE64, and SSHFLING_PKG_SIGN_CERT_PASSWORD." >&2
             exit 2
           fi
-          if [[ "$REQUIRE_NOTARIZATION" != "true" || "$HAS_NOTARY_PROFILE" != "true" ]]; then
-            echo "Release tag macOS packages require SSHFLING_PKG_REQUIRE_NOTARIZATION=true and SSHFLING_PKG_NOTARY_PROFILE." >&2
+          if [[ "$REQUIRE_NOTARIZATION" != "true" || "$HAS_NOTARY_PROFILE" != "true" || "$HAS_NOTARY_APPLE_ID" != "true" || "$HAS_NOTARY_TEAM_ID" != "true" || "$HAS_NOTARY_PASSWORD" != "true" ]]; then
+            echo "Release tag macOS packages require SSHFLING_PKG_REQUIRE_NOTARIZATION=true, SSHFLING_PKG_NOTARY_PROFILE, SSHFLING_PKG_NOTARY_APPLE_ID, SSHFLING_PKG_NOTARY_TEAM_ID, and SSHFLING_PKG_NOTARY_PASSWORD." >&2
             exit 2
+          fi
+
+      - name: Configure macOS signing keychain and notary profile
+        if: vars.SSHFLING_PKG_REQUIRE_SIGNING == 'true' || vars.SSHFLING_PKG_REQUIRE_NOTARIZATION == 'true'
+        env:
+          SSHFLING_PKG_SIGN_CERT_P12_BASE64: ${{ secrets.SSHFLING_PKG_SIGN_CERT_P12_BASE64 }}
+          SSHFLING_PKG_SIGN_CERT_PASSWORD: ${{ secrets.SSHFLING_PKG_SIGN_CERT_PASSWORD }}
+          SSHFLING_PKG_NOTARY_PROFILE: ${{ secrets.SSHFLING_PKG_NOTARY_PROFILE }}
+          SSHFLING_PKG_NOTARY_APPLE_ID: ${{ secrets.SSHFLING_PKG_NOTARY_APPLE_ID }}
+          SSHFLING_PKG_NOTARY_TEAM_ID: ${{ secrets.SSHFLING_PKG_NOTARY_TEAM_ID }}
+          SSHFLING_PKG_NOTARY_PASSWORD: ${{ secrets.SSHFLING_PKG_NOTARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SSHFLING_PKG_SIGN_CERT_PASSWORD:-}"
+          echo "::add-mask::${SSHFLING_PKG_NOTARY_PASSWORD:-}"
+          if [[ -n "${SSHFLING_PKG_SIGN_CERT_P12_BASE64:-}" ]]; then
+            keychain="$RUNNER_TEMP/sshfling-signing.keychain-db"
+            keychain_password="$(uuidgen)"
+            cert_path="$RUNNER_TEMP/sshfling-signing.p12"
+            trap 'rm -f "$cert_path"' EXIT
+            if ! printf '%s' "$SSHFLING_PKG_SIGN_CERT_P12_BASE64" | base64 --decode >"$cert_path" 2>/dev/null; then
+              printf '%s' "$SSHFLING_PKG_SIGN_CERT_P12_BASE64" | base64 -D >"$cert_path"
+            fi
+            login_keychain="$(security login-keychain -d user | tr -d ' "')"
+            security create-keychain -p "$keychain_password" "$keychain"
+            security set-keychain-settings -lut 21600 "$keychain"
+            security unlock-keychain -p "$keychain_password" "$keychain"
+            security import "$cert_path" -k "$keychain" -P "$SSHFLING_PKG_SIGN_CERT_PASSWORD" -T /usr/bin/productbuild
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+            security list-keychains -d user -s "$keychain" "$login_keychain"
+            echo "SSHFLING_PKG_SIGN_KEYCHAIN=$keychain" >>"$GITHUB_ENV"
+            echo "SSHFLING_PKG_LOGIN_KEYCHAIN=$login_keychain" >>"$GITHUB_ENV"
+          fi
+          if [[ -n "${SSHFLING_PKG_NOTARY_PROFILE:-}" && -n "${SSHFLING_PKG_NOTARY_APPLE_ID:-}" ]]; then
+            xcrun notarytool store-credentials "$SSHFLING_PKG_NOTARY_PROFILE" \
+              --apple-id "$SSHFLING_PKG_NOTARY_APPLE_ID" \
+              --team-id "$SSHFLING_PKG_NOTARY_TEAM_ID" \
+              --password "$SSHFLING_PKG_NOTARY_PASSWORD"
           fi
 
       - name: Build macOS package
@@ -123,7 +166,6 @@ jobs:
           SSHFLING_VERSION: ${{ steps.version.outputs.version }}
           SSHFLING_PKG_REQUIRE_SIGNING: ${{ vars.SSHFLING_PKG_REQUIRE_SIGNING }}
           SSHFLING_PKG_SIGN_IDENTITY: ${{ secrets.SSHFLING_PKG_SIGN_IDENTITY }}
-          SSHFLING_PKG_SIGN_KEYCHAIN: ${{ secrets.SSHFLING_PKG_SIGN_KEYCHAIN }}
           SSHFLING_PKG_SIGN_TIMESTAMP: ${{ vars.SSHFLING_PKG_SIGN_TIMESTAMP }}
           SSHFLING_PKG_REQUIRE_NOTARIZATION: ${{ vars.SSHFLING_PKG_REQUIRE_NOTARIZATION }}
           SSHFLING_PKG_NOTARY_PROFILE: ${{ secrets.SSHFLING_PKG_NOTARY_PROFILE }}
@@ -135,6 +177,17 @@ jobs:
           name: macos-package
           path: dist/*.pkg
           if-no-files-found: error
+
+      - name: Clean up macOS signing keychain
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -n "${SSHFLING_PKG_LOGIN_KEYCHAIN:-}" ]]; then
+            security list-keychains -d user -s "$SSHFLING_PKG_LOGIN_KEYCHAIN" || true
+          fi
+          if [[ -n "${SSHFLING_PKG_SIGN_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$SSHFLING_PKG_SIGN_KEYCHAIN" || true
+          fi
 
   windows:
     name: Windows package
@@ -169,9 +222,39 @@ jobs:
         env:
           REQUIRE_AUTHENTICODE: ${{ vars.SSHFLING_WINDOWS_REQUIRE_AUTHENTICODE }}
           HAS_SIGN_CERT_SHA1: ${{ secrets.SSHFLING_WINDOWS_SIGN_CERT_SHA1 != '' }}
+          HAS_SIGN_CERT_PFX: ${{ secrets.SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64 != '' }}
+          HAS_SIGN_CERT_PASSWORD: ${{ secrets.SSHFLING_WINDOWS_SIGN_CERT_PASSWORD != '' }}
         run: |
-          if ($env:REQUIRE_AUTHENTICODE -ne "true" -or $env:HAS_SIGN_CERT_SHA1 -ne "true") {
-            throw "Release tag Windows packages require SSHFLING_WINDOWS_REQUIRE_AUTHENTICODE=true and SSHFLING_WINDOWS_SIGN_CERT_SHA1."
+          if ($env:REQUIRE_AUTHENTICODE -ne "true" -or $env:HAS_SIGN_CERT_SHA1 -ne "true" -or $env:HAS_SIGN_CERT_PFX -ne "true" -or $env:HAS_SIGN_CERT_PASSWORD -ne "true") {
+            throw "Release tag Windows packages require SSHFLING_WINDOWS_REQUIRE_AUTHENTICODE=true, SSHFLING_WINDOWS_SIGN_CERT_SHA1, SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64, and SSHFLING_WINDOWS_SIGN_CERT_PASSWORD."
+          }
+
+      - name: Import Windows signing certificate
+        if: vars.SSHFLING_WINDOWS_REQUIRE_AUTHENTICODE == 'true'
+        shell: pwsh
+        env:
+          SSHFLING_WINDOWS_SIGN_CERT_SHA1: ${{ secrets.SSHFLING_WINDOWS_SIGN_CERT_SHA1 }}
+          SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64: ${{ secrets.SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64 }}
+          SSHFLING_WINDOWS_SIGN_CERT_PASSWORD: ${{ secrets.SSHFLING_WINDOWS_SIGN_CERT_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Output "::add-mask::$env:SSHFLING_WINDOWS_SIGN_CERT_PASSWORD"
+          if (-not $env:SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64) {
+            throw "SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64 is required when Authenticode signing is enabled."
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "sshfling-signing.pfx"
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64))
+            $password = ConvertTo-SecureString -String $env:SSHFLING_WINDOWS_SIGN_CERT_PASSWORD -AsPlainText -Force
+            $imported = @(Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password)
+            $cert = $imported | Where-Object { $_.HasPrivateKey -and $_.Thumbprint -eq $env:SSHFLING_WINDOWS_SIGN_CERT_SHA1 } | Select-Object -First 1
+            if (-not $cert) {
+              throw "Imported Windows signing certificate did not match SSHFLING_WINDOWS_SIGN_CERT_SHA1."
+            }
+            "SSHFLING_WINDOWS_IMPORTED_CERT_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+          }
+          finally {
+            Remove-Item -Force $pfx -ErrorAction SilentlyContinue
           }
 
       - name: Build Windows MSI
@@ -225,6 +308,16 @@ jobs:
             dist/*.msi
             dist/*.zip
           if-no-files-found: error
+
+      - name: Remove Windows signing certificate
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:SSHFLING_WINDOWS_IMPORTED_CERT_THUMBPRINT) {
+            Get-ChildItem Cert:\CurrentUser\My |
+              Where-Object { $_.Thumbprint -eq $env:SSHFLING_WINDOWS_IMPORTED_CERT_THUMBPRINT } |
+              Remove-Item -Force -ErrorAction SilentlyContinue
+          }
 
   package-web:
     name: Verify package web
@@ -393,6 +486,9 @@ jobs:
           RELEASE_MATRIX_VALIDATE_FLAGS: ${{ steps.package_site_mode.outputs.publish == 'true' && '--require-pass' || '' }}
         run: |
           set -euo pipefail
+          if [[ "${RELEASE_SECURITY_STRICT_OPTIONAL_TOOLS:-}" = "1" ]]; then
+            tools/provision-release-scanners.sh
+          fi
           make release-security-scan VERSION="${VERSION}"
           make release-security-evidence-validate RELEASE_MATRIX_VALIDATE_FLAGS="${RELEASE_MATRIX_VALIDATE_FLAGS}"
 

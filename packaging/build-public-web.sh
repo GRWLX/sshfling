@@ -542,6 +542,9 @@ tmp="\$(mktemp -d)"
 trap 'rm -rf "\$tmp"' EXIT
 curl -fsSL "$base_url/downloads/$pkg_name" -o "\$tmp/$pkg_name"
 (cd "\$tmp" && printf '%s  %s\n' "$pkg_sha" "$pkg_name" | shasum -a 256 -c -)
+pkgutil --check-signature "\$tmp/$pkg_name" >/dev/null
+xcrun stapler validate "\$tmp/$pkg_name" >/dev/null
+spctl -a -vv -t install "\$tmp/$pkg_name" >/dev/null
 sudo installer -pkg "\$tmp/$pkg_name" -target /
 SH
 chmod 0755 "$public_dir/macos/install-pkg.sh"
@@ -590,11 +593,12 @@ $uninstallRoots = @(
 
 $products = Get-ItemProperty -Path $uninstallRoots -ErrorAction SilentlyContinue |
   Where-Object {
-    $_.DisplayName -eq "SSHFling" -and
-    $_.Publisher -eq "SSHFling Maintainers" -and
-    $_.WindowsInstaller -eq 1 -and
-    $_.URLInfoAbout -eq "https://github.com/GRWLX/sshfling"
-  }
+	    $_.DisplayName -eq "SSHFling" -and
+	    $_.Publisher -eq "SSHFling Maintainers" -and
+	    $_.DisplayVersion -eq "__VERSION__" -and
+	    $_.WindowsInstaller -eq 1 -and
+	    $_.URLInfoAbout -eq "https://github.com/GRWLX/sshfling"
+	  }
 
 if (-not $products) {
   Write-Output "SSHFling is not installed."
@@ -614,6 +618,7 @@ foreach ($product in $products) {
 
 Write-Output "Removed SSHFling."
 SH
+sed -i "s#__VERSION__#$version#g" "$public_dir/windows/uninstall.ps1"
 
 (
   cd "$public_dir/downloads"
@@ -741,11 +746,12 @@ Invoke-WebRequest -Uri "$base_url/windows/install.ps1" -OutFile \$installer
 )
 \$products = Get-ItemProperty -Path \$uninstallRoots -ErrorAction SilentlyContinue |
   Where-Object {
-    \$_.DisplayName -eq "SSHFling" -and
-    \$_.Publisher -eq "SSHFling Maintainers" -and
-    \$_.WindowsInstaller -eq 1 -and
-    \$_.URLInfoAbout -eq "https://github.com/GRWLX/sshfling"
-  }
+	    \$_.DisplayName -eq "SSHFling" -and
+	    \$_.Publisher -eq "SSHFling Maintainers" -and
+	    \$_.DisplayVersion -eq "$version" -and
+	    \$_.WindowsInstaller -eq 1 -and
+	    \$_.URLInfoAbout -eq "https://github.com/GRWLX/sshfling"
+	  }
 foreach (\$product in \$products) {
   \$productCode = \$product.PSChildName
   if (\$productCode -notmatch '^\{[0-9A-Fa-f-]{36}\}$') { throw "Could not determine MSI product code for SSHFling." }

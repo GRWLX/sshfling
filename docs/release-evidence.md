@@ -42,6 +42,39 @@ CIS Benchmark or equivalent hardening profile, if applicable:
 
 Non-certification caveat acknowledged by release approver: Yes / No
 
+## v0.1.14 Release-Prep Snapshot
+
+Use this section for the next release ticket. Attach final, immutable evidence
+from the `v0.1.14` tag or protected workflow input before publication.
+
+- `0.1.14` is the fixed-forward source/package candidate after the published
+  `v0.1.13` release.
+- The candidate includes prune identity-mismatch preservation, incomplete CA
+  keypair rejection, explicit `cert issue --certificate -t/--time` lifetime
+  enforcement, OpenSSH server preflight checks for password-host setup, DEB/RPM
+  service-account identity preservation during uninstall, macOS signing and
+  notarization workflow gates, generated macOS installer trust checks, Windows
+  ZIP checksum verification, and Windows MSI uninstall narrowing.
+- Do not publish or call `v0.1.14` enterprise-ready until the approval gates
+  below are complete for the final commit.
+- Generated evidence for this candidate must remain under ignored paths such as
+  `docs/release/enterprise-release-evidence/`, `build/`, `dist/`,
+  `package-dist/`, or `release-dist/`; attach reviewed outputs to the release
+  ticket or controlled evidence repository instead of committing them.
+
+Required candidate evidence:
+
+- Clean final candidate commit and matching `bin/sshfling --version` output.
+- Passing local `make test`, `make test-containers`, release package rehearsal,
+  release security scan/evidence validation, workflow static check, and
+  `git diff --check`.
+- Passing immutable GitHub workflow URLs for release packages, public package
+  site verification, package install tests, cross-OS validation, and container
+  image tests, or approved exceptions with scope and expiration.
+- Production APT/RPM signing fingerprint, macOS notarization output, Windows
+  Authenticode output, and evidence that generated test keys were not used for
+  production package-site publication.
+
 ## v0.1.13 Published Release Snapshot
 
 Use this snapshot to seed the release ticket. Attach final, immutable evidence
@@ -161,19 +194,19 @@ organization's audit or certification process accepts the evidence.
 
 ## Approval Gates
 
-| Gate | Required evidence | Result |
+| Gate | Required evidence | Result or exception |
 | --- | --- | --- |
-| Release request approved | Ticket URL, approver, approval timestamp | Pending |
-| Compliance mapping reviewed | Control scope, caveats, evidence owner, and exceptions recorded above | Pending |
-| Source ready | Protected branch status, PR review, commit SHA | Pending |
-| Tag approved | Tag name, tag creator, protected-tag rule, signature status if used | Pending |
-| Build validation passed | `Release packages without web` or equivalent run URL | Pending |
-| Package-site validation passed | `Release packages with public web` run URL and `verify-public-web` output | Pending |
-| Post-publish install validation passed | `Package install tests` run URL | Pending |
-| Cross-OS validation passed | `Cross OS validation` run URL, matrix result summary | Pending |
-| Runtime behavior docs verified | README, repo docs, wiki, and release notes match implemented password, certificate, access-level, prune, and uninstall behavior | Pending |
-| Security gates passed | Secret scan, SBOM, license scan, dependency inventory, SAST, shell lint, Dockerfile lint, vulnerability scan, systemd review | Pending |
-| Rollback ready | Previous version, restore source, authorized rollback owner | Pending |
+| Release request approved | Ticket URL, approver, approval timestamp | Release-ticket evidence required |
+| Compliance mapping reviewed | Control scope, caveats, evidence owner, and exceptions recorded above | Release-ticket evidence required |
+| Source ready | Protected branch status, PR review, commit SHA | Release-ticket evidence required |
+| Tag approved | Tag name, tag creator, protected-tag rule, signature status if used | Release-ticket evidence required |
+| Build validation passed | `Release packages without web` or equivalent run URL | Release-ticket evidence required |
+| Package-site validation passed | `Release packages with public web` run URL and `verify-public-web` output | Release-ticket evidence required |
+| Post-publish install validation passed | `Package install tests` run URL | Release-ticket evidence required |
+| Cross-OS validation passed | `Cross OS validation` run URL, matrix result summary | Release-ticket evidence required |
+| Runtime behavior docs verified | README, repo docs, wiki, and release notes match implemented password, certificate, access-level, prune, and uninstall behavior | Release-ticket evidence required |
+| Security gates passed | Secret scan, SBOM, license scan, dependency inventory, SAST, shell lint, Dockerfile lint, vulnerability scan, systemd review | Release-ticket evidence required |
+| Rollback ready | Previous version, restore source, authorized rollback owner | Release-ticket evidence required |
 
 ## Artifact Inventory
 
@@ -198,12 +231,12 @@ Record the behavior contract that users and support teams rely on.
 
 | Behavior | Expected release statement | Evidence |
 | --- | --- | --- |
-| Password default | Password mode is the default access type, but temporary access requires an explicit `-t/--time` lifetime such as `sudo sshfling -t 10m`; bare `sudo sshfling` fails before creating access. | README/release-notes link: |
-| Explicit certificate mode | Certificate access requires `--certificate`; certificate-only setup options fail without it; certificate setup requires an existing CA keypair and fails before creating client material if the CA is missing. | README/release-notes link: |
-| Access-level classification | `--access-level` and `--role` classify least-privilege policy intent and do not grant sudo, administrator, group, IAM, or root-equivalent privileges. Host controls enforce actual privileges. | README/wiki/test link: |
-| Prune semantics | `password prune` requires exactly one selector, `--all` or `--username USER`; it removes expired tracked grants only; active grants and unmanaged records are preserved; existing users explicitly allowed with `--allow-existing-user` are locked/expired but not deleted; root-equivalent users are never mutated from password-grant metadata or host-user markers. | Test or docs link: |
-| Host uninstall scope | `host uninstall` removes managed certificate host config by default; shared CA, wrapper, policy-user, and Unix-account removal are opt-in. Unix-account deletion requires the SSHFling host-user marker written by `host install --create-user`. | Docs link: |
-| Package uninstall scope | Package uninstall removes package files and managed repo entries, but not host SSH state, password grant state, CA material, `/etc/sshfling` config, dependency package state, or original host configuration. Dependency autoremove/autopurge is a separate fleet action. macOS package notes and Windows MSI metadata state this scope. | Docs or metadata link: |
+| Password default | Password mode is the default access type, but temporary access requires an explicit `-t/--time` lifetime such as `sudo sshfling -t 10m`; bare `sudo sshfling` fails before creating access. | [README.md](../README.md), [tests/cross-os/validate-cli.sh](../tests/cross-os/validate-cli.sh), [tests/cross-os/validate-cli.ps1](../tests/cross-os/validate-cli.ps1) |
+| Explicit certificate mode | Certificate access requires `--certificate`; certificate-only setup options fail without it; certificate setup requires a complete CA keypair and fails before creating client material if the CA is missing or incomplete; `cert issue --certificate` requires explicit `-t/--time` or `--seconds`. | [README.md](../README.md), [tests/cross-os/validate-cli.sh](../tests/cross-os/validate-cli.sh), [tests/cross-os/validate-cli.ps1](../tests/cross-os/validate-cli.ps1) |
+| Access-level classification | `--access-level` and `--role` classify least-privilege policy intent and do not grant sudo, administrator, group, IAM, or root-equivalent privileges. Host controls enforce actual privileges. | [README.md](../README.md), [wiki Package Publishing](wiki/Package-Publishing.md), [tests/cross-os/validate-cli.sh](../tests/cross-os/validate-cli.sh) |
+| Prune semantics | `password prune` requires exactly one selector, `--all` or `--username USER`; it removes expired tracked grants only; active grants and unmanaged records are preserved; existing users explicitly allowed with `--allow-existing-user` are locked/expired but not deleted; root-equivalent users are never mutated from password-grant metadata or host-user markers; recreated or mismatched Unix identities are skipped before SSHFling removes managed config or metadata. | [tests/cross-os/validate-cli.sh](../tests/cross-os/validate-cli.sh), [tests/cross-os/validate-cli.ps1](../tests/cross-os/validate-cli.ps1), [tests/docker/run-production-test.sh](../tests/docker/run-production-test.sh) |
+| Host uninstall scope | `host uninstall` removes managed certificate host config by default; shared CA, wrapper, policy-user, and Unix-account removal are opt-in. Unix-account deletion requires the SSHFling host-user marker written by `host install --create-user`. | [install-uninstall.md](install-uninstall.md), [tests/cross-os/validate-cli.sh](../tests/cross-os/validate-cli.sh) |
+| Package uninstall scope | Package uninstall removes package files and managed repo entries, but not host SSH state, password grant state, CA material, `/etc/sshfling` config, dependency package state, or original host configuration. Package-created service accounts are removed only when current UID/GID/home identity matches package state. Dependency autoremove/autopurge is a separate fleet action. macOS package notes and Windows MSI metadata state this scope. | [install-uninstall.md](install-uninstall.md), [tests/docker/run-container-image-tests.sh](../tests/docker/run-container-image-tests.sh), [packaging/build-deb.sh](../packaging/build-deb.sh), [packaging/build-rpm.sh](../packaging/build-rpm.sh) |
 
 ## Threat Model And Dependency Review
 
@@ -283,8 +316,16 @@ Control references: SOC 2 CC6.1, CC6.2, CC6.3; ISO 27001 A.5.15, A.5.18, A.8.2; 
 | `SSHFLING_REPO_GPG_PRIVATE_KEY` | APT/RPM signing | GitHub secret or managed store | Protected release environment |  | Key rotation or exposure |
 | `SSHFLING_REPO_GPG_FINGERPRINT` | APT/RPM trust anchor | GitHub secret or release record | Protected release environment |  | Key rotation, mismatch, or compromised trust anchor |
 | `SSHFLING_REPO_GPG_PASSPHRASE` | GPG signing passphrase | GitHub secret or managed store | Protected release environment |  | Key rotation or exposure |
-| Apple signing credentials | macOS package signing/notarization | Managed secret store | Protected release environment |  | Certificate rotation or exposure |
-| Windows signing certificate | MSI signing | Managed secret store | Protected release environment |  | Certificate rotation or exposure |
+| `SSHFLING_PKG_SIGN_IDENTITY` | macOS package signing identity | GitHub secret or managed store | Protected `release-signing` environment |  | Certificate rotation or exposure |
+| `SSHFLING_PKG_SIGN_CERT_P12_BASE64` | macOS Developer ID Installer certificate/private key bundle | GitHub secret or managed store | Protected `release-signing` environment |  | Certificate rotation or exposure |
+| `SSHFLING_PKG_SIGN_CERT_PASSWORD` | macOS signing P12 password | GitHub secret or managed store | Protected `release-signing` environment |  | Certificate rotation or exposure |
+| `SSHFLING_PKG_NOTARY_PROFILE` | Notary profile name | GitHub secret or managed store | Protected `release-signing` environment |  | Apple notary credential rotation |
+| `SSHFLING_PKG_NOTARY_APPLE_ID` | Apple notary account | GitHub secret or managed store | Protected `release-signing` environment |  | Apple account or team change |
+| `SSHFLING_PKG_NOTARY_TEAM_ID` | Apple Developer Team ID | GitHub secret or managed store | Protected `release-signing` environment |  | Apple team change |
+| `SSHFLING_PKG_NOTARY_PASSWORD` | Apple notary app-specific password | GitHub secret or managed store | Protected `release-signing` environment |  | Password rotation or exposure |
+| `SSHFLING_WINDOWS_SIGN_CERT_SHA1` | Windows Authenticode certificate selector | GitHub secret or managed store | Protected `release-signing` environment |  | Certificate rotation or exposure |
+| `SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64` | Windows Authenticode certificate/private key bundle | GitHub secret or managed store | Protected `release-signing` environment |  | Certificate rotation or exposure |
+| `SSHFLING_WINDOWS_SIGN_CERT_PASSWORD` | Windows signing PFX password | GitHub secret or managed store | Protected `release-signing` environment |  | Password rotation or exposure |
 
 Required checks:
 
@@ -300,7 +341,7 @@ Control references: SOC 2 CC7.1, CC8.1; ISO 27001 A.8.8, A.8.25, A.8.29; NIST SP
 | Validation | Evidence source | Expected result | Actual result |
 | --- | --- | --- | --- |
 | Local source validation | `make test` | Pass |  |
-| Release security evidence | `make release-security-scan`; optional external scanners via `make release-security-scan-optional`; strict runner via `make release-security-scan-strict` | Baseline pass and generated `security-scan-matrix.csv` validates with `security-scan-manifest.json` |  |
+| Release security evidence | `make release-security-scan-strict`; strict workflow scanner provisioning via `tools/provision-release-scanners.sh` | Baseline and external scanner rows pass, and generated `security-scan-matrix.csv` validates with `security-scan-manifest.json` using `--require-pass`; any override uses `--allow-approved-exceptions` and complete unexpired exception fields |  |
 | SBOM generation | `security-scans/sbom.spdx.json` | SPDX 2.3 SBOM generated from tracked release source dependency inputs |  |
 | Dependency inventory | `security-scans/dependency-inventory.json` | Container base images, apt packages, package runtime requirements, and Nix package references inventoried |  |
 | License scan | `security-scans/license-report.json` | Commercial license markers present in source and package metadata generators |  |
@@ -315,11 +356,11 @@ Control references: SOC 2 CC7.1, CC8.1; ISO 27001 A.8.8, A.8.25, A.8.29; NIST SP
 | Access-level policy validation | `sshfling policy show`, cross-OS validation, grant metadata, host-control evidence | Access levels classify privilege intent, root-equivalent paths require admin classification, and actual privileges are enforced by host controls |  |
 | CIS-style package hardening | `packaging/verify-public-web.sh`, package manager config, signatures, checksums | No `trusted=yes`, `gpgcheck=0`, or `repo_gpgcheck=0`; stable production signing key or approved exception |  |
 | Customer host hardening | Customer OS benchmark or equivalent scan | Scan result and deviations attached, or customer-owned exception recorded |  |
-| Secret scanning | `security-scans/secret-scan-report.json` and selected optional scanner, if used | No unresolved high-confidence secret findings |  |
-| SAST | Selected scanner | No unresolved critical/high findings |  |
+| Secret scanning | `security-scans/secret-scan-report.json` and `gitleaks` tree/history output | No unresolved high-confidence secret findings |  |
+| SAST | Built-in static checks and `bandit` | No unresolved critical/high findings |  |
 | Shell linting | Selected lint command | No unresolved release-blocking findings |  |
 | Dockerfile linting | Selected lint command | No unresolved release-blocking findings |  |
-| Vulnerability scanning | Selected scanner | No unresolved critical/high package findings |  |
+| Vulnerability scanning | `trivy fs` and `osv-scanner` | No unresolved critical/high package findings |  |
 | systemd unit security review | Selected review command | Findings accepted or remediated |  |
 
 ## Rollback Evidence
@@ -406,6 +447,35 @@ Provide this summary to enterprise customers when requested.
 | How does this align to CIS-style hardening? | Package-manager trust evidence, host hardening profile, log retention evidence, scan results, and customer-owned exceptions. |
 | What happens if a bad package ships? | Rollback owner, previous known-good version, and rollback validation evidence. |
 | What residual risks remain? | Open exceptions, expiration dates, and compensating controls. |
+
+## Security Gate Exceptions
+
+Use this process only when a release must proceed with a failed, blocked, or
+skipped security-gate row. The default release gate is still `--require-pass`.
+
+Required exception evidence:
+
+- `exception_id` from the release, incident, or risk-acceptance ticket.
+- `exception_owner` accountable for remediation or retest.
+- `exception_expires` as `YYYY-MM-DD` or ISO-8601 timestamp.
+- `blocker_reason`, `actual_result`, or `notes` explaining the gate result.
+- Approver, compensating control, customer impact, and re-test plan in the
+  exception record below.
+
+Validation command for approved exceptions:
+
+```bash
+python3 tools/release_matrix_validate.py \
+  --matrix docs/release/enterprise-release-evidence/security-scans/security-scan-matrix.csv \
+  --manifest docs/release/enterprise-release-evidence/security-scans/security-scan-manifest.json \
+  --require-pass \
+  --allow-approved-exceptions
+```
+
+Expired or incomplete exceptions fail validation. Do not use this path for
+routine scanner unavailability; provision scanners with
+`tools/provision-release-scanners.sh` or record why the unavailable scanner is
+outside the release scope.
 
 ## Exception Record
 

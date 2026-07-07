@@ -26,10 +26,9 @@ repository signing for the public package site. The repo still cannot prove the
 controls enterprise assessors will care about most: required release approval,
 protected tag settings, protected environment reviewers, production
 signing-key custody, completed rollback evidence, macOS signing/notarization
-evidence, Windows Authenticode signing, container image signing/provenance,
-security scans as blocking gates, a complete vulnerability disclosure policy,
-and platform coverage for advertised OS, hardware, ARM, IoT, or FPGA/SoC
-targets.
+evidence, Windows Authenticode signing evidence, container image verification
+evidence, release-specific security scan triage and exception approval, and
+platform coverage for advertised OS, hardware, ARM, IoT, or FPGA/SoC targets.
 
 Estimated time to audit-ready depends on external GitHub settings, signing
 certificate availability, secret-store controls, and release-operation evidence.
@@ -80,17 +79,19 @@ readiness summary only.
 
 ### ER-001: Release Approval Gate Is Not Evidenced
 
-Status: Gap
+Status: Partial
 
 Control reference: SOC 2 CC8.1; ISO 27001 A.8.32; NIST SP 800-53 CM-3, CM-5
 
 Current state: Tag-triggered release workflows build packages and publish
 GitHub releases or, when signing secrets are present, the public package site.
-The public package-site deploy job names the `github-pages` environment, but
-the workflow file cannot prove that the environment has required reviewers. The
-reviewed workflow files also do not prove protected tag settings, a signed tag
-requirement, or a documented release approval record. The GitHub release asset
-workflow does not use a protected environment in source.
+The GitHub release asset workflow uses the `release-packages` environment, the
+package signing and package-site verification jobs use `release-signing`, and
+the public package-site deploy job names the `github-pages` environment. The
+workflow files still cannot prove that those environments have required
+reviewers, that protected tag settings are enforced, that signed tags are
+required where policy demands them, or that a documented release approval
+record exists for a specific release.
 
 Target state: Every production package release is linked to an approved change record, a protected tag, a required reviewer approval, passing validation workflows, and a retained release evidence packet.
 
@@ -140,7 +141,7 @@ Priority: High
 
 ### ER-003: Desktop Code Signing Evidence Is Incomplete
 
-Status: Partial for macOS; Gap for Windows
+Status: Partial for macOS and Windows; external evidence required
 
 Control reference: SOC 2 CC8.1, CC6.6; ISO 27001 A.8.24, A.8.29; NIST SP
 800-53 IA-5, SC-12, SA-10
@@ -241,26 +242,35 @@ Estimated effort: 1 to 2 days to inventory and configure; quarterly operational 
 
 Priority: High
 
-### ER-007: Security Gates Are Not Yet Blocking Release
+### ER-007: Security Gates Need Release-Specific Evidence
 
-Status: Gap
+Status: Source gate available; release-specific evidence required
 
 Control reference: SOC 2 CC7.1, CC8.1; ISO 27001 A.8.8, A.8.25, A.8.28,
 A.8.29; NIST SP 800-53 SI-2, SA-10, CM-6
 
 Current state: Existing workflows run functional build, install, package-site,
-and cross-OS validation. The repository also includes `make
-release-security-scan` and optional scanner hooks for release evidence. The
-reviewed workflows do not invoke those targets as required publication gates,
-and no release policy in source defines critical/high findings as blocking.
+cross-OS validation, release security evidence gates, and strict scanner
+provisioning for tag or publish paths. The release scanner runs built-in
+secret, license, dependency, SBOM, Dockerfile, systemd, and static checks and
+can run external scanners in strict mode. Release matrix validation supports a
+strict all-pass gate and an explicit `--allow-approved-exceptions` path that
+requires complete, unexpired exception metadata. Release-specific scanner
+outputs, triage records, and approvals are still required evidence.
 
 Target state: High-confidence critical/high security findings block production package publication, or exceptions are approved and time-bound.
 
 Remediation:
 
-1. Add release evidence fields for secret scanning, SAST, shell linting, Dockerfile linting, vulnerability scanning, and systemd security review results.
-2. Start non-blocking if needed, then make critical/high findings blocking once false positives are triaged.
-3. Require documented exceptions with owner, compensating control, expiration date, and re-test result.
+1. Attach strict release scan output, generated matrix/manifest, and external
+   scanner logs to each release packet.
+2. Triage scanner findings before publication and record false-positive or
+   unavailable-scanner exceptions with exception ID, owner, compensating
+   control, expiration date, approver, customer impact, and re-test result.
+3. Validate any approved security-gate exception with
+   `--require-pass --allow-approved-exceptions`.
+4. Retain evidence that the release runner provisioned the expected scanner
+   toolchain or used an approved pinned runner image.
 
 Estimated effort: 2 to 5 days depending on tool selection and false-positive triage.
 

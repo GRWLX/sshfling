@@ -6,7 +6,7 @@ owner, repository name, and package version from the approved release record.
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.13"
+VERSION="0.1.14"
 ```
 
 SSHFling is proprietary commercial software. Installing, running,
@@ -21,10 +21,12 @@ agreement from GRWLX.
   fingerprint before adding the repo to a managed host.
 - Package uninstall removes SSHFling-managed package files for the selected
   install channel. It is not a host-state rollback.
-- Package uninstall does not remove `/etc/sshfling`, local CA material, host
-  SSH configuration created by `sshfling host install`, temporary password grant
-  state, audit records, Python, OpenSSH, account-management tools, `procps`, or
-  `util-linux`.
+- Primary DEB/RPM/pkg/MSI uninstall paths do not remove `/etc/sshfling`, local
+  CA material, host SSH configuration created by `sshfling host install`,
+  temporary password grant state, audit records, Python, OpenSSH,
+  account-management tools, `procps`, or `util-linux`. Generated community
+  manifests need ecosystem-specific review because not every package manager
+  has the same config-preservation semantics.
 - For production macOS pkg distribution, require an Apple Developer ID Installer
   signature, notarization, stapling verification, and release-ticket evidence,
   or record a time-bound exception before deployment.
@@ -49,10 +51,13 @@ Password prune requires exactly one selector: `--all` to scan the tracked grant
 store or `--username USER` for targeted cleanup. It only removes expired grants
 and leaves active grants in place. By default, expired SSHFling-created Unix
 users are locked and expired; `--delete-users` deletes expired SSHFling-created
-users only after managed sshd config removal is verified. Existing users that
-were explicitly allowed with `--allow-existing-user` are locked and expired but
-are never deleted by `--delete-users`. Root-equivalent users are never mutated
-from password-grant metadata or host-user markers.
+users only after managed sshd config removal is verified and SSHFling has
+recorded UID/GID/home identity evidence. If the current Unix UID/GID/home does
+not match SSHFling grant metadata, prune skips deletion and preserves the
+managed config and metadata for investigation. Existing users that were
+explicitly allowed with `--allow-existing-user` are locked and expired but are
+never deleted by `--delete-users`. Root-equivalent users are never mutated from
+password-grant metadata or host-user markers.
 
 Use `sshfling host uninstall --delete-user` only for Unix accounts created by
 `sshfling host install --create-user`. SSHFling requires its host-user marker
@@ -157,9 +162,12 @@ package site.
 Install:
 
 ```bash
-APPROVED_REPO_FINGERPRINT="PASTE_APPROVED_RELEASE_FINGERPRINT"
+: "${APPROVED_REPO_FINGERPRINT:?set this from the approved release evidence}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "${BASE_URL}/sshfling-repo-fingerprint.txt" -o "$tmp/sshfling-repo-fingerprint.txt"
+published_fingerprint="$(tr -d '[:space:]' <"$tmp/sshfling-repo-fingerprint.txt" | tr '[:lower:]' '[:upper:]')"
+test "$published_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
 curl -fsSL "${BASE_URL}/sshfling-repo.gpg" -o "$tmp/sshfling-repo.gpg"
 actual_fingerprint="$(gpg --batch --show-keys --with-colons "$tmp/sshfling-repo.gpg" | awk -F: '/^fpr:/ {print toupper($10); exit}')"
 test "$actual_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
@@ -190,9 +198,12 @@ site, including RHEL, Fedora, Rocky Linux, AlmaLinux, and UBI.
 Install:
 
 ```bash
-APPROVED_REPO_FINGERPRINT="PASTE_APPROVED_RELEASE_FINGERPRINT"
+: "${APPROVED_REPO_FINGERPRINT:?set this from the approved release evidence}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "${BASE_URL}/sshfling-repo-fingerprint.txt" -o "$tmp/sshfling-repo-fingerprint.txt"
+published_fingerprint="$(tr -d '[:space:]' <"$tmp/sshfling-repo-fingerprint.txt" | tr '[:lower:]' '[:upper:]')"
+test "$published_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
 curl -fsSL "${BASE_URL}/sshfling-repo.asc" -o "$tmp/sshfling-repo.asc"
 actual_fingerprint="$(gpg --batch --show-keys --with-colons "$tmp/sshfling-repo.asc" | awk -F: '/^fpr:/ {print toupper($10); exit}')"
 test "$actual_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
@@ -302,7 +313,8 @@ not on the default keychain search path. Use
 `SSHFLING_PKG_SIGN_TIMESTAMP=none` only for offline test builds; production
 Developer ID signatures should carry a trusted timestamp.
 
-Install with the generated checksum-verifying helper:
+Install with the generated helper, which verifies SHA-256, package signature,
+notarization stapling, and Gatekeeper assessment before running `installer`:
 
 ```bash
 tmp="$(mktemp -d)"
@@ -312,9 +324,8 @@ sudo bash "$tmp/install-pkg.sh"
 sshfling --version
 ```
 
-The generated helper verifies the published SHA-256 checksum. For enterprise
-macOS deployment, also verify the package signature and notarization evidence
-from the approved release record before installation.
+For enterprise macOS deployment, also attach the package signature and
+notarization evidence from the approved release record before installation.
 
 Install a downloaded signed `.pkg` directly:
 
@@ -350,8 +361,8 @@ not keep separate original-state records and does not bundle Python or OpenSSH.
 
 ## Windows MSI
 
-Install with the generated checksum-verifying helper from an elevated
-PowerShell session:
+Install with the generated checksum and Authenticode-verifying helper from an
+elevated PowerShell session:
 
 ```powershell
 $BaseUrl = "https://OWNER.github.io/REPO"
@@ -366,7 +377,7 @@ Install a downloaded MSI directly:
 
 ```powershell
 $BaseUrl = "https://OWNER.github.io/REPO"
-$Version = "0.1.13"
+$Version = "0.1.14"
 $Msi = Join-Path $env:TEMP "sshfling-$Version.msi"
 $Sums = Join-Path $env:TEMP "sshfling-SHA256SUMS"
 Invoke-WebRequest -Uri "$BaseUrl/downloads/sshfling-$Version.msi" -OutFile $Msi
@@ -376,6 +387,8 @@ if (-not $ExpectedLine) { throw "Checksum entry not found for sshfling-$Version.
 $Expected = $ExpectedLine.Split()[0].ToLowerInvariant()
 $Actual = (Get-FileHash -Algorithm SHA256 -Path $Msi).Hash.ToLowerInvariant()
 if ($Actual -ne $Expected) { throw "SHA-256 mismatch for sshfling-$Version.msi" }
+$Signature = Get-AuthenticodeSignature -FilePath $Msi
+if ($Signature.Status -ne "Valid") { throw "Invalid Authenticode signature: $($Signature.Status)" }
 Start-Process msiexec.exe -Wait -ArgumentList "/i", $Msi, "/qn", "/norestart"
 $Command = Join-Path $env:ProgramFiles "SSHFling\sshfling.cmd"
 & $Command --version
@@ -393,6 +406,7 @@ Invoke-WebRequest -Uri "$BaseUrl/windows/uninstall.ps1" -OutFile $Uninstaller
 Uninstall by MSI product registration:
 
 ```powershell
+$Version = "0.1.14"
 $UninstallRoots = @(
   "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
   "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
@@ -401,6 +415,7 @@ $Products = Get-ItemProperty -Path $UninstallRoots -ErrorAction SilentlyContinue
   Where-Object {
     $_.DisplayName -eq "SSHFling" -and
     $_.Publisher -eq "SSHFling Maintainers" -and
+    $_.DisplayVersion -eq $Version -and
     $_.WindowsInstaller -eq 1 -and
     $_.URLInfoAbout -eq "https://github.com/GRWLX/sshfling"
   }
@@ -424,7 +439,7 @@ Install for the current user:
 
 ```powershell
 $BaseUrl = "https://OWNER.github.io/REPO"
-$Version = "0.1.13"
+$Version = "0.1.14"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\SSHFling"
 $Zip = Join-Path $env:TEMP "sshfling-$Version-windows.zip"
 $Sums = Join-Path $env:TEMP "sshfling-SHA256SUMS"

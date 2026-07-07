@@ -15,6 +15,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: container-image-tests-${{ github.ref }}-${{ inputs.version || 'source' }}
+  cancel-in-progress: true
+
 jobs:
   container-images:
     name: Pull, build, install, and validate container images

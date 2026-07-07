@@ -17,7 +17,7 @@ This runbook covers package release operations for SSHFling.
 2. Validate the version:
 
    ```bash
-   bash packaging/resolve-version.sh 0.1.13
+   bash packaging/resolve-version.sh 0.1.14
    ```
 
 3. Run local tests:
@@ -43,8 +43,8 @@ This runbook covers package release operations for SSHFling.
 8. Create and push the release tag:
 
    ```bash
-   git tag -a v0.1.13 -m "SSHFling 0.1.13"
-   git push origin v0.1.13
+   git tag -a v0.1.14 -m "SSHFling 0.1.14"
+   git push origin v0.1.14
    ```
 
 9. Watch the tag-triggered package workflows:
@@ -53,7 +53,7 @@ This runbook covers package release operations for SSHFling.
    - `Release packages with public web`
    - `pages-build-deployment`
 
-10. After Pages deploys, dispatch these workflows with version `0.1.13`:
+10. After Pages deploys, dispatch these workflows with version `0.1.14`:
 
    - `Package install tests`
    - `Cross OS validation`
@@ -234,8 +234,10 @@ sudo sshfling password prune --username s234 --delete-users
 
 Prune requires exactly one selector: `--all` or `--username USER`, and skips
 active grants. Use `--delete-users` only for expired Unix users created by
-SSHFling; existing users explicitly allowed with `--allow-existing-user` are
-locked and expired but are not deleted. Root-equivalent users are never deleted
-from password-grant metadata or host-user markers. Password mode refuses
-root-equivalent Unix users; use explicit certificate mode for approved
-admin/root-equivalent break-glass access.
+SSHFling with matching UID/GID/home identity evidence; identity mismatches
+preserve managed config and metadata for investigation. Existing users
+explicitly allowed with `--allow-existing-user` are locked and expired but are
+not deleted. Root-equivalent users are never deleted from password-grant
+metadata or host-user markers. Password mode refuses root-equivalent Unix users;
+use explicit certificate mode for approved admin/root-equivalent break-glass
+access.

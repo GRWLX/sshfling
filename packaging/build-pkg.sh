@@ -189,6 +189,7 @@ if [[ -n "$notary_profile" ]]; then
   xcrun notarytool submit "$product_pkg" --keychain-profile "$notary_profile" --wait
   xcrun stapler staple "$product_pkg"
   xcrun stapler validate "$product_pkg"
+  spctl -a -vv -t install "$product_pkg"
 fi
 
 echo "$product_pkg"

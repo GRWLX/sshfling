@@ -73,6 +73,10 @@ jobs:
           RELEASE_SECURITY_STRICT_OPTIONAL_TOOLS: ${{ github.ref_type == 'tag' && '1' || '' }}
           RELEASE_MATRIX_VALIDATE_FLAGS: ${{ github.ref_type == 'tag' && '--require-pass' || '' }}
         run: |
+          set -euo pipefail
+          if [[ "${RELEASE_SECURITY_STRICT_OPTIONAL_TOOLS:-}" = "1" ]]; then
+            tools/provision-release-scanners.sh
+          fi
           make release-security-scan VERSION="${VERSION}"
           make release-security-evidence-validate RELEASE_MATRIX_VALIDATE_FLAGS="${RELEASE_MATRIX_VALIDATE_FLAGS}"
 

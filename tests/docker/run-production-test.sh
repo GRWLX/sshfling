@@ -12,6 +12,12 @@ fail() {
   exit 1
 }
 
+if [[ "${SSHFLING_ALLOW_HOST_MUTATION_TESTS:-}" != "1" ]]; then
+  if [[ ! -f /.dockerenv ]] && ! grep -qaE '(docker|kubepods|containerd|podman)' /proc/1/cgroup 2>/dev/null; then
+    fail "refusing to run destructive production tests outside a container; set SSHFLING_ALLOW_HOST_MUTATION_TESTS=1 to override"
+  fi
+fi
+
 work="$(mktemp -d)"
 sshd_pid=""
 web_pid=""
@@ -523,14 +529,14 @@ payload = json.load(open(sys.argv[1]))
 assert payload["ok"] is True
 assert payload["count"] == 1
 result = payload["results"][0]
-assert result["status"] == "pruned", result
-assert result["config"]["removed"] is True, result
-assert result["metadata"]["removed"] is True, result
+assert result["status"] == "skipped-user-mismatch", result
+assert "config" not in result, result
+assert "metadata" not in result, result
 assert result["user"]["status"] == "skipped-user-mismatch", result
 PY
 id -u s240reuse >/dev/null
-test ! -e /etc/ssh/sshd_config.d/91-sshfling-password-s240reuse.conf
-test ! -e /var/lib/sshfling/password-grants/s240reuse.json
+test -e /etc/ssh/sshd_config.d/91-sshfling-password-s240reuse.conf
+test -e /var/lib/sshfling/password-grants/s240reuse.json
 userdel --remove s240reuse >/dev/null 2>&1 || userdel s240reuse >/dev/null 2>&1 || true
 sshd -t
 
@@ -559,6 +565,11 @@ assert existing["metadata"]["removed"] is True, existing
 assert existing["user"]["locked"] is True, existing
 assert existing["user"]["existing_user"] is True, existing
 assert existing["user"]["delete_skipped"] == "existing Unix user was not created by sshfling", existing
+reuse = by_user["s240reuse"]
+assert reuse["status"] == "pruned", by_user
+assert reuse["config"]["removed"] is True, reuse
+assert reuse["metadata"]["removed"] is True, reuse
+assert reuse["user"]["status"] == "missing", reuse
 PY
 id -u s235active >/dev/null
 if id -u s236expired >/dev/null 2>&1; then
@@ -568,6 +579,8 @@ if id -u s237guard >/dev/null 2>&1; then
   fail "expired password prune with missing config did not delete s237guard"
 fi
 id -u s238existing >/dev/null
+test ! -e /etc/ssh/sshd_config.d/91-sshfling-password-s240reuse.conf
+test ! -e /var/lib/sshfling/password-grants/s240reuse.json
 test -e /etc/ssh/sshd_config.d/91-sshfling-password-s235active.conf
 test ! -e /etc/ssh/sshd_config.d/91-sshfling-password-s236expired.conf
 test ! -e /etc/ssh/sshd_config.d/91-sshfling-password-s237guard.conf

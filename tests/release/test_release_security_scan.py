@@ -163,11 +163,13 @@ class ReleaseSecurityScanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
             script = write_file(repo_root / "ok.sh", "#!/usr/bin/env bash\nset -euo pipefail\n")
+            python_source = write_file(repo_root / "ok.py", "print('ok')\n")
+            dockerfile = write_file(repo_root / "Dockerfile", "FROM debian:bookworm-slim\n")
 
             results = release_security_scan.optional_tool_results(
                 repo_root=repo_root,
                 output_dir=repo_root / "out",
-                files=[script],
+                files=[script, python_source, dockerfile],
                 run_optional_tools=False,
                 strict_optional_tools=False,
                 timeout_seconds=1,
@@ -175,9 +177,55 @@ class ReleaseSecurityScanTests(unittest.TestCase):
 
             by_name = {result["name"]: result for result in results}
             self.assertIn("shellcheck", by_name)
+            self.assertIn("bandit", by_name)
+            self.assertIn("hadolint", by_name)
             self.assertIn("osv-scanner", by_name)
             self.assertTrue(all(result["status"] == "skipped" for result in results))
+            self.assertIn("--severity-level", by_name["bandit"]["command"])
+            self.assertIn("medium", by_name["bandit"]["command"])
+            self.assertIn("--failure-threshold", by_name["hadolint"]["command"])
+            self.assertIn("error", by_name["hadolint"]["command"])
             self.assertEqual(by_name["osv-scanner"]["exit_code"], "not_run")
+
+    def test_trivy_policy_allows_documented_root_container_exceptions_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            trivy_json = Path(tmp) / "trivy.json"
+            trivy_json.write_text(
+                json.dumps(
+                    {
+                        "Results": [
+                            {
+                                "Target": "ssh-server/Dockerfile",
+                                "Misconfigurations": [
+                                    {
+                                        "ID": "DS002",
+                                        "Severity": "HIGH",
+                                        "Message": "Image user should not be 'root'",
+                                    }
+                                ],
+                            },
+                            {
+                                "Target": "ssh-client/Dockerfile",
+                                "Misconfigurations": [
+                                    {
+                                        "ID": "DS002",
+                                        "Severity": "HIGH",
+                                        "Message": "Image user should not be 'root'",
+                                    }
+                                ],
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            policy = release_security_scan.trivy_blocking_findings(trivy_json)
+
+            self.assertEqual(len(policy["allowlisted_findings"]), 1)
+            self.assertEqual(policy["allowlisted_findings"][0]["target"], "ssh-server/Dockerfile")
+            self.assertEqual(len(policy["blocking_findings"]), 1)
+            self.assertEqual(policy["blocking_findings"][0]["target"], "ssh-client/Dockerfile")
 
 
 if __name__ == "__main__":

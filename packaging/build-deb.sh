@@ -174,10 +174,34 @@ record_install_state() {
   ensure_package_state_dir
   if [ -e "$state_file" ] || [ -L "$state_file" ]; then
     if [ -f "$state_file" ] && [ ! -L "$state_file" ]; then
-      return 0
+      state_owner="$(stat -c %u "$state_file" 2>/dev/null || echo unknown)"
+      if [ "$state_owner" != "0" ]; then
+        echo "sshfling: refusing to use non-root-owned install state $state_file" >&2
+        exit 1
+      fi
+      if grep -Fqx 'group_preexisting=no' "$state_file" \
+        && grep -Fqx 'user_preexisting=no' "$state_file" \
+        && grep -Fqx 'var_dir_preexisting=no' "$state_file"; then
+        recorded_uid="$(sed -n 's/^user_uid=//p' "$state_file" | tail -n 1)"
+        recorded_gid="$(sed -n 's/^user_gid=//p' "$state_file" | tail -n 1)"
+        recorded_home="$(sed -n 's/^user_home=//p' "$state_file" | tail -n 1)"
+        current_entry="$(getent passwd sshflingd 2>/dev/null || grep '^sshflingd:' /etc/passwd || true)"
+        current_uid="$(printf '%s\n' "$current_entry" | cut -d: -f3)"
+        current_gid="$(printf '%s\n' "$current_entry" | cut -d: -f4)"
+        current_home="$(printf '%s\n' "$current_entry" | cut -d: -f6)"
+        if [ -n "$recorded_uid" ] && [ "$recorded_uid" = "$current_uid" ] \
+          && [ -n "$recorded_gid" ] && [ "$recorded_gid" = "$current_gid" ] \
+          && [ -n "$recorded_home" ] && [ "$recorded_home" = "$current_home" ]; then
+          group_preexisting=no
+          user_preexisting=no
+          var_dir_preexisting=no
+          return 0
+        fi
+      fi
+    else
+      echo "sshfling: refusing to use unsafe install state $state_file" >&2
+      exit 1
     fi
-    echo "sshfling: refusing to use unsafe install state $state_file" >&2
-    exit 1
   fi
 
   {
@@ -186,6 +210,32 @@ record_install_state() {
     echo "var_dir_preexisting=$var_dir_preexisting"
   } >"$state_file"
   chmod 0600 "$state_file"
+}
+
+record_created_identity() {
+  if [ ! -f "$state_file" ] || [ -L "$state_file" ]; then
+    return 0
+  fi
+  if [ "${group_preexisting:-yes}" = "no" ] && group_exists && ! grep -q '^group_gid=' "$state_file"; then
+    group_entry="$(getent group sshflingd 2>/dev/null || grep '^sshflingd:' /etc/group || true)"
+    group_gid="$(printf '%s\n' "$group_entry" | cut -d: -f3)"
+    if [ -n "$group_gid" ]; then
+      echo "group_gid=$group_gid" >>"$state_file"
+    fi
+  fi
+  if [ "${user_preexisting:-yes}" = "no" ] && user_exists && ! grep -q '^user_uid=' "$state_file"; then
+    user_entry="$(getent passwd sshflingd 2>/dev/null || grep '^sshflingd:' /etc/passwd || true)"
+    user_uid="$(printf '%s\n' "$user_entry" | cut -d: -f3)"
+    user_gid="$(printf '%s\n' "$user_entry" | cut -d: -f4)"
+    user_home="$(printf '%s\n' "$user_entry" | cut -d: -f6)"
+    if [ -n "$user_uid" ] && [ -n "$user_gid" ] && [ -n "$user_home" ]; then
+      {
+        echo "user_uid=$user_uid"
+        echo "user_gid=$user_gid"
+        echo "user_home=$user_home"
+      } >>"$state_file"
+    fi
+  fi
 }
 
 ensure_account() {
@@ -228,6 +278,7 @@ case "$1" in
   configure)
     record_install_state
     ensure_account
+    record_created_identity
     ensure_package_dir /etc/sshfling 0750 root sshflingd
     ensure_package_dir /var/lib/sshflingd 0750 sshflingd sshflingd
     if [ -f /etc/sshfling/policy.json ] && [ ! -L /etc/sshfling/policy.json ]; then
@@ -332,8 +383,40 @@ read_install_state() {
           var_dir_preexisting="$value"
         fi
         ;;
+      group_gid)
+        group_gid="$value"
+        ;;
+      user_uid)
+        user_uid="$value"
+        ;;
+      user_gid)
+        user_gid="$value"
+        ;;
+      user_home)
+        user_home="$value"
+        ;;
     esac
   done < "$state_file"
+}
+
+service_user_matches_state() {
+  if [ -z "${user_uid:-}" ] || [ -z "${user_gid:-}" ] || [ -z "${user_home:-}" ]; then
+    return 1
+  fi
+  user_entry="$(getent passwd sshflingd 2>/dev/null || grep '^sshflingd:' /etc/passwd || true)"
+  current_uid="$(printf '%s\n' "$user_entry" | cut -d: -f3)"
+  current_gid="$(printf '%s\n' "$user_entry" | cut -d: -f4)"
+  current_home="$(printf '%s\n' "$user_entry" | cut -d: -f6)"
+  [ "$current_uid" = "$user_uid" ] && [ "$current_gid" = "$user_gid" ] && [ "$current_home" = "$user_home" ]
+}
+
+service_group_matches_state() {
+  if [ -z "${group_gid:-}" ]; then
+    return 1
+  fi
+  group_entry="$(getent group sshflingd 2>/dev/null || grep '^sshflingd:' /etc/group || true)"
+  current_gid="$(printf '%s\n' "$group_entry" | cut -d: -f3)"
+  [ "$current_gid" = "$group_gid" ]
 }
 
 remove_package_state() {
@@ -353,14 +436,22 @@ remove_created_account_if_safe() {
   group_preexisting=yes
   user_preexisting=yes
   var_dir_preexisting=yes
+  var_dir_blocks_cleanup=no
 
   read_install_state
 
-  if [ "${var_dir_preexisting:-yes}" = "no" ] && var_lib_is_empty; then
-    rmdir /var/lib/sshflingd 2>/dev/null || true
+  if [ -d /var/lib/sshflingd ]; then
+    if [ "${var_dir_preexisting:-yes}" = "no" ] && var_lib_is_empty; then
+      if user_exists && ! service_user_matches_state; then
+        echo "sshfling: preserving /var/lib/sshflingd because package ownership identity does not match" >&2
+        return 0
+      fi
+    else
+      var_dir_blocks_cleanup=yes
+    fi
   fi
 
-  if [ -d /etc/sshfling ] || [ -d /var/lib/sshflingd ]; then
+  if [ -d /etc/sshfling ] || [ "$var_dir_blocks_cleanup" = "yes" ]; then
     if [ "${user_preexisting:-yes}" = "yes" ] && [ "${group_preexisting:-yes}" = "yes" ] && [ "${var_dir_preexisting:-yes}" = "yes" ]; then
       remove_package_state
     fi
@@ -368,18 +459,30 @@ remove_created_account_if_safe() {
   fi
 
   if [ "${user_preexisting:-yes}" = "no" ] && user_exists; then
-    if command -v userdel >/dev/null 2>&1; then
-      userdel sshflingd >/dev/null 2>&1 || true
-    elif command -v deluser >/dev/null 2>&1; then
-      deluser --system sshflingd >/dev/null 2>&1 || deluser sshflingd >/dev/null 2>&1 || true
+    if service_user_matches_state; then
+      if command -v userdel >/dev/null 2>&1; then
+        userdel sshflingd >/dev/null 2>&1 || true
+      elif command -v deluser >/dev/null 2>&1; then
+        deluser --system sshflingd >/dev/null 2>&1 || deluser sshflingd >/dev/null 2>&1 || true
+      fi
+    else
+      echo "sshfling: preserving sshflingd account because package ownership identity does not match" >&2
     fi
   fi
 
+  if [ "${var_dir_preexisting:-yes}" = "no" ] && var_lib_is_empty; then
+    rmdir /var/lib/sshflingd 2>/dev/null || true
+  fi
+
   if [ "${group_preexisting:-yes}" = "no" ] && group_exists && ! user_exists; then
-    if command -v groupdel >/dev/null 2>&1; then
-      groupdel sshflingd >/dev/null 2>&1 || true
-    elif command -v delgroup >/dev/null 2>&1; then
-      delgroup --system sshflingd >/dev/null 2>&1 || delgroup sshflingd >/dev/null 2>&1 || true
+    if service_group_matches_state; then
+      if command -v groupdel >/dev/null 2>&1; then
+        groupdel sshflingd >/dev/null 2>&1 || true
+      elif command -v delgroup >/dev/null 2>&1; then
+        delgroup --system sshflingd >/dev/null 2>&1 || delgroup sshflingd >/dev/null 2>&1 || true
+      fi
+    else
+      echo "sshfling: preserving sshflingd group because package ownership identity does not match" >&2
     fi
   fi
 

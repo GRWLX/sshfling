@@ -10,4 +10,6 @@ RUN apt-get update \
 COPY entrypoint.sh /usr/local/bin/ssh-client-entrypoint
 RUN chmod 0755 /usr/local/bin/ssh-client-entrypoint
 
+USER nobody:nogroup
+
 ENTRYPOINT ["/usr/local/bin/ssh-client-entrypoint"]

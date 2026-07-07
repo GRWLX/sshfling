@@ -29,7 +29,7 @@ try:
 except ImportError:  # pragma: no cover - Windows does not provide pwd.
     pwd = None
 
-VERSION = "0.1.13"
+VERSION = "0.1.14"
 DEFAULT_NETWORK = "timed-ssh-net"
 DEFAULT_SESSION_WRAPPER = "/usr/local/libexec/sshfling-session"
 DEFAULT_ISSUER_LISTEN = "127.0.0.1:8787"
@@ -1171,6 +1171,16 @@ def create_ca_key(args):
     reject_symlink_component(ca_pub, "initialize CA public key")
     force_replaced = bool(args.force and (ca_key.exists() or ca_pub.exists()))
 
+    if (ca_key.exists() != ca_pub.exists()) and not args.force:
+        missing = str(ca_pub if ca_key.exists() else ca_key)
+        raise SSHFlingError(
+            "CA keypair is incomplete; rerun ca init with --force after verifying CA custody and host trust impact.",
+            2,
+            ca_key=str(ca_key),
+            ca_public_key=str(ca_pub),
+            missing=missing,
+        )
+
     if (ca_key.exists() or ca_pub.exists()) and not args.force:
         result = {"ok": True, "status": "exists", "ca_key": str(ca_key), "ca_public_key": str(ca_pub)}
     else:
@@ -1255,6 +1265,8 @@ def cmd_policy_install(args):
 def cmd_cert_issue(args):
     if not getattr(args, "certificate", False):
         raise SSHFlingError("Certificate issuance requires --certificate.", 2)
+    if getattr(args, "time", None) is None and getattr(args, "seconds", None) is None:
+        raise SSHFlingError("Certificate issue requires an explicit -t/--time lifetime.", 2)
     require_root("cert issue")
     public_key_text = read_text_source(args.public_key, args.public_key_file, "public-key")
     seconds = lifetime_seconds(args)
@@ -1480,10 +1492,10 @@ def validate_certificate_principal(principal):
 
 
 def require_password_host_tools():
-    missing = [name for name in ["useradd", "chpasswd"] if not command_path(name)]
+    missing = [name for name in ["useradd", "chpasswd", "sshd"] if not command_path(name)]
     if missing:
         raise SSHFlingError(
-            "Password grant setup requires Linux account tools. Install shadow/passwd tooling, or use certificate mode.",
+            "Password grant setup requires Linux account tools and OpenSSH server tooling. Install shadow/passwd and openssh-server tooling, or use certificate mode.",
             127,
             missing=missing,
         )
@@ -2831,6 +2843,14 @@ def delete_host_user(username, marker_dir=DEFAULT_HOST_USER_MARKER_DIR, dry_run=
     reject_root_equivalent_user_deletion(username, "delete")
     result = delete_password_user(username, dry_run, expected_identity=expected_unix_identity(metadata))
     result["marker_path"] = str(marker_path)
+    removable_marker = bool(
+        result.get("deleted")
+        or result.get("would_delete")
+        or result.get("status") == "missing"
+    )
+    if not removable_marker:
+        result["marker_preserved"] = True
+        return result
     if dry_run:
         result["would_remove_marker"] = True
     else:
@@ -3072,6 +3092,15 @@ def prune_password_grants(grant_dir, username=None, all_grants=False, delete_use
 
         item = {"metadata_path": str(path), "username": grant_username, "expires_at": expires_at, "status": "pruned"}
         expected_identity = expected_unix_identity(metadata)
+        current_identity = unix_user_identity(grant_username)
+        if expected_identity and current_identity:
+            mismatch = unix_identity_mismatch(grant_username, expected_identity)
+            if mismatch:
+                item["status"] = "skipped-user-mismatch"
+                item["user"] = {"user": grant_username, "status": "skipped-user-mismatch", **mismatch}
+                item["reason"] = "current Unix account identity does not match SSHFling grant metadata"
+                results.append(item)
+                continue
         config_path = metadata.get("config_path")
         config_verified_for_removal = False
         if config_path:
@@ -3084,7 +3113,11 @@ def prune_password_grants(grant_dir, username=None, all_grants=False, delete_use
 
         if metadata.get("created_user") is True:
             if delete_users and config_verified_for_removal:
-                item["user"] = delete_password_user(grant_username, dry_run, expected_identity=expected_identity)
+                if expected_identity:
+                    item["user"] = delete_password_user(grant_username, dry_run, expected_identity=expected_identity)
+                else:
+                    item["user"] = lock_password_user(grant_username, dry_run, expected_identity=expected_identity)
+                    item["user"]["delete_skipped"] = "Unix identity evidence is required before deleting an SSHFling-created user"
             else:
                 item["user"] = lock_password_user(grant_username, dry_run, expected_identity=expected_identity)
                 if delete_users:
@@ -4203,7 +4236,7 @@ def build_parser():
     cert_issue.add_argument("--access-level", "--role", dest="access_level", help=access_level_help())
     cert_issue.add_argument("--principal", help=argparse.SUPPRESS)
     cert_issue.add_argument("-t", "--time", type=duration_seconds, help="Access lifetime, for example 30s, 5m, 1h, or 24h.")
-    cert_issue.add_argument("--seconds", type=positive_int, default=300, help="Certificate and session lifetime.")
+    cert_issue.add_argument("--seconds", type=positive_int, help="Certificate and session lifetime.")
     cert_issue.add_argument("--key-id", help="Audit identifier stored in the certificate.")
     cert_issue.add_argument("--serial", type=positive_int, help=argparse.SUPPRESS)
     cert_issue.add_argument("--source-address", help="Optional CIDR source-address certificate restriction.")

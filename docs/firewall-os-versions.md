@@ -14,6 +14,10 @@ but not tested because the public runner no longer boots those releases.
 pfSense `16.0-CURRENT` lines are documented but not tested because there is no
 public `16.0-CURRENT` runner in the VMActions matrix.
 
+When the vendor documentation lists a future release without a public release
+date, this index records `Vendor date not yet published` rather than a guessed
+date.
+
 ## Public Runner Coverage
 
 | FreeBSD runner | Firewall mapping | Validation claim |
@@ -36,7 +40,7 @@ public `16.0-CURRENT` runner in the VMActions matrix.
 
 | Version | Released | FreeBSD base | SSHFling validation |
 | --- | --- | --- | --- |
-| 26.07 | TBD | `16.0-CURRENT@c215eef34550` | Public runner gap |
+| 26.07 | Vendor date not yet published | `16.0-CURRENT@c215eef34550` | Public runner gap |
 | 26.03.1 | 2026-05-27 | `16.0-CURRENT@c215eef34550` | Public runner gap |
 | 26.03 | 2026-04-01 | `16.0-CURRENT@c215eef34550` | Public runner gap |
 | 25.11.1 | 2026-01-26 | `16.0-CURRENT@44f3e9f7f6c9` | Public runner gap |
@@ -63,7 +67,7 @@ public `16.0-CURRENT` runner in the VMActions matrix.
 
 | Version | Released | FreeBSD base | SSHFling validation |
 | --- | --- | --- | --- |
-| 2.9.0 | TBD | `16.0-CURRENT@3f5f52216f7e` | Public runner gap |
+| 2.9.0 | Vendor date not yet published | `16.0-CURRENT@3f5f52216f7e` | Public runner gap |
 | 2.8.1 | 2025-09-04 | `15.0-CURRENT@bf06074106cf` | FreeBSD 15.0 VM, major/minor CURRENT coverage |
 | 2.8.0 | 2025-05-28 | `15.0-CURRENT@bf06074106cf` | FreeBSD 15.0 VM, major/minor CURRENT coverage |
 | 2.7.2 | 2023-12-07 | `14.0-CURRENT@0c783a37d5d5` | FreeBSD 14.0 VM, major/minor CURRENT coverage |

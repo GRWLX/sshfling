@@ -214,11 +214,28 @@ test_deb_image() {
     DEBIAN_FRONTEND=noninteractive apt-get purge -y sshfling >/dev/null
     test ! -e /var/lib/sshfling/package-state/install-state
     test ! -e /var/lib/sshflingd/package-state/install-state
-    test ! -e /var/lib/sshflingd
-    assert_sshflingd_account_absent
+	    test ! -e /var/lib/sshflingd
+	    assert_sshflingd_account_absent
 
-    create_preexisting_sshflingd_account
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confold /tmp/sshfling.deb >/dev/null
+	    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confold /tmp/sshfling.deb >/dev/null
+	    test -f /var/lib/sshfling/package-state/install-state
+	    grep -Eq '^user_uid=[0-9]+' /var/lib/sshfling/package-state/install-state
+	    grep -Eq '^user_gid=[0-9]+' /var/lib/sshfling/package-state/install-state
+	    grep -Fqx 'user_home=/var/lib/sshflingd' /var/lib/sshfling/package-state/install-state
+	    sed -i 's/^user_uid=.*/user_uid=1/; s/^user_gid=.*/user_gid=1/; s#^user_home=.*#user_home=/var/lib/sshflingd-reused#' /var/lib/sshfling/package-state/install-state
+	    DEBIAN_FRONTEND=noninteractive apt-get purge -y sshfling >/dev/null
+	    assert_sshflingd_account_present
+	    test -d /var/lib/sshflingd
+	    userdel sshflingd >/dev/null 2>&1 || true
+	    groupdel sshflingd >/dev/null 2>&1 || true
+	    rm -rf /var/lib/sshflingd
+	    assert_sshflingd_account_absent
+
+	    create_preexisting_sshflingd_account
+	    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confold /tmp/sshfling.deb >/dev/null
+	    grep -Fqx 'user_preexisting=yes' /var/lib/sshfling/package-state/install-state
+	    grep -Fqx 'group_preexisting=yes' /var/lib/sshfling/package-state/install-state
+	    grep -Fqx 'var_dir_preexisting=yes' /var/lib/sshfling/package-state/install-state
     assert_sshflingd_account_present
     DEBIAN_FRONTEND=noninteractive apt-get purge -y sshfling >/dev/null
     test ! -e /var/lib/sshfling/package-state/install-state
@@ -297,12 +314,30 @@ test_rpm_image() {
     rpm -e sshfling >/dev/null
     test ! -e /var/lib/sshfling/package-state/install-state
     test ! -e /var/lib/sshfling/rpm-preserve-config
-    test ! -e /var/lib/sshflingd
-    test ! -e /etc/sshfling
-    assert_sshflingd_account_absent
+	    test ! -e /var/lib/sshflingd
+	    test ! -e /etc/sshfling
+	    assert_sshflingd_account_absent
 
-    create_preexisting_sshflingd_account
-    \$package_install >/dev/null
+	    \$package_install >/dev/null
+	    test -f /var/lib/sshfling/package-state/install-state
+	    grep -Eq '^user_uid=[0-9]+' /var/lib/sshfling/package-state/install-state
+	    grep -Eq '^user_gid=[0-9]+' /var/lib/sshfling/package-state/install-state
+	    grep -Fqx 'user_home=/var/lib/sshflingd' /var/lib/sshfling/package-state/install-state
+	    sed -i 's/^user_uid=.*/user_uid=1/; s/^user_gid=.*/user_gid=1/; s#^user_home=.*#user_home=/var/lib/sshflingd-reused#' /var/lib/sshfling/package-state/install-state
+	    rm -f /etc/sshfling/policy.json /etc/sshfling/policy.json.rpmnew /etc/sshfling/policy.json.rpmsave /etc/sshfling/sshflingd.env /etc/sshfling/sshflingd.env.rpmnew /etc/sshfling/sshflingd.env.rpmsave
+	    rpm -e sshfling >/dev/null
+	    assert_sshflingd_account_present
+	    test -d /var/lib/sshflingd
+	    userdel sshflingd >/dev/null 2>&1 || true
+	    groupdel sshflingd >/dev/null 2>&1 || true
+	    rm -rf /var/lib/sshflingd
+	    assert_sshflingd_account_absent
+
+		    create_preexisting_sshflingd_account
+		    \$package_install >/dev/null
+		    grep -Fqx 'user_preexisting=yes' /var/lib/sshfling/package-state/install-state
+		    grep -Fqx 'group_preexisting=yes' /var/lib/sshfling/package-state/install-state
+		    grep -Fqx 'var_dir_preexisting=yes' /var/lib/sshfling/package-state/install-state
     assert_sshflingd_account_present
     rm -f /etc/sshfling/policy.json /etc/sshfling/policy.json.rpmnew /etc/sshfling/policy.json.rpmsave /etc/sshfling/sshflingd.env /etc/sshfling/sshflingd.env.rpmnew /etc/sshfling/sshflingd.env.rpmsave
     rpm -e sshfling >/dev/null

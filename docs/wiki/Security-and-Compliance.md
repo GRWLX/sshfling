@@ -120,9 +120,11 @@ For production hosts:
   broad user deletion commands. Prune requires exactly one of those selectors.
   It skips active grants, skips unmanaged records, locks expired
   SSHFling-created users by default, deletes those users only with
-  `--delete-users`, locks/expires existing users explicitly allowed with
-  `--allow-existing-user` without deleting them, and never mutates
-  root-equivalent users from password-grant metadata or host-user markers.
+  `--delete-users` when matching UID/GID/home identity evidence is recorded,
+  preserves config and metadata on identity mismatch, locks/expires existing
+  users explicitly allowed with `--allow-existing-user` without deleting them,
+  and never mutates root-equivalent users from password-grant metadata or
+  host-user markers.
 - Treat package uninstall as package cleanup only. It removes SSHFling-managed
   package files and repository entries, but preserves host SSH state, password
   grant state, CA material, and `/etc/sshfling` configuration for separate host

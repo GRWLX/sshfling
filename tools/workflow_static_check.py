@@ -496,6 +496,29 @@ def check_release_packages_gate(workflow: Workflow) -> list[str]:
         signing_job = workflow.jobs.get(signing_job_id)
         if signing_job and "name: release-signing" not in signing_job.text:
             errors.append(f"{job_ref(workflow, signing_job)}: signing job must use the release-signing environment")
+    macos = workflow.jobs.get("macos")
+    if macos:
+        macos_checks = {
+            "macOS P12 secret": "SSHFLING_PKG_SIGN_CERT_P12_BASE64",
+            "macOS signing cert import": "security import",
+            "macOS notary credential setup": "xcrun notarytool store-credentials",
+            "macOS signing keychain export": "SSHFLING_PKG_SIGN_KEYCHAIN",
+            "macOS base64 fallback": "base64 -D",
+            "macOS keychain cleanup": "security delete-keychain",
+        }
+        for label, needle in macos_checks.items():
+            errors.extend(require_text(workflow, macos.text, needle, f"macos job is missing {label}"))
+    windows = workflow.jobs.get("windows")
+    if windows:
+        windows_checks = {
+            "Windows PFX secret": "SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64",
+            "Windows PFX password secret": "SSHFLING_WINDOWS_SIGN_CERT_PASSWORD",
+            "Windows certificate import": "Import-PfxCertificate",
+            "Windows imported thumbprint check": "Imported Windows signing certificate did not match",
+            "Windows certificate cleanup": "Remove Windows signing certificate",
+        }
+        for label, needle in windows_checks.items():
+            errors.extend(require_text(workflow, windows.text, needle, f"windows job is missing {label}"))
     if "name: release-packages" not in release.text:
         errors.append(f"{job_ref(workflow, release)}: release job must use the release-packages environment")
 
@@ -508,6 +531,7 @@ def check_release_packages_gate(workflow: Workflow) -> list[str]:
         "release security scan": "make release-security-scan",
         "optional release security tools": 'RELEASE_SECURITY_RUN_OPTIONAL_TOOLS: "1"',
         "strict release security scan": 'RELEASE_SECURITY_STRICT_OPTIONAL_TOOLS: "1"',
+        "strict scanner provisioning": "tools/provision-release-scanners.sh",
         "release security evidence validation": "make release-security-evidence-validate",
         "release evidence generation": "--mode release-assets",
         "release evidence validation": "release-matrix-validate",
@@ -548,6 +572,29 @@ def check_public_package_gate(workflow: Workflow) -> list[str]:
         signing_job = workflow.jobs.get(signing_job_id)
         if signing_job and "name: release-signing" not in signing_job.text:
             errors.append(f"{job_ref(workflow, signing_job)}: signing/package web job must use the release-signing environment")
+    macos = workflow.jobs.get("macos")
+    if macos:
+        macos_checks = {
+            "macOS P12 secret": "SSHFLING_PKG_SIGN_CERT_P12_BASE64",
+            "macOS signing cert import": "security import",
+            "macOS notary credential setup": "xcrun notarytool store-credentials",
+            "macOS signing keychain export": "SSHFLING_PKG_SIGN_KEYCHAIN",
+            "macOS base64 fallback": "base64 -D",
+            "macOS keychain cleanup": "security delete-keychain",
+        }
+        for label, needle in macos_checks.items():
+            errors.extend(require_text(workflow, macos.text, needle, f"macos job is missing {label}"))
+    windows = workflow.jobs.get("windows")
+    if windows:
+        windows_checks = {
+            "Windows PFX secret": "SSHFLING_WINDOWS_SIGN_CERT_PFX_BASE64",
+            "Windows PFX password secret": "SSHFLING_WINDOWS_SIGN_CERT_PASSWORD",
+            "Windows certificate import": "Import-PfxCertificate",
+            "Windows imported thumbprint check": "Imported Windows signing certificate did not match",
+            "Windows certificate cleanup": "Remove Windows signing certificate",
+        }
+        for label, needle in windows_checks.items():
+            errors.extend(require_text(workflow, windows.text, needle, f"windows job is missing {label}"))
 
     package_checks = {
         "publish output": "publish: ${{ steps.package_site_mode.outputs.publish }}",
@@ -555,6 +602,7 @@ def check_public_package_gate(workflow: Workflow) -> list[str]:
         "release security scan": "make release-security-scan",
         "optional package-site security tools": 'RELEASE_SECURITY_RUN_OPTIONAL_TOOLS: "1"',
         "publish-gated strict package-site security scan": "RELEASE_SECURITY_STRICT_OPTIONAL_TOOLS: ${{ steps.package_site_mode.outputs.publish == 'true' && '1' || '' }}",
+        "publish-gated scanner provisioning": "tools/provision-release-scanners.sh",
         "release security evidence validation": "make release-security-evidence-validate",
         "package-site evidence generation": "--mode package-site",
         "package-site evidence validation": "release-matrix-validate",
@@ -656,6 +704,7 @@ def check_github_packages_gate(workflow: Workflow) -> list[str]:
             "optional release security tools": 'RELEASE_SECURITY_RUN_OPTIONAL_TOOLS: "1"',
             "strict tag release security evidence": "RELEASE_SECURITY_STRICT_OPTIONAL_TOOLS: ${{ github.ref_type == 'tag' && '1' || '' }}",
             "strict tag release evidence validation": "RELEASE_MATRIX_VALIDATE_FLAGS: ${{ github.ref_type == 'tag' && '--require-pass' || '' }}",
+            "strict tag scanner provisioning": "tools/provision-release-scanners.sh",
             "container lifecycle matrix": "make test-containers",
         }
         for label, needle in validate_checks.items():
@@ -702,6 +751,7 @@ def check_published_package_validation_gate(workflow: Workflow) -> list[str]:
     errors: list[str] = []
     macos = workflow.jobs.get("macos-pkg")
     windows = workflow.jobs.get("windows-msi")
+    windows_zip = workflow.jobs.get("windows-zip")
 
     if not macos:
         errors.append(f"{workflow_ref(workflow)}: published package validation workflow is missing macos-pkg job")
@@ -729,6 +779,28 @@ def check_published_package_validation_gate(workflow: Workflow) -> list[str]:
         }
         for label, needle in windows_checks.items():
             errors.extend(require_text(workflow, windows.text, needle, f"windows-msi job is missing {label}"))
+
+    if not windows_zip:
+        errors.append(f"{workflow_ref(workflow)}: published package validation workflow is missing windows-zip job")
+    else:
+        zip_checks = {
+            "published ZIP checksum manifest download": "downloads/SHA256SUMS",
+            "published ZIP checksum entry gate": "Missing SHA256SUMS entry for Windows zip",
+            "published ZIP checksum verification": "Get-FileHash -Algorithm SHA256",
+            "published ZIP checksum mismatch gate": "Windows zip SHA256 mismatch",
+            "published ZIP extraction after checksum": "Expand-Archive",
+        }
+        for label, needle in zip_checks.items():
+            errors.extend(require_text(workflow, windows_zip.text, needle, f"windows-zip job is missing {label}"))
+        errors.extend(
+            require_order(
+                workflow,
+                windows_zip.text,
+                "Get-FileHash -Algorithm SHA256",
+                "Expand-Archive",
+                "windows-zip job must verify checksum before expanding the archive",
+            )
+        )
 
     return errors
 

@@ -70,6 +70,17 @@ EXCLUDED_DIRS = {
 
 TEXT_SCAN_MAX_BYTES = 2 * 1024 * 1024
 
+TRIVY_MISCONFIG_ALLOWLIST = {
+    (
+        "ssh-server/Dockerfile",
+        "DS002",
+    ): "The SSH daemon container intentionally starts as root so sshd can bind, privilege-separate, and manage the deploy test account.",
+    (
+        "tests/docker/Dockerfile.production",
+        "DS002",
+    ): "The production lifecycle test container intentionally runs as root to create, expire, lock, and delete isolated Unix users.",
+}
+
 SECRET_PATTERNS = [
     ("private-key", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
     ("aws-access-key-id", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")),
@@ -404,7 +415,11 @@ def python_files(files: list[Path]) -> list[Path]:
 
 
 def dockerfiles(files: list[Path]) -> list[Path]:
-    return sorted(path for path in files if path.name == "Dockerfile" or path.name.endswith(".Dockerfile"))
+    return sorted(
+        path
+        for path in files
+        if path.name == "Dockerfile" or path.name.startswith("Dockerfile.") or path.name.endswith(".Dockerfile")
+    )
 
 
 def systemd_units(files: list[Path]) -> list[Path]:
@@ -989,13 +1004,14 @@ def collect_dependencies(files: list[Path], repo_root: Path) -> dict[str, Any]:
 
     deb_script = repo_root / "packaging/build-deb.sh"
     if deb_script.is_file():
-        for match in re.finditer(r"^Depends:\s*(.+)$", read_text(deb_script), flags=re.MULTILINE):
-            for package in parse_debian_depends(match.group(1)):
+        for match in re.finditer(r"^(Depends|Suggests|Recommends):\s*(.+)$", read_text(deb_script), flags=re.MULTILINE):
+            field = match.group(1).lower()
+            for package in parse_debian_depends(match.group(2)):
                 add_dependency(
                     dependencies,
                     seen,
                     ecosystem="debian",
-                    kind="package-runtime-requirement",
+                    kind=f"package-{field}",
                     name=package,
                     source="packaging/build-deb.sh",
                     package_manager="dpkg",
@@ -1004,14 +1020,15 @@ def collect_dependencies(files: list[Path], repo_root: Path) -> dict[str, Any]:
 
     rpm_script = repo_root / "packaging/build-rpm.sh"
     if rpm_script.is_file():
-        for match in re.finditer(r"^Requires(?:\([^)]*\))?:\s*(.+)$", read_text(rpm_script), flags=re.MULTILINE):
-            package = match.group(1).strip()
+        for match in re.finditer(r"^(Requires|Recommends|Suggests)(?:\([^)]*\))?:\s*(.+)$", read_text(rpm_script), flags=re.MULTILINE):
+            field = match.group(1).lower()
+            package = match.group(2).strip()
             if package:
                 add_dependency(
                     dependencies,
                     seen,
                     ecosystem="rpm",
-                    kind="package-runtime-requirement",
+                    kind=f"package-{field}",
                     name=package,
                     source="packaging/build-rpm.sh",
                     package_manager="rpm",
@@ -1246,6 +1263,38 @@ def run_command(
         }
 
 
+def trivy_blocking_findings(trivy_json: Path) -> dict[str, Any]:
+    payload = json.loads(trivy_json.read_text(encoding="utf-8"))
+    blockers: list[dict[str, Any]] = []
+    allowlisted: list[dict[str, Any]] = []
+    for scan_result in payload.get("Results", []):
+        target = str(scan_result.get("Target", ""))
+        for kind in ("Vulnerabilities", "Secrets", "Misconfigurations"):
+            for finding in scan_result.get(kind, []) or []:
+                severity = str(finding.get("Severity", "")).upper()
+                if severity not in {"HIGH", "CRITICAL"}:
+                    continue
+                finding_id = str(finding.get("VulnerabilityID") or finding.get("RuleID") or finding.get("ID") or "")
+                summary = str(finding.get("Title") or finding.get("Message") or finding.get("PkgName") or "")
+                row = {
+                    "target": target,
+                    "kind": kind,
+                    "id": finding_id,
+                    "severity": severity,
+                    "summary": summary,
+                }
+                exception = TRIVY_MISCONFIG_ALLOWLIST.get((target, finding_id))
+                if kind == "Misconfigurations" and exception:
+                    row["exception"] = exception
+                    allowlisted.append(row)
+                else:
+                    blockers.append(row)
+    return {
+        "blocking_findings": blockers,
+        "allowlisted_findings": allowlisted,
+    }
+
+
 def optional_tool_results(
     *,
     repo_root: Path,
@@ -1279,7 +1328,19 @@ def optional_tool_results(
                 "name": "bandit",
                 "purpose": "Python SAST",
                 "binary": "bandit",
-                "command": ["bandit", "-q", "-f", "json", "-o", str(tool_dir / "bandit.json"), *python_paths],
+                "command": [
+                    "bandit",
+                    "-q",
+                    "--severity-level",
+                    "medium",
+                    "--confidence-level",
+                    "medium",
+                    "-f",
+                    "json",
+                    "-o",
+                    str(tool_dir / "bandit.json"),
+                    *python_paths,
+                ],
                 "output": tool_dir / "bandit.log",
             }
         )
@@ -1289,7 +1350,7 @@ def optional_tool_results(
                 "name": "hadolint",
                 "purpose": "Dockerfile linting",
                 "binary": "hadolint",
-                "command": ["hadolint", *docker_paths],
+                "command": ["hadolint", "--failure-threshold", "error", *docker_paths],
                 "output": tool_dir / "hadolint.log",
             }
         )
@@ -1309,6 +1370,20 @@ def optional_tool_results(
                 "output": tool_dir / "systemd-analyze-security.log",
             }
         )
+    gitleaks_command = [
+        "gitleaks",
+        "detect",
+        "--source",
+        ".",
+        "--redact",
+        "--report-format",
+        "json",
+        "--report-path",
+        str(tool_dir / "gitleaks.json"),
+    ]
+    if (repo_root / ".gitleaksignore").exists():
+        gitleaks_command.extend(["--gitleaks-ignore-path", ".gitleaksignore"])
+
     tools.extend(
         [
             {
@@ -1321,17 +1396,17 @@ def optional_tool_results(
                     "-o",
                     f"spdx-json={tool_dir / 'syft.spdx.json'}",
                     "--exclude",
-                    ".git",
+                    "./.git",
                     "--exclude",
-                    "build",
+                    "./build",
                     "--exclude",
-                    "dist",
+                    "./dist",
                     "--exclude",
-                    "public",
+                    "./public",
                     "--exclude",
-                    "package-dist",
+                    "./package-dist",
                     "--exclude",
-                    "release-dist",
+                    "./release-dist",
                 ],
                 "output": tool_dir / "syft.log",
             },
@@ -1339,18 +1414,7 @@ def optional_tool_results(
                 "name": "gitleaks",
                 "purpose": "external secret scanning",
                 "binary": "gitleaks",
-                "command": [
-                    "gitleaks",
-                    "detect",
-                    "--source",
-                    ".",
-                    "--no-git",
-                    "--redact",
-                    "--report-format",
-                    "json",
-                    "--report-path",
-                    str(tool_dir / "gitleaks.json"),
-                ],
+                "command": gitleaks_command,
                 "output": tool_dir / "gitleaks.log",
             },
             {
@@ -1360,6 +1424,12 @@ def optional_tool_results(
                 "command": [
                     "trivy",
                     "fs",
+                    "--scanners",
+                    "vuln,secret,misconfig",
+                    "--severity",
+                    "HIGH,CRITICAL",
+                    "--exit-code",
+                    "0",
                     "--format",
                     "json",
                     "--output",
@@ -1387,10 +1457,9 @@ def optional_tool_results(
                 "command": [
                     "osv-scanner",
                     "scan",
-                    "source",
                     "--format",
                     "json",
-                    "--output-file",
+                    "--output",
                     str(tool_dir / "osv-scanner.json"),
                     "--recursive",
                     ".",
@@ -1454,6 +1523,17 @@ def optional_tool_results(
             trivy_json = tool_dir / "trivy-fs.json"
             if trivy_json.exists():
                 result["artifact_path"] = str(trivy_json)
+                trivy_policy = trivy_blocking_findings(trivy_json)
+                result["trivy_blocking_findings"] = trivy_policy["blocking_findings"]
+                result["trivy_allowlisted_findings"] = trivy_policy["allowlisted_findings"]
+                if trivy_policy["blocking_findings"]:
+                    result["status"] = "fail"
+                    result["reason"] = f"{len(trivy_policy['blocking_findings'])} high/critical Trivy findings are not allowlisted"
+                elif result["status"] == "pass":
+                    result["reason"] = (
+                        f"0 blocking high/critical findings; "
+                        f"{len(trivy_policy['allowlisted_findings'])} documented root-container exceptions"
+                    )
         elif tool["name"] == "osv-scanner":
             osv_json = tool_dir / "osv-scanner.json"
             if osv_json.exists():

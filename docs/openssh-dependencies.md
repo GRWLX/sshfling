@@ -33,10 +33,11 @@ Server-side certificate grants need OpenSSH server tooling on the target host.
 The CLI validates managed sshd configuration with `sshd -t` and can inspect
 effective configuration with `sshd -T`.
 
-Server-side password grants are Linux-oriented. They require local account
-management tools such as `useradd` and `chpasswd`; `usermod` and `chage` are
-used when present to unlock, lock, or expire temporary users. Session enforcement
-uses the packaged `sshfling-session` wrapper and standard process utilities.
+Server-side password grants are Linux-oriented. They require OpenSSH server
+tooling, including `sshd`, plus local account management tools such as
+`useradd` and `chpasswd`; `usermod` and `chage` are used when present to
+unlock, lock, or expire temporary users. Session enforcement uses the packaged
+`sshfling-session` wrapper and standard process utilities.
 
 Docker Compose files and container images are a test harness. They are not the
 normal production grant path.
@@ -64,7 +65,7 @@ The platform owns OpenSSH and other shared runtime packages:
 | Platform or ecosystem | Declared dependency behavior |
 | --- | --- |
 | Debian / Ubuntu APT | `.deb` depends on `python3`, `openssh-client`, `passwd`, `procps`, and `util-linux`; it suggests `openssh-server` and Docker-compatible packages. |
-| RHEL / Fedora / Rocky / Alma RPM | `.rpm` requires `python3`, `openssh-clients`, `shadow-utils`, `procps-ng`, and `util-linux`. |
+| RHEL / Fedora / Rocky / Alma RPM | `.rpm` requires `python3`, `openssh-clients`, `shadow-utils`, `procps-ng`, and `util-linux`; it recommends `openssh-server` for server-side grant paths. |
 | Arch / AUR | Generated `PKGBUILD` depends on `python`, `openssh`, `shadow`, `procps-ng`, and `util-linux`. |
 | Alpine | Generated `APKBUILD` depends on `python3`, `openssh-client`, `shadow`, `procps`, and `util-linux`. |
 | openSUSE / OBS | Generated spec requires `python3`, `openssh`, `shadow`, `procps`, and `util-linux`. |
@@ -100,10 +101,12 @@ during erase so local policy/configuration can be reviewed separately.
 The Linux packages record whether the package-created `sshflingd` user, group,
 and `/var/lib/sshflingd` directory existed before install. They remove those
 package-created account resources only when it is safe and no SSHFling config or
-state directory remains. That record is limited to SSHFling service account
-state; it is not an OpenSSH or dependency inventory. The install-state record is
-kept under root-owned `/var/lib/sshfling/package-state`, not under the
-service-owned `/var/lib/sshflingd` runtime tree.
+state directory remains, and only when the current UID/GID/home identity still
+matches the package-created account record. That record is limited to SSHFling
+service account state; it is not an OpenSSH or dependency inventory. The
+install-state record is kept under root-owned
+`/var/lib/sshfling/package-state`, not under the service-owned
+`/var/lib/sshflingd` runtime tree.
 
 Homebrew uninstall removes the formula's installed SSHFling files. It does not
 restore host OpenSSH or Python to an earlier state.
@@ -141,10 +144,13 @@ SSHFling-created host-user marker written by `host install --create-user`.
 Use `sshfling password prune --all` to clean expired tracked password grants,
 or `sshfling password prune --username USER` for targeted cleanup. Prune
 requires exactly one selector. It removes expired grants only; `--delete-users`
-deletes expired SSHFling-created Unix users, while existing users explicitly
-allowed with `--allow-existing-user` are locked and expired but not deleted.
-Root-equivalent users are never mutated from password-grant metadata or
-host-user markers, and password grant creation
+deletes expired SSHFling-created Unix users only when UID/GID/home identity
+evidence is present and still matches the current account. Without identity
+evidence, `--delete-users` locks and expires instead of deleting; with an
+identity mismatch, prune preserves managed config and metadata for
+investigation. Existing users explicitly allowed with `--allow-existing-user`
+are locked and expired but not deleted. Root-equivalent users are never mutated
+from password-grant metadata or host-user markers, and password grant creation
 refuses root-equivalent Unix users.
 
 Package uninstall does not run those host-state cleanup commands automatically.

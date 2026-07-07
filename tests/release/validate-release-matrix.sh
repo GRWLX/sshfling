@@ -295,6 +295,34 @@ if python3 "$repo_root/tools/release_matrix_validate.py" \
 fi
 grep -Fq "row is not allowed by --require-pass" /tmp/sshfling-release-matrix-blocked-strict.log
 
+{
+  echo "row_id,readiness_status,result,evidence_ref,evidence_sha256,source_commit,blocker_reason,actual_result,exception_id,exception_owner,exception_expires,notes"
+  printf 'row-blocked,BLOCKED,blocked,NONE,NONE,abc123,external signing evidence missing,NOT_APPLICABLE,EXC-2999-001,security-review,2999-12-31,time-bound release exception\n'
+} >"$tmpdir/blocked-approved-exception.csv"
+python3 "$repo_root/tools/release_matrix_validate.py" \
+  --repo-root "$repo_root" \
+  --matrix "$tmpdir/blocked-approved-exception.csv" \
+  --manifest "$tmpdir/blocked-manifest.json" \
+  --require-pass \
+  --allow-approved-exceptions \
+  --max-errors 5 >/tmp/sshfling-release-matrix-blocked-approved-exception.log
+
+{
+  echo "row_id,readiness_status,result,evidence_ref,evidence_sha256,source_commit,blocker_reason,actual_result,exception_id,exception_owner,exception_expires,notes"
+  printf 'row-blocked,BLOCKED,blocked,NONE,NONE,abc123,external signing evidence missing,NOT_APPLICABLE,EXC-2000-001,security-review,2000-01-01,expired release exception\n'
+} >"$tmpdir/blocked-expired-exception.csv"
+if python3 "$repo_root/tools/release_matrix_validate.py" \
+  --repo-root "$repo_root" \
+  --matrix "$tmpdir/blocked-expired-exception.csv" \
+  --manifest "$tmpdir/blocked-manifest.json" \
+  --require-pass \
+  --allow-approved-exceptions \
+  --max-errors 5 >/tmp/sshfling-release-matrix-blocked-expired-exception.log 2>&1; then
+  echo "expected --allow-approved-exceptions to reject expired exception records" >&2
+  exit 1
+fi
+grep -Fq "approved exception expired on 2000-01-01" /tmp/sshfling-release-matrix-blocked-expired-exception.log
+
 release_version="1.2.3"
 release_dist="$tmpdir/release-dist"
 generated_dir="$tmpdir/generated"

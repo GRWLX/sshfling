@@ -15,7 +15,7 @@ import json
 import re
 import sys
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,9 @@ PASS = "PASS"
 FAIL = "FAIL"
 BLOCKED = "BLOCKED"
 SKIPPED = "SKIPPED"
+DEFAULT_VALIDATION_MATRIX = "docs/release/enterprise-release-evidence/security-scans/security-scan-matrix.csv"
+DEFAULT_VALIDATION_MANIFEST = "docs/release/enterprise-release-evidence/security-scans/security-scan-manifest.json"
+DEFAULT_GENERATED_MANIFEST = "docs/release/evidence-manifest.json"
 PLACEHOLDERS = {"", "NONE", "NOT_APPLICABLE", "N/A", "NA", "TBD", "TODO", "PENDING", "MISSING"}
 
 
@@ -230,7 +233,61 @@ def status_for_row(row: dict[str, str]) -> str:
     return (row.get("readiness_status") or row.get("result") or row.get("status") or "").strip().upper()
 
 
-def validate_matrix(matrix_path: Path, manifest_path: Path, repo_root: Path, max_errors: int, require_pass: bool) -> int:
+def parse_exception_expiry(value: str) -> date | None:
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(normalized).date()
+    except ValueError:
+        pass
+    try:
+        return date.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def validate_approved_exception(row: dict[str, str], row_id: str) -> list[str]:
+    errors: list[str] = []
+    exception_id = row.get("exception_id", "").strip()
+    exception_owner = row.get("exception_owner", "").strip()
+    exception_expires = row.get("exception_expires", "").strip()
+    reason = (
+        row.get("blocker_reason", "").strip()
+        or row.get("actual_result", "").strip()
+        or row.get("notes", "").strip()
+    )
+
+    if is_missing(exception_id):
+        errors.append(f"{row_id}: approved exception is missing exception_id")
+    if is_missing(exception_owner):
+        errors.append(f"{row_id}: approved exception is missing exception_owner")
+    if is_missing(reason):
+        errors.append(f"{row_id}: approved exception is missing blocker_reason, actual_result, or notes")
+    expiry = parse_exception_expiry(exception_expires)
+    if is_missing(exception_expires) or expiry is None:
+        errors.append(f"{row_id}: approved exception is missing a YYYY-MM-DD or ISO-8601 exception_expires")
+    elif expiry < datetime.now(timezone.utc).date():
+        errors.append(f"{row_id}: approved exception expired on {expiry.isoformat()}")
+    return errors
+
+
+def validate_matrix(
+    matrix_path: Path,
+    manifest_path: Path,
+    repo_root: Path,
+    max_errors: int,
+    require_pass: bool,
+    allow_approved_exceptions: bool,
+) -> int:
+    if not matrix_path.exists():
+        raise SystemExit(
+            f"release matrix not found: {matrix_path}\n"
+            "Generate release evidence first, for example with `make release-security-scan`, "
+            "or pass --matrix and --manifest for a generated artifact matrix."
+        )
     manifest = load_manifest(manifest_path)
     counts: Counter[str] = Counter()
     errors: list[str] = []
@@ -277,7 +334,10 @@ def validate_matrix(matrix_path: Path, manifest_path: Path, repo_root: Path, max
                 row_errors.append(f"{display_row_id}: unsupported status {status or '<blank>'}")
 
             if require_pass and status != PASS:
-                row_errors.append(f"{display_row_id}: {status or '<blank>'} row is not allowed by --require-pass")
+                if allow_approved_exceptions:
+                    row_errors.extend(validate_approved_exception(row, display_row_id))
+                else:
+                    row_errors.append(f"{display_row_id}: {status or '<blank>'} row is not allowed by --require-pass")
 
             if len(errors) < max_errors:
                 errors.extend(row_errors[: max_errors - len(errors)])
@@ -310,7 +370,7 @@ def current_commit(repo_root: Path) -> str:
 
     try:
         return subprocess.check_output(
-            ["git", "rev-parse", "--short=12", "HEAD"],
+            ["git", "rev-parse", "HEAD"],
             cwd=repo_root,
             text=True,
             stderr=subprocess.DEVNULL,
@@ -356,11 +416,28 @@ def generate_manifest(evidence_root: Path, output: Path, repo_root: Path, source
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate enterprise release matrix evidence.")
-    parser.add_argument("--matrix", default="docs/release/enterprise-release-matrix.csv")
-    parser.add_argument("--manifest", default="docs/release/evidence-manifest.json")
+    parser.add_argument(
+        "--matrix",
+        help=f"release matrix CSV to validate (default: {DEFAULT_VALIDATION_MATRIX})",
+    )
+    parser.add_argument(
+        "--manifest",
+        help=(
+            f"evidence manifest JSON to validate (default: {DEFAULT_VALIDATION_MANIFEST}; "
+            f"default with --generate-manifest: {DEFAULT_GENERATED_MANIFEST})"
+        ),
+    )
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--max-errors", type=int, default=50)
     parser.add_argument("--require-pass", action="store_true")
+    parser.add_argument(
+        "--allow-approved-exceptions",
+        action="store_true",
+        help=(
+            "with --require-pass, allow non-pass rows only when exception_id, "
+            "exception_owner, exception_expires, and an exception reason are complete and unexpired"
+        ),
+    )
     parser.add_argument("--generate-manifest", action="store_true")
     parser.add_argument("--evidence-root", default="docs/release/enterprise-release-evidence")
     parser.add_argument("--source-commit")
@@ -372,8 +449,8 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
-    manifest_path = (repo_root / args.manifest).resolve()
     if args.generate_manifest:
+        manifest_path = (repo_root / (args.manifest or DEFAULT_GENERATED_MANIFEST)).resolve()
         source_commit = args.source_commit or current_commit(repo_root)
         return generate_manifest(
             evidence_root=(repo_root / args.evidence_root).resolve(),
@@ -383,12 +460,15 @@ def main() -> int:
             result=args.manifest_result,
         )
 
+    matrix_path = (repo_root / (args.matrix or DEFAULT_VALIDATION_MATRIX)).resolve()
+    manifest_path = (repo_root / (args.manifest or DEFAULT_VALIDATION_MANIFEST)).resolve()
     return validate_matrix(
-        matrix_path=(repo_root / args.matrix).resolve(),
+        matrix_path=matrix_path,
         manifest_path=manifest_path,
         repo_root=repo_root,
         max_errors=max(1, args.max_errors),
         require_pass=args.require_pass,
+        allow_approved_exceptions=args.allow_approved_exceptions,
     )
 
 
