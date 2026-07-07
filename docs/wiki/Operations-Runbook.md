@@ -234,3 +234,6 @@ sudo sshfling password prune --username s234 --delete-users
 Prune skips active grants. Use `--delete-users` only for expired Unix users
 created by SSHFling; existing users explicitly allowed with
 `--allow-existing-user` are locked and expired but are not deleted.
+Root-equivalent users are never deleted from password-grant metadata or
+host-user markers. Password mode refuses root-equivalent Unix users; use explicit
+certificate mode for approved admin/root-equivalent break-glass access.

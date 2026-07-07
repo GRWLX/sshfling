@@ -9,8 +9,8 @@ release.
 | --- | --- | --- |
 | Versioning | Ready in repo | Use a three-component numeric version and a matching `vX.Y.Z` tag. |
 | Linux packages | Ready in repo | Validate `.deb`, `.rpm`, APT metadata, RPM metadata, and repository signing. |
-| macOS package | Build available | Sign and notarize production `.pkg` artifacts outside the current repo workflow if required by policy. |
-| Windows MSI | Build available | Authenticode-sign production MSI artifacts outside the current repo workflow if required by policy. |
+| macOS package | Build/signing hooks available | Configure Developer ID signing/notarization secrets and attach `pkgutil`, `notarytool`, and stapler evidence if required by policy. |
+| Windows MSI | Build available | Add or run Authenticode signing/verification and attach `signtool` evidence if required by policy. |
 | Public package site | Ready in repo | Enable GitHub Pages from Actions and run the public-web workflow. |
 | Community manifests | Generated | Submit manually where ecosystem review or maintainer accounts are required. |
 | License signaling | Ready in repo | Confirm commercial license approval before redistribution. |

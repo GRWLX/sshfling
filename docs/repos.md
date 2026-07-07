@@ -289,8 +289,8 @@ Package docs and release notes must preserve the current runtime contract:
 - Bare `sudo sshfling` creates a temporary password grant.
 - Certificate grants require `--certificate`; certificate-specific setup options fail without it.
 - Access levels are policy classifications for least-privilege review, not privilege assignment. `standard` is the default; `operator`, `sudo-limited`, and `admin`/root-equivalent must be explicitly approved in policy for the account receiving the grant.
-- `sshfling password prune` removes expired tracked password grants only. `--all` scans all tracked grants but leaves active grants in place, `--delete-users` only deletes expired SSHFling-created Unix users, and existing users explicitly allowed with `--allow-existing-user` are locked and expired but never deleted.
-- `sshfling host uninstall` removes managed certificate host SSH configuration by default. Shared CA, wrapper, policy-user, and Unix-account removal are opt-in flags.
+- `sshfling password prune` removes expired tracked password grants only. `--all` scans all tracked grants but leaves active grants in place, `--delete-users` only deletes expired SSHFling-created Unix users, existing users explicitly allowed with `--allow-existing-user` are locked and expired but never deleted, and root-equivalent users are never deleted from password-grant metadata or host-user markers.
+- `sshfling host uninstall` removes managed certificate host SSH configuration by default. Shared CA, wrapper, policy-user, and Unix-account removal are opt-in flags; Unix-account deletion requires the SSHFling host-user marker written by `host install --create-user`.
 
 Package uninstall removes SSHFling-managed package files and repository entries
 for the selected install path, but it preserves host SSH configuration, password

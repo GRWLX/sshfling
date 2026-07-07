@@ -42,70 +42,66 @@ CIS Benchmark or equivalent hardening profile, if applicable:
 
 Non-certification caveat acknowledged by release approver: Yes / No
 
-## v0.1.12/vNext Working Snapshot
+## v0.1.13 Published Release Snapshot
 
-Use this snapshot to seed the release ticket. Replace it with final, immutable
-evidence before publication.
+Use this snapshot to seed the release ticket. Attach final, immutable evidence
+from GitHub runs, release assets, and approval records before making enterprise
+readiness claims.
 
-- `v0.1.12` is tagged at source commit
-  `58b23b5fa9b90491c41b41fc206d8e907b00e8df` on 2026-07-06.
-- Remote `refs/tags/v0.1.12` is annotated tag object
-  `8630c5aeacd8bc33021e4c6f51e7a0feb9dd2e08`; the peeled commit is
-  `58b23b5fa9b90491c41b41fc206d8e907b00e8df`. Local signature verification
+- `v0.1.13` is tagged at source commit
+  `065b03c16a81e9167120e9f41afd4c5e81a79a4a` on 2026-07-07.
+- Remote `refs/tags/v0.1.13` is annotated tag object
+  `b8e5b070dbfeae4f61741b579f6aa2f99689942a`; the peeled commit is
+  `065b03c16a81e9167120e9f41afd4c5e81a79a4a`. Local signature verification
   reported `error: no signature found`, so treat tag signature evidence as
   absent unless a separate protected-tag control is attached.
-- GitHub release `v0.1.12` is published, not draft, and not prerelease:
-  https://github.com/GRWLX/sshfling/releases/tag/v0.1.12. GitHub reports it
-  was created at 2026-07-06T21:23:39Z and published at 2026-07-06T21:24:55Z.
+- GitHub release `v0.1.13` is published, not draft, and not prerelease:
+  https://github.com/GRWLX/sshfling/releases/tag/v0.1.13. GitHub reports it
+  was created at 2026-07-07T02:44:14Z and published at 2026-07-07T02:45:05Z.
   The release has eight assets: `RELEASE-EVIDENCE.md`, `SHA256SUMS`,
-  `sshfling_0.1.12_all.deb`, `sshfling-0.1.12-1.noarch.rpm`,
-  `sshfling-0.1.12.tar.gz`, `sshfling-0.1.12.pkg`,
-  `sshfling-0.1.12.msi`, and `sshfling-0.1.12-windows.zip`.
-- `v0.1.12` shipped enterprise package publishing preparation: package builders,
-  public package-site verification, release checklist/evidence templates,
-  repository registration docs, community manifests, release matrix tooling,
-  cross-OS/package install validation, container image tests, and enterprise
-  operations documentation.
-- `HEAD` after the tag is
-  `0226f12f9761d1b88fcf5a9fe3ee1108d3b6821c` and adds GitHub Packages
-  container publishing workflow coverage.
-- The current working tree includes uncommitted vNext release-hardening changes
-  in workflows, package metadata, release security evidence tooling, uninstall
-  behavior documentation, package validation, and cross-OS tests. Do not use the
-  current tree for a production release until those changes are committed and
-  validated.
+  `sshfling_0.1.13_all.deb`, `sshfling-0.1.13-1.noarch.rpm`,
+  `sshfling-0.1.13.tar.gz`, `sshfling-0.1.13.pkg`,
+  `sshfling-0.1.13.msi`, and `sshfling-0.1.13-windows.zip`.
+- The published `RELEASE-EVIDENCE.md` asset records source commit
+  `065b03c16a81e9167120e9f41afd4c5e81a79a4a`, workflow run
+  https://github.com/GRWLX/sshfling/actions/runs/28837775742, artifact sizes,
+  and SHA-256 hashes for the six package/source artifacts.
+- `v0.1.13` shipped hardened package publishing evidence hooks, release security
+  evidence generation, public package-site verification, GitHub Packages
+  container publishing workflow coverage, uninstall-scope documentation, and
+  expanded release validation guidance.
 
-GitHub Actions state verified on 2026-07-06:
+GitHub Actions state verified on 2026-07-07:
 
-- Tag/source commit `58b23b5fa9b90491c41b41fc206d8e907b00e8df` has successful
-  `Container image tests` run
-  https://github.com/GRWLX/sshfling/actions/runs/28824243992.
-- Tag/source commit `58b23b5fa9b90491c41b41fc206d8e907b00e8df` has successful
+- Tag/source commit `065b03c16a81e9167120e9f41afd4c5e81a79a4a` has successful
   `Release packages without web` run
-  https://github.com/GRWLX/sshfling/actions/runs/28824244828.
-- Tag/source commit `58b23b5fa9b90491c41b41fc206d8e907b00e8df` has failed
+  https://github.com/GRWLX/sshfling/actions/runs/28837775742. The publish job
+  generated checksums, release evidence, release matrix evidence, provenance
+  attestation, and uploaded release assets.
+- Tag/source commit `065b03c16a81e9167120e9f41afd4c5e81a79a4a` has successful
   `Release packages with public web` run
-  https://github.com/GRWLX/sshfling/actions/runs/28824244749. Do not cite this
-  as passing package-site evidence without a rerun or approved exception.
-- No tag-scoped `Package install tests` or `Cross OS validation` runs for
-  `58b23b5fa9b90491c41b41fc206d8e907b00e8df` were found in the filtered GitHub
-  Actions run lists checked by `gh`. The latest matching successes found were
-  workflow-dispatch runs from 2026-07-05 at commit
-  `80b8b412a2f65dd7d263c3bae95a0f2090f30427`; treat them as pre-release
-  rehearsal evidence unless the release ticket explicitly accepts the commit
-  mismatch.
-- Post-tag commit `0226f12f9761d1b88fcf5a9fe3ee1108d3b6821c` has successful
+  https://github.com/GRWLX/sshfling/actions/runs/28837775739. The package web
+  verification and generated evidence gate passed, but `Deploy package web` and
+  package-site attestation were skipped when publish mode was false. Do not cite
+  this as Pages deployment evidence without a separate deployment URL and
+  deployment ID.
+- Tag/source commit `065b03c16a81e9167120e9f41afd4c5e81a79a4a` has successful
   `GitHub Packages` run
-  https://github.com/GRWLX/sshfling/actions/runs/28825062989 and successful
-  `Container image tests` run
-  https://github.com/GRWLX/sshfling/actions/runs/28825062950. Treat these as
-  vNext/GitHub Packages workflow evidence, not as evidence that the `v0.1.12`
-  source release passed all package validation.
+  https://github.com/GRWLX/sshfling/actions/runs/28837775737.
+- `Package install tests`
+  https://github.com/GRWLX/sshfling/actions/runs/28837877578 and `Cross OS
+  validation` https://github.com/GRWLX/sshfling/actions/runs/28837877655
+  completed with failures when checked. Do not cite them as passing release
+  validation without remediation, rerun evidence, or approved exceptions.
+- `Container image tests`
+  https://github.com/GRWLX/sshfling/actions/runs/28837770659 was in progress
+  when checked. Attach the final conclusion or a later matching source-commit
+  run before treating it as release validation evidence.
 
 Evidence currently present in the repository:
 
-- Source tag and commit history for `v0.1.12`.
-- Published GitHub release URL and asset list for `v0.1.12`.
+- Source tag and commit history for `v0.1.13`.
+- Published GitHub release URL and asset list for `v0.1.13`.
 - Release checklist and evidence templates.
 - Release asset evidence generator and matrix validator.
 - Release security evidence generator for baseline secret scanning, SBOM,
@@ -118,12 +114,11 @@ Evidence currently present in the repository:
 
 Evidence still required before enterprise publication:
 
-- Clean final commit, protected release approval, and matching tag or workflow
-  version input.
+- Protected release approval and protected-tag or equivalent change-control
+  evidence for the published tag.
 - Passing immutable workflow URLs for release packages, public package site,
-  package install tests, cross-OS validation, and container image tests. The
-  current tag-scoped public-web run is failed, and tag-scoped package-install
-  and cross-OS runs were not found.
+  package install tests, cross-OS validation, and container image tests. Do not
+  treat queued, in-progress, skipped, or wrong-commit runs as passing evidence.
 - Artifact inventory with SHA-256 values, sizes, signing status, release asset
   URLs, `SHA256SUMS`, and provenance or attestation output.
 - APT/RPM production signing fingerprint and proof that generated test keys were
@@ -206,8 +201,8 @@ Record the behavior contract that users and support teams rely on.
 | Password default | Bare `sudo sshfling` creates temporary password access. | README/release-notes link: |
 | Explicit certificate mode | Certificate access requires `--certificate`; certificate-only setup options fail without it. | README/release-notes link: |
 | Access-level classification | `--access-level` and `--role` classify least-privilege policy intent and do not grant sudo, administrator, group, IAM, or root-equivalent privileges. Host controls enforce actual privileges. | README/wiki/test link: |
-| Prune semantics | `password prune` removes expired tracked grants only; active grants and unmanaged records are preserved; existing users explicitly allowed with `--allow-existing-user` are locked/expired but not deleted. | Test or docs link: |
-| Host uninstall scope | `host uninstall` removes managed certificate host config by default; shared CA, wrapper, policy-user, and Unix-account removal are opt-in. | Docs link: |
+| Prune semantics | `password prune` removes expired tracked grants only; active grants and unmanaged records are preserved; existing users explicitly allowed with `--allow-existing-user` are locked/expired but not deleted; root-equivalent users are never deleted from password-grant metadata or host-user markers. | Test or docs link: |
+| Host uninstall scope | `host uninstall` removes managed certificate host config by default; shared CA, wrapper, policy-user, and Unix-account removal are opt-in. Unix-account deletion requires the SSHFling host-user marker written by `host install --create-user`. | Docs link: |
 | Package uninstall scope | Package uninstall removes package files and managed repo entries, but not host SSH state, password grant state, CA material, `/etc/sshfling` config, dependency package state, or original host configuration. Dependency autoremove/autopurge is a separate fleet action. macOS package notes and Windows MSI metadata state this scope. | Docs or metadata link: |
 
 ## Threat Model And Dependency Review

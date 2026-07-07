@@ -4,7 +4,9 @@
 
 ## Server / Service Side
 
-Install from the signed APT repository:
+Install from the signed APT repository after confirming the target release has
+published package-site evidence, repository signing metadata, and a signing-key
+fingerprint:
 
 ```bash
 sudo install -d -m 0755 /usr/share/keyrings
@@ -123,6 +125,11 @@ OpenSSH user certificates are available explicitly:
 - `sshfling cert issue --certificate` signs a user's public key for a short lifetime.
 - `sshfling serve` runs a small authenticated certificate issuer service.
 
+Do not run `sshfling ca init --force` unless you are intentionally rotating the
+user CA. It replaces the existing CA keypair; hosts that trust the old public
+key and clients with certificates from the old CA need a planned trust update
+and certificate reissue.
+
 The issued certificate includes an OpenSSH `force-command` option that runs `sshfling-session` on the target host. That wrapper enforces the session wall-clock limit, so an already-connected SSH session is killed when its allowed time is reached.
 
 ## Production Quick Start
@@ -214,6 +221,10 @@ level and treats `root` or `Administrator` logins as admin-class access. Host
 controls such as Unix groups, sudoers, PAM, AD, MDM, and service-manager policy
 remain the enforcement layer for actual privileges.
 
+Password-mode grants create or reset local Unix passwords and therefore refuse
+root-equivalent Unix users such as `root`. Use explicit certificate mode with an
+admin/root-equivalent access level for approved break-glass access.
+
 Run the local web console:
 
 ```bash
@@ -235,6 +246,10 @@ On the issuer machine:
 ```bash
 sshfling ca init --ca-key /etc/sshfling/ca_user_ed25519
 ```
+
+Use `--force` only for a planned CA rotation. Replacing this keypair changes
+the trust anchor for hosts configured with `sshfling host install`; update the
+trusted CA public key on those hosts and reissue affected certificates.
 
 Copy `/etc/sshfling/ca_user_ed25519.pub` to each target host, then on each target host:
 
@@ -395,7 +410,9 @@ sudo sshfling host uninstall \
   --reload
 ```
 
-Only use `--delete-user` for Unix accounts created solely for SSHFling:
+Only use `--delete-user` for Unix accounts created by `sshfling host install
+--create-user`. SSHFling requires its host-user marker before deleting the Unix
+account:
 
 ```bash
 sudo sshfling host uninstall --username temp-remote --delete-user --reload
@@ -409,7 +426,7 @@ sudo sshfling password prune --all --delete-users
 sudo sshfling password prune --username s234 --delete-users
 ```
 
-Prune only removes expired grants. `--all` scans the tracked grant store but leaves active grants in place. By default, expired SSHFling-created Unix users are locked and expired; `--delete-users` deletes expired SSHFling-created users. Existing users that were explicitly allowed with `--allow-existing-user` are locked and expired but are never deleted by `--delete-users`.
+Prune only removes expired grants. `--all` scans the tracked grant store but leaves active grants in place. By default, expired SSHFling-created Unix users are locked and expired; `--delete-users` deletes expired SSHFling-created users. Existing users that were explicitly allowed with `--allow-existing-user` are locked and expired but are never deleted by `--delete-users`. Root-equivalent users are never deleted from password-grant metadata or host-user markers.
 
 If you installed from a source checkout with `./scripts/install-local.sh`, remove that local install with:
 
@@ -479,8 +496,9 @@ GitHub Actions workflows are included for public distribution:
 
 ### v0.1.13 Release Readiness
 
-`v0.1.13` is the follow-up hardened package publishing release candidate. The
-previous published release is `v0.1.12` at commit
+`v0.1.13` is the tagged hardened package publishing release at commit
+`065b03c16a81e9167120e9f41afd4c5e81a79a4a`. The previous published release is
+`v0.1.12` at commit
 `58b23b5fa9b90491c41b41fc206d8e907b00e8df`.
 
 `v0.1.12` shipped enterprise package publishing preparation: package builders,
@@ -488,14 +506,15 @@ public package-site verification, repository registration docs, community
 manifest generation, release checklist/evidence templates, cross-OS/package
 install validation, release matrix tooling, and enterprise operations docs.
 
-The `v0.1.13` release candidate should be treated as blocked until release
-evidence is attached for the final commit: clean worktree, workflow run URLs,
-artifact checksums, repository signing fingerprint, Pages deployment ID,
-release approval, runtime behavior evidence for password, certificate,
-access-level, prune, and uninstall behavior, and macOS/Windows signing or
-notarization evidence where applicable.
+The `v0.1.13` source/package release is published, but it should not be treated
+as enterprise-ready until release evidence is attached for the final commit:
+release approval, protected tag or equivalent change-control evidence, workflow
+run URLs, artifact checksums, repository signing fingerprint, Pages deployment
+ID where package-site publishing is in scope, runtime behavior evidence for
+password, certificate, access-level, prune, and uninstall behavior, and
+macOS/Windows signing or notarization evidence where applicable.
 
-Follow-up release checks from a clean final commit:
+Release evidence generation and validation commands:
 
 ```bash
 git status --short --branch
@@ -511,9 +530,9 @@ make release-matrix-validate \
   RELEASE_MANIFEST=docs/release/enterprise-release-evidence/generated/release-assets-manifest.json
 ```
 
-Then run and link the release workflows listed above with the same version input.
-Do not publish an enterprise release from generated test signing keys, unsigned
-macOS/Windows artifacts, or unreviewed exception records.
+Link the completed release workflows listed above with the same version input.
+Do not make enterprise readiness claims from generated test signing keys,
+unsigned macOS/Windows artifacts, or unreviewed exception records.
 
 Nix users can also run from the repository:
 

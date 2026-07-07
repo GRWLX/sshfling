@@ -2,9 +2,10 @@
 
 ## v0.1.13 - 2026-07-07
 
-Status: release candidate for the hardened enterprise package publishing pass.
-Use the final GitHub release, tag, and workflow runs as the authoritative
-evidence after `v0.1.13` is published.
+Status: tagged and published source/package release at
+`065b03c16a81e9167120e9f41afd4c5e81a79a4a`.
+Use the GitHub release, tag, workflow runs, and release ticket as the
+authoritative evidence; this changelog is not an attestation.
 
 ### Prepared
 
@@ -18,13 +19,25 @@ evidence after `v0.1.13` is published.
 - Expanded package and cross-OS validation coverage around shared CLI checks,
   bounded workflow timeouts, Windows MSI metadata, macOS package metadata,
   public repository install paths, and community package manifests.
-- Added GitHub Packages container publishing workflow coverage after the
-  `v0.1.12` tag and prepared the follow-up `v0.1.13` release from the hardened
-  source commit.
+- Added GitHub Packages container publishing workflow coverage and included it
+  in the `v0.1.13` hardened source release.
 
 ### Evidence Available
 
 - Source version in `bin/sshfling` is `0.1.13`.
+- `v0.1.13` is tagged at source commit
+  `065b03c16a81e9167120e9f41afd4c5e81a79a4a`.
+- GitHub release `v0.1.13` is published at
+  https://github.com/GRWLX/sshfling/releases/tag/v0.1.13 with eight assets:
+  `RELEASE-EVIDENCE.md`, `SHA256SUMS`, Linux DEB/RPM packages, source tarball,
+  macOS pkg, Windows MSI, and Windows zip.
+- The tag is annotated but not signed; use protected-tag evidence or another
+  approved release-control record if tag signature evidence is required.
+- Tag/source-commit package workflows `Release packages without web` and
+  `Release packages with public web` completed successfully for the release
+  commit. The public-web run verified generated package-site evidence, but final
+  Pages deployment evidence is still required when the package site is in
+  enterprise scope.
 - Previous published release `v0.1.12` is tagged at commit
   `58b23b5fa9b90491c41b41fc206d8e907b00e8df`.
 - GitHub release `v0.1.12` is published at
@@ -39,10 +52,9 @@ evidence after `v0.1.13` is published.
 
 ### Evidence To Attach Or Except Before Enterprise Claims
 
-- The release candidate must be built from a clean, final commit and matching
-  `v0.1.13` tag.
-- Attach `v0.1.13` workflow run URLs for release packages, public package web,
-  package install tests, cross-OS validation, and container image tests.
+- Attach the release approval, protected tag or equivalent change-control
+  evidence, and final workflow run URLs for release packages, public package
+  web, package install tests, cross-OS validation, and container image tests.
 - Attach `v0.1.13` package artifact checksums, generated evidence files,
   repository signing fingerprint, Pages deployment ID, release approval, and
   any accepted workflow exceptions.

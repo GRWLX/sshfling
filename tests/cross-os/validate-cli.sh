@@ -510,6 +510,7 @@ import argparse
 import importlib.machinery
 import importlib.util
 import json
+import os
 import pathlib
 import shutil
 import sys
@@ -645,6 +646,15 @@ except sshfling.SSHFlingError as exc:
 else:
     raise AssertionError("root-equivalent user accepted standard access-level policy")
 
+assert sshfling.validate_certificate_principal("ticket-1234@example") == "ticket-1234@example"
+for bad_principal in ["ticket,root", "ticket\nroot", "-ticket", "ticket root"]:
+    try:
+        sshfling.validate_certificate_principal(bad_principal)
+    except sshfling.SSHFlingError as exc:
+        assert "Certificate principal must match" in exc.message, exc.message
+    else:
+        raise AssertionError(f"invalid certificate principal was accepted: {bad_principal!r}")
+
 with tempfile.TemporaryDirectory() as policy_tmp:
     policy_path = pathlib.Path(policy_tmp) / "policy.json"
     try:
@@ -655,6 +665,105 @@ with tempfile.TemporaryDirectory() as policy_tmp:
         raise AssertionError("root policy accepted a standard access level")
     written = sshfling.write_policy(policy_path, 300, 1, "root", "root-equivalent")
     assert written["users"]["root"]["access_level"] == "admin", written
+
+with tempfile.TemporaryDirectory() as guard_tmp:
+    guard_root = pathlib.Path(guard_tmp)
+    target = guard_root / "target.txt"
+    source = guard_root / "source.txt"
+    link = guard_root / "managed-link"
+    target.write_text("original\n", encoding="utf-8")
+    source.write_text("replacement\n", encoding="utf-8")
+    link.symlink_to(target)
+    for action in (
+        lambda: sshfling.write_if_changed(link, "replacement\n"),
+        lambda: sshfling.install_file(source, link),
+    ):
+        try:
+            action()
+        except sshfling.SSHFlingError as exc:
+            assert "symlinked path component" in exc.message, exc.message
+        else:
+            raise AssertionError("managed write followed a symlink target")
+    assert target.read_text(encoding="utf-8") == "original\n"
+
+with tempfile.TemporaryDirectory() as tmp_guard:
+    tmp_root = pathlib.Path(tmp_guard)
+    target = tmp_root / "target.txt"
+    target.write_text("original\n", encoding="utf-8")
+
+    json_path = tmp_root / "job.json"
+    legacy_json_tmp = tmp_root / f".{json_path.name}.{os.getpid()}.tmp"
+    legacy_json_tmp.symlink_to(target)
+    sshfling.write_json_atomic(json_path, {"ok": True})
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert json.loads(json_path.read_text(encoding="utf-8"))["ok"] is True
+
+    grant_dir = tmp_root / "grants"
+    grant_dir.mkdir()
+    legacy_grant_tmp = grant_dir / "sshflingtmp.json.tmp"
+    legacy_grant_tmp.symlink_to(target)
+    sshfling.write_password_grant_metadata(
+        grant_dir,
+        "sshflingtmp",
+        {"managed_by": "sshfling", "auth": "password", "username": "sshflingtmp"},
+    )
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert (grant_dir / "sshflingtmp.json").exists()
+
+    marker_dir = tmp_root / "markers"
+    marker_dir.mkdir()
+    legacy_marker_tmp = marker_dir / "sshflingtmp.json.tmp"
+    legacy_marker_tmp.symlink_to(target)
+    sshfling.write_host_user_marker(
+        marker_dir,
+        "sshflingtmp",
+        {"managed_by": "sshfling", "auth": "certificate-host", "username": "sshflingtmp", "created_user": True},
+    )
+    assert target.read_text(encoding="utf-8") == "original\n"
+    assert (marker_dir / "sshflingtmp.json").exists()
+
+for bad_principal in ["deploy,root", "deploy root", "deploy\nroot"]:
+    try:
+        sshfling.validate_certificate_principal(bad_principal)
+    except sshfling.SSHFlingError as exc:
+        assert "Certificate principal" in exc.message, exc.message
+    else:
+        raise AssertionError(f"unsafe certificate principal was accepted: {bad_principal!r}")
+
+with tempfile.TemporaryDirectory() as marker_tmp:
+    marker_root = pathlib.Path(marker_tmp)
+    original_delete_user = getattr(sshfling, "delete_password_user")
+    setattr(sshfling, "delete_password_user", lambda username, dry_run=False: {"user": username, "would_delete": dry_run})
+    try:
+        try:
+            sshfling.delete_host_user("sshflingtmp", marker_root, dry_run=True)
+        except sshfling.SSHFlingError as exc:
+            assert "without a SSHFling-created host-user marker" in exc.message, exc.message
+        else:
+            raise AssertionError("host user deletion succeeded without a marker")
+        sshfling.write_host_user_marker(marker_root, "sshflingtmp", {
+            "managed_by": "sshfling",
+            "auth": "certificate-host",
+            "username": "sshflingtmp",
+            "created_user": True,
+        })
+        delete_result = sshfling.delete_host_user("sshflingtmp", marker_root, dry_run=True)
+        assert delete_result["would_delete"] is True, delete_result
+        assert delete_result["would_remove_marker"] is True, delete_result
+        sshfling.write_host_user_marker(marker_root, "root", {
+            "managed_by": "sshfling",
+            "auth": "certificate-host",
+            "username": "root",
+            "created_user": True,
+        })
+        try:
+            sshfling.delete_host_user("root", marker_root, dry_run=True)
+        except sshfling.SSHFlingError as exc:
+            assert "root-equivalent" in exc.message, exc.message
+        else:
+            raise AssertionError("host user deletion allowed a root-equivalent user")
+    finally:
+        setattr(sshfling, "delete_password_user", original_delete_user)
 
 with tempfile.TemporaryDirectory() as tmpdir:
     root = pathlib.Path(tmpdir)
@@ -738,6 +847,14 @@ with tempfile.TemporaryDirectory() as tmpdir:
         "expires_at": now - 60,
         "config_path": str(spoof_conf),
     }), encoding="utf-8")
+    (grant_dir / "root.json").write_text(json.dumps({
+        "username": "root",
+        "managed_by": "sshfling",
+        "auth": "password",
+        "created_user": True,
+        "expires_at": now - 60,
+        "config_path": str(spoof_conf),
+    }), encoding="utf-8")
 
     class UserExists:
         returncode = 0
@@ -785,10 +902,11 @@ with tempfile.TemporaryDirectory() as tmpdir:
     assert "config" not in missing_expiry, missing_expiry
     assert "user" not in missing_expiry, missing_expiry
     assert "metadata" not in missing_expiry, missing_expiry
-    spoofed = by_user["root"]
-    assert spoofed["status"] == "skipped-unmanaged", spoofed
-    assert "config" not in spoofed, spoofed
-    assert "user" not in spoofed, spoofed
+    root_items = [item for item in results if item.get("username") == "root"]
+    assert any(item["status"] == "skipped-unmanaged" for item in root_items), root_items
+    root_equivalent = next(item for item in root_items if item["status"] == "skipped-root-equivalent")
+    assert "config" not in root_equivalent, root_equivalent
+    assert "user" not in root_equivalent, root_equivalent
 
     sshfling.run = lambda *args, **kwargs: UserExists()
     try:
@@ -804,6 +922,12 @@ with tempfile.TemporaryDirectory() as tmpdir:
             delete_users=True,
             dry_run=True,
         )
+        root_results = sshfling.prune_password_grants(
+            grant_dir,
+            username="root",
+            delete_users=True,
+            dry_run=True,
+        )
     finally:
         sshfling.run = original_run
 
@@ -813,6 +937,9 @@ with tempfile.TemporaryDirectory() as tmpdir:
     assert len(expired_results) == 1, expired_results
     assert expired_results[0]["status"] == "pruned", expired_results
     assert expired_results[0]["user"]["would_delete"] is True, expired_results
+    assert len(root_results) == 1, root_results
+    assert root_results[0]["status"] == "skipped-root-equivalent", root_results
+    assert "user" not in root_results[0], root_results
 
     captured = {}
     originals = {
@@ -883,6 +1010,52 @@ with tempfile.TemporaryDirectory() as tmpdir:
         else:
             raise AssertionError("existing Unix user was accepted without --allow-existing-user")
         assert prune_called["value"] is False, prune_called
+
+        prune_called["value"] = False
+        try:
+            sshfling.cmd_setup_password(argparse.Namespace(
+                username="root",
+                password_grant_dir=str(grant_dir),
+                password_sshd_config_dir=str(conf_dir),
+                session_wrapper="/tmp/sshfling-session",
+                policy_file=str(root / "policy.json"),
+                time=60,
+                seconds=None,
+                dry_run=True,
+                validate=False,
+                allow_existing_user=True,
+                json=True,
+            ))
+        except sshfling.SSHFlingError as exc:
+            assert "root-equivalent" in exc.message, exc.message
+        else:
+            raise AssertionError("password setup allowed a root-equivalent Unix user")
+        assert prune_called["value"] is False, prune_called
+
+        sshfling.prune_password_grants = lambda *args, **kwargs: [{
+            "status": "active",
+            "expires_at": int(time.time()) + 3600,
+            "metadata_path": str(grant_dir / "sshflingexisting.json"),
+        }]
+        try:
+            sshfling.cmd_setup_password(argparse.Namespace(
+                username="sshflingexisting",
+                password_grant_dir=str(grant_dir),
+                password_sshd_config_dir=str(conf_dir),
+                session_wrapper="/tmp/sshfling-session",
+                policy_file=str(root / "policy.json"),
+                time=60,
+                seconds=None,
+                dry_run=False,
+                validate=False,
+                allow_existing_user=True,
+                json=True,
+            ))
+        except sshfling.SSHFlingError as exc:
+            assert "Active password grant already exists" in exc.message, exc.message
+        else:
+            raise AssertionError("active password grant was overwritten by setup")
+        assert "password" not in captured, captured
 
         sshfling.prune_password_grants = lambda *args, **kwargs: []
         sshfling.cmd_setup_password(argparse.Namespace(

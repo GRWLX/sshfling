@@ -2,8 +2,6 @@ name: GitHub Packages
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -15,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: github-packages-${{ github.ref }}
@@ -49,14 +46,53 @@ jobs:
           echo "version=${version}" >>"$GITHUB_OUTPUT"
           echo "owner_lc=${GITHUB_REPOSITORY_OWNER,,}" >>"$GITHUB_OUTPUT"
 
+  validate:
+    name: Validate source, security evidence, and containers
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    needs: resolve
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev file rpm createrepo-c openssh-client
+
+      - name: Validate source tests
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: make test VERSION="${VERSION}"
+
+      - name: Generate and validate release security evidence
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          make release-security-scan VERSION="${VERSION}"
+          make release-security-evidence-validate
+
+      - name: Validate container and package lifecycle matrix
+        env:
+          SSHFLING_VERSION: ${{ needs.resolve.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+          NIX_CONFIG: access-tokens = github.com=${{ github.token }}
+        run: make test-containers VERSION="${SSHFLING_VERSION}"
+
   publish:
     name: Publish ${{ matrix.title }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    environment:
+      name: github-packages
     permissions:
       contents: read
+      id-token: write
       packages: write
-    needs: resolve
+    needs:
+      - resolve
+      - validate
     strategy:
       fail-fast: false
       matrix:
@@ -98,17 +134,32 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
             type=raw,value=${{ needs.resolve.outputs.version }},enable=${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
             type=ref,event=tag
-            type=ref,event=branch
             type=sha,prefix=sha-
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
       - name: Build and push image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
           pull: true
           push: true
+          provenance: true
+          sbom: true
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=sshfling-${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=sshfling-${{ matrix.image }}
+
+      - name: Sign image digest
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          IMAGE: ghcr.io/${{ needs.resolve.outputs.owner_lc }}/sshfling-${{ matrix.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test -n "$DIGEST"
+          cosign sign --yes "${IMAGE}@${DIGEST}"

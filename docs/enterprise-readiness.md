@@ -25,10 +25,11 @@ release evidence generation, broad install/runtime tests, and optional APT/RPM
 repository signing for the public package site. The repo still cannot prove the
 controls enterprise assessors will care about most: required release approval,
 protected tag settings, protected environment reviewers, production
-signing-key custody, completed rollback evidence, macOS notarization, Windows
-Authenticode signing, container image signing/provenance, security scans as
-blocking gates, a complete vulnerability disclosure policy, and platform
-coverage for advertised OS, hardware, ARM, IoT, or FPGA/SoC targets.
+signing-key custody, completed rollback evidence, macOS signing/notarization
+evidence, Windows Authenticode signing, container image signing/provenance,
+security scans as blocking gates, a complete vulnerability disclosure policy,
+and platform coverage for advertised OS, hardware, ARM, IoT, or FPGA/SoC
+targets.
 
 Estimated time to audit-ready depends on external GitHub settings, signing
 certificate availability, secret-store controls, and release-operation evidence.
@@ -137,19 +138,23 @@ Estimated effort: 1 to 3 days, depending on whether an external key-management s
 
 Priority: High
 
-### ER-003: macOS And Windows Code Signing Are Enterprise Gaps
+### ER-003: Desktop Code Signing Evidence Is Incomplete
 
-Status: Gap
+Status: Partial for macOS; Gap for Windows
 
 Control reference: SOC 2 CC8.1, CC6.6; ISO 27001 A.8.24, A.8.29; NIST SP
 800-53 IA-5, SC-12, SA-10
 
 Current state: Documentation states production `.pkg` distribution should be
 signed and notarized and production MSI distribution should be Authenticode
-signed. The reviewed macOS and Windows build scripts and workflows build
-artifacts, but do not invoke Apple Developer ID signing, notarization,
-stapling, `codesign`, `productsign`, `notarytool`, `signtool`, or equivalent
-verification steps.
+signed. The macOS package script can require a signing identity, run
+`productbuild --sign`, verify the package with `pkgutil --check-signature`, and
+submit/staple/validate notarization when the workflow supplies the signing and
+notary environment variables. That is still not enterprise evidence by itself:
+Apple credential custody, required workflow variables, certificate metadata,
+notarization output, and release approval remain external. The Windows MSI build
+still produces `.msi` and `.zip` artifacts without Authenticode signing or
+`signtool` verification in source.
 
 Target state: Enterprise macOS and Windows artifacts are signed by approved certificates, notarized where applicable, and verified before release.
 
@@ -157,8 +162,11 @@ Remediation:
 
 1. Add release evidence fields for certificate subject, issuer, fingerprint, and expiration.
 2. Require notarization evidence for macOS `.pkg` releases.
-3. Require Authenticode verification output for Windows `.msi` and `.zip` launchers.
-4. Treat unsigned desktop artifacts as non-enterprise or pre-production unless they are excluded from enterprise desktop scope through a documented, time-bound exception.
+3. Add Authenticode signing and verification for Windows `.msi` and `.zip`
+   launchers, or attach a documented exception.
+4. Treat unsigned or unnotarized desktop artifacts as non-enterprise or
+   pre-production unless they are excluded from enterprise desktop scope through a
+   documented, time-bound exception.
 
 Estimated effort: 3 to 7 days after certificates are available.
 
@@ -342,23 +350,28 @@ release after validation jobs and customer evidence are available.
 Priority: Medium for product release; High when marketing, sales, or customer
 contracts name specific ARM, IoT, or embedded hardware targets.
 
-### ER-010: GHCR Container Image Publishing Is Not Enterprise-Gated
+### ER-010: GHCR Container Image Publishing Needs External Controls
 
-Status: Gap
+Status: Partial
 
 Control reference: SOC 2 CC8.1, CC7.1; ISO 27001 A.8.25, A.8.29; NIST SP
 800-53 SA-10, SI-2, SI-7, SR-11
 
 Current state: `.github/workflows/github-packages.yml` publishes SSHFling
-client and server container images to GHCR on pushes to `main`, version tags,
-and manual workflow dispatch. The workflow uses `GITHUB_TOKEN` with
-`packages: write`, builds from `ssh-client/Dockerfile` and
-`ssh-server/Dockerfile`, and emits mutable `latest`, branch/ref, version, and
-SHA-style tags. It does not define a protected environment, image signing,
-image attestation, SBOM generation, vulnerability scanning, digest-pinning
-requirements, or a release evidence record for the pushed image digests. The
-separate container test workflow gives useful functional evidence, but it is not
-a source-defined publication gate for the GHCR publish job.
+client and server container images to GHCR only from `v*` tag pushes or manual
+workflow dispatch. The workflow validates source tests, release security
+evidence, release evidence validation, and the container/package lifecycle
+matrix before the publish job can run. The publish job uses the
+`github-packages` environment, requests `id-token: write` and `packages: write`,
+builds from `ssh-client/Dockerfile` and `ssh-server/Dockerfile`, emits
+tag/version/SHA image tags, publishes Docker provenance and SBOM attestations,
+and signs pushed image digests with keyless Sigstore/cosign.
+
+Remaining gaps: GitHub environment reviewers, protected tag/ruleset
+enforcement, image vulnerability thresholds, consumer digest pinning or
+signature verification, and retained cosign verification evidence are external
+or release-run controls and still need proof before GHCR images can be called
+enterprise-ready distribution artifacts.
 
 Target state: Production container images are published only from approved
 protected releases, are traceable to source commit and workflow run, are signed
@@ -367,20 +380,19 @@ digest or verified signature.
 
 Remediation:
 
-1. Restrict production GHCR tags such as `latest` and version tags to protected
-   release tags or a protected GitHub Actions environment with required
-   reviewers.
-2. Sign images with an approved keyless or key-backed signing flow and retain
-   signature verification output.
-3. Generate and retain image SBOMs, provenance/attestations, image digests, and
-   vulnerability scan results.
-4. Define critical/high vulnerability thresholds or approved exceptions before
+1. Configure required reviewers for the `github-packages` environment and
+   protected tag/ruleset controls for release tags.
+2. Retain image digests, cosign signing and verification output, SBOMs, and
+   provenance attestations in release evidence.
+3. Define critical/high vulnerability thresholds or approved exceptions before
    publishing production image tags.
-5. Tell enterprise consumers to pin image digests or verify signatures instead
-   of deploying mutable branch or `latest` tags.
+4. Require enterprise consumers to pin image digests or verify signatures
+   instead of deploying mutable tags.
+5. Add release evidence hooks for GHCR digests and verification logs alongside
+   package artifacts.
 
-Estimated effort: 2 to 5 days after the signing and scanning approach is
-selected.
+Estimated effort: 1 to 2 days after GitHub environment rules, tag protection,
+vulnerability thresholds, and consumer verification requirements are approved.
 
 Priority: High if GHCR images are enterprise distribution artifacts; Medium if
 they remain test-harness convenience images only.
@@ -476,8 +488,13 @@ Retain for each quarter:
 
 - Repository settings must enforce protected tags, required reviews, and protected environments; these cannot be proven from docs alone.
 - Production signing secrets and key custody must be configured in GitHub or a managed secret store.
-- macOS notarization and Windows Authenticode signing require platform certificates and workflow changes.
-- GHCR container image signing, attestation, SBOM, vulnerability scanning, and protected publish approval require workflow and policy changes.
+- macOS notarization requires platform certificates, required workflow variables,
+  and retained notarization evidence. Windows Authenticode signing still requires
+  platform certificates and workflow changes.
+- GHCR container publishing now has source-defined test/security/container gates,
+  SBOM/provenance, digest signing, and a named publish environment. GitHub
+  environment reviewers, tag protection, vulnerability thresholds, and consumer
+  digest/signature verification still require release evidence or policy.
 - Security scanning gates require workflow changes and triage ownership.
 - Vulnerability-intake ownership and quarterly security-policy review need operational evidence in the release or compliance packet.
 - Broad OS, runtime, CPU architecture, hardware, ARM, IoT, or FPGA/SoC support

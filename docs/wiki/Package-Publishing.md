@@ -42,8 +42,9 @@ the release notes call out an intentional breaking change:
 - `sshfling password prune` removes expired tracked password grants only. It
   leaves active grants in place, skips unmanaged records, locks expired
   SSHFling-created users by default, deletes those users only with
-  `--delete-users`, and locks/expires existing users explicitly allowed with
-  `--allow-existing-user` without deleting them.
+  `--delete-users`, locks/expires existing users explicitly allowed with
+  `--allow-existing-user` without deleting them, and never deletes
+  root-equivalent users from password-grant metadata or host-user markers.
 - Package uninstall removes package files and managed repository entries. Host
   SSH configuration, password grant state, CA material, `/etc/sshfling`
   configuration, and package-manager dependency state require separate host or

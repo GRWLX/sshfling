@@ -370,6 +370,13 @@ grep -Fq "expected_repo_fingerprint=\"$signing_fingerprint\"" "$signed_public/in
 write_package_site_evidence "$signed_public"
 generate_and_validate_evidence signed "$signed_public" 1
 
+if run_verify_public_web signed-wrong-fingerprint "$signed_public" \
+  REQUIRE_REPO_SIGNATURES=1 \
+  SSHFLING_REPO_GPG_FINGERPRINT="0000000000000000000000000000000000000000"; then
+  fail "expected public package verification to reject a mismatched repository signing fingerprint"
+fi
+grep -Fq "repository signing fingerprint mismatch" "$tmpdir/signed-wrong-fingerprint-verify.log"
+
 missing_key_public="$tmpdir/public-missing-key"
 if run_build_public_web missing-key "$missing_key_public" REQUIRE_REPO_SIGNATURES=1; then
   fail "expected public package build to reject required signatures without signing material"

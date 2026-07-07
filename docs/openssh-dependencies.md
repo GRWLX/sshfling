@@ -135,12 +135,15 @@ not package-manager dependency state.
 Use `sshfling host uninstall` to remove managed certificate host SSH
 configuration. By default it removes the managed sshd snippet and the selected
 user's authorized-principals file. Shared CA, wrapper, policy-user, and Unix
-account removal are opt-in flags.
+account removal are opt-in flags. Unix-account deletion requires the
+SSHFling-created host-user marker written by `host install --create-user`.
 
 Use `sshfling password prune` to clean expired tracked password grants. It
 removes expired grants only; `--delete-users` deletes expired SSHFling-created
 Unix users, while existing users explicitly allowed with `--allow-existing-user`
-are locked and expired but not deleted.
+are locked and expired but not deleted. Root-equivalent users are never deleted
+from password-grant metadata or host-user markers, and password grant creation
+refuses root-equivalent Unix users.
 
 Package uninstall does not run those host-state cleanup commands automatically.
 That separation is intentional so package removal does not destroy CA material,

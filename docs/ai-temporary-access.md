@@ -55,7 +55,7 @@ sudo sshfling policy install --user deploy --access-level sudo-limited --max-tim
 sudo sshfling --certificate --username ticket-1234 --login-user deploy --access-level sudo-limited -t 10m
 ```
 
-Grant requests can ask for `--access-level` or `--role`. SSHFling rejects a requested level above the effective policy level, and treats `root`, `Administrator`, and `root-equivalent` as admin-class access. Host controls such as Unix groups, sudoers, PAM, AD, MDM, and service-manager policy remain the enforcement layer for the actual privileges.
+Grant requests can ask for `--access-level` or `--role`. SSHFling rejects a requested level above the effective policy level, and treats `root`, `Administrator`, and `root-equivalent` as admin-class access. Host controls such as Unix groups, sudoers, PAM, AD, MDM, and service-manager policy remain the enforcement layer for the actual privileges. Password mode refuses root-equivalent Unix users because it creates or resets local passwords; use explicit certificate mode for approved admin/root-equivalent break-glass access.
 
 ## Threat-Model Checkpoints
 
@@ -66,7 +66,7 @@ The enterprise threat model for this workflow is in [SSHFling threat model](thre
 - The session wrapper enforces wall-clock expiry for the SSH session it launches, but hard containment of every descendant process depends on host controls such as systemd scopes, cgroups, and account policy.
 - Expired password grants should be pruned by an operator or fleet job. `sshfling password prune --all --delete-users` removes expired SSHFling-created users after managed sshd config removal is verified; existing break-glass users are locked/expired, not deleted.
 - Certificate mode depends on protecting the user CA private key and issuer token. Keep the issuer loopback-only unless it is behind approved TLS, mTLS, VPN, or equivalent access controls.
-- Password mode refuses to reset an existing Unix user by default; use `--allow-existing-user` only for a documented break-glass case.
+- Password mode refuses root-equivalent Unix users and refuses to reset any other existing Unix user by default; use `--allow-existing-user` only for a documented non-root break-glass case.
 - Install SSHFling from signed package repositories for managed fleets, and record the package signing fingerprint, release workflow URL, and package-site evidence in the change ticket.
 
 ## Operational Guidance

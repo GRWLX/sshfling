@@ -517,6 +517,15 @@ except sshfling.SSHFlingError as exc:
 else:
     raise AssertionError("root-equivalent user accepted standard access-level policy")
 
+assert sshfling.validate_certificate_principal("ticket-1234@example") == "ticket-1234@example"
+for bad_principal in ["ticket,root", "ticket\nroot", "-ticket", "ticket root"]:
+    try:
+        sshfling.validate_certificate_principal(bad_principal)
+    except sshfling.SSHFlingError as exc:
+        assert "Certificate principal must match" in exc.message, exc.message
+    else:
+        raise AssertionError(f"invalid certificate principal was accepted: {bad_principal!r}")
+
 with tempfile.TemporaryDirectory() as policy_tmp:
     policy_path = Path(policy_tmp) / "policy.json"
     try:
@@ -568,6 +577,14 @@ with tempfile.TemporaryDirectory() as tmpdir:
         "expires_at": now - 60,
         "config_path": str(spoof_conf),
     }), encoding="utf-8")
+    (grant_dir / "root.json").write_text(json.dumps({
+        "username": "root",
+        "managed_by": "sshfling",
+        "auth": "password",
+        "created_user": True,
+        "expires_at": now - 60,
+        "config_path": str(spoof_conf),
+    }), encoding="utf-8")
 
     class UserExists:
         returncode = 0
@@ -610,10 +627,11 @@ with tempfile.TemporaryDirectory() as tmpdir:
     assert missing_file["status"] == "pruned", missing_file
     assert missing_file["config"]["status"] == "missing", missing_file
     assert missing_file["user"]["would_delete"] is True, missing_file
-    spoofed = by_user["root"]
-    assert spoofed["status"] == "skipped-unmanaged", spoofed
-    assert "config" not in spoofed, spoofed
-    assert "user" not in spoofed, spoofed
+    root_items = [item for item in results if item.get("username") == "root"]
+    assert any(item["status"] == "skipped-unmanaged" for item in root_items), root_items
+    root_equivalent = next(item for item in root_items if item["status"] == "skipped-root-equivalent")
+    assert "config" not in root_equivalent, root_equivalent
+    assert "user" not in root_equivalent, root_equivalent
 
     sshfling.run = lambda *args, **kwargs: UserExists()
     try:
@@ -629,6 +647,12 @@ with tempfile.TemporaryDirectory() as tmpdir:
             delete_users=True,
             dry_run=True,
         )
+        root_results = sshfling.prune_password_grants(
+            grant_dir,
+            username="root",
+            delete_users=True,
+            dry_run=True,
+        )
     finally:
         sshfling.run = original_run
 
@@ -638,6 +662,9 @@ with tempfile.TemporaryDirectory() as tmpdir:
     assert len(expired_results) == 1, expired_results
     assert expired_results[0]["status"] == "pruned", expired_results
     assert expired_results[0]["user"]["would_delete"] is True, expired_results
+    assert len(root_results) == 1, root_results
+    assert root_results[0]["status"] == "skipped-root-equivalent", root_results
+    assert "user" not in root_results[0], root_results
 
     captured = {}
     originals = {
@@ -709,6 +736,52 @@ with tempfile.TemporaryDirectory() as tmpdir:
             raise AssertionError("existing Unix user was accepted without --allow-existing-user")
         assert prune_called["value"] is False, prune_called
 
+        prune_called["value"] = False
+        try:
+            sshfling.cmd_setup_password(SimpleNamespace(
+                username="root",
+                password_grant_dir=str(grant_dir),
+                password_sshd_config_dir=str(conf_dir),
+                session_wrapper="/tmp/sshfling-session",
+                policy_file=str(root / "policy.json"),
+                time=60,
+                seconds=None,
+                dry_run=True,
+                validate=False,
+                allow_existing_user=True,
+                json=True,
+            ))
+        except sshfling.SSHFlingError as exc:
+            assert "root-equivalent" in exc.message, exc.message
+        else:
+            raise AssertionError("password setup allowed a root-equivalent Unix user")
+        assert prune_called["value"] is False, prune_called
+
+        sshfling.prune_password_grants = lambda *args, **kwargs: [{
+            "status": "active",
+            "expires_at": int(time.time()) + 3600,
+            "metadata_path": str(grant_dir / "sshflingexisting.json"),
+        }]
+        try:
+            sshfling.cmd_setup_password(SimpleNamespace(
+                username="sshflingexisting",
+                password_grant_dir=str(grant_dir),
+                password_sshd_config_dir=str(conf_dir),
+                session_wrapper="/tmp/sshfling-session",
+                policy_file=str(root / "policy.json"),
+                time=60,
+                seconds=None,
+                dry_run=False,
+                validate=False,
+                allow_existing_user=True,
+                json=True,
+            ))
+        except sshfling.SSHFlingError as exc:
+            assert "Active password grant already exists" in exc.message, exc.message
+        else:
+            raise AssertionError("active password grant was overwritten by setup")
+        assert "password" not in captured, captured
+
         sshfling.prune_password_grants = lambda *args, **kwargs: []
         sshfling.cmd_setup_password(SimpleNamespace(
             username="sshflingexisting",
@@ -745,6 +818,33 @@ with tempfile.TemporaryDirectory() as tmpdir:
         assert "requires --certificate" in exc.message, exc.message
     else:
         raise AssertionError("certificate setup was reachable without --certificate")
+
+    parser = sshfling.build_parser()
+    cert_issue_args = [
+        "cert",
+        "issue",
+        "--public-key",
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest cert-issue",
+        "--username",
+        "sshflingcert",
+    ]
+    cert_issue_missing = parser.parse_args(cert_issue_args)
+    assert getattr(cert_issue_missing, "certificate", False) is False, cert_issue_missing
+    for argv in [
+        ["--certificate"] + cert_issue_args,
+        ["cert", "--certificate"] + cert_issue_args[1:],
+        cert_issue_args + ["--certificate"],
+    ]:
+        parsed = parser.parse_args(argv)
+        assert getattr(parsed, "certificate", False) is True, (argv, parsed)
+        assert parsed.func is sshfling.cmd_cert_issue, (argv, parsed)
+
+    try:
+        sshfling.cmd_cert_issue(cert_issue_missing)
+    except sshfling.SSHFlingError as exc:
+        assert "requires --certificate" in exc.message, exc.message
+    else:
+        raise AssertionError("cert issue was reachable without --certificate")
 
     cert_captured = {"calls": []}
     cert_originals = {

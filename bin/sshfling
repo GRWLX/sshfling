@@ -31,6 +31,7 @@ DEFAULT_ISSUER_LISTEN = "127.0.0.1:8787"
 DEFAULT_SESSION_DIR = "/var/lib/sshfling/sessions"
 DEFAULT_POLICY_FILE = "/etc/sshfling/policy.json"
 DEFAULT_PASSWORD_GRANT_DIR = "/var/lib/sshfling/password-grants"
+DEFAULT_HOST_USER_MARKER_DIR = "/var/lib/sshfling/host-users"
 DEFAULT_TEMP_USERNAME_PREFIX = "s"
 DEFAULT_DETACHED_DIR = ".sshfling/detached"
 MAX_TIME_SECONDS = 86400
@@ -428,6 +429,65 @@ def is_same_path(a, b):
         return False
 
 
+def symlink_component(path):
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    current = Path(candidate.anchor) if candidate.anchor else Path(".")
+    parts = candidate.parts[1:] if candidate.anchor else candidate.parts
+    for part in parts:
+        current = current / part
+        try:
+            if current.is_symlink():
+                return current
+            if not current.exists():
+                return None
+        except OSError as exc:
+            raise SSHFlingError(f"Could not inspect managed path: {candidate}", 2, path=str(candidate)) from exc
+    return None
+
+
+def reject_symlink_component(path, action="manage"):
+    link = symlink_component(path)
+    if link:
+        raise SSHFlingError(
+            f"Refusing to {action} through symlinked path component: {link}",
+            2,
+            path=str(Path(path).expanduser()),
+            symlink=str(link),
+        )
+
+
+def write_text_atomic(path, content, mode=0o600, action="write"):
+    path = Path(path)
+    reject_symlink_component(path, action)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    reject_symlink_component(path, action)
+    fd = None
+    tmp_path = None
+    try:
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent), text=True)
+        tmp_path = Path(tmp_name)
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+            fd = None
+            tmp_file.write(content)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        reject_symlink_component(path, action)
+        tmp_path.replace(path)
+        path.chmod(mode)
+    except Exception:
+        if fd is not None:
+            os.close(fd)
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
+        raise
+
+
 def copy_template_file(src, dst, force):
     if dst.exists() and not force:
         return "exists"
@@ -726,9 +786,22 @@ def access_level_catalog():
 def implied_access_level_for_username(username):
     if not username:
         return None
-    if str(username).strip().lower() in ROOT_EQUIVALENT_USERS:
+    if is_root_equivalent_user(username):
         return "admin"
     return None
+
+
+def is_root_equivalent_user(username):
+    return str(username or "").strip().lower() in ROOT_EQUIVALENT_USERS
+
+
+def reject_root_equivalent_user_deletion(username, action):
+    if is_root_equivalent_user(username):
+        raise SSHFlingError(
+            f"Refusing to {action} root-equivalent Unix user {username!r}.",
+            2,
+            username=username,
+        )
 
 
 def validate_access_level_for_username(username, access_level):
@@ -871,7 +944,9 @@ def write_policy(policy_file, max_time_seconds, max_connections, username=None, 
         existing["default"] = caps
     policy = normalize_policy(existing)
     path = policy_file_path(policy_file)
+    reject_symlink_component(path, "write policy")
     path.parent.mkdir(parents=True, exist_ok=True)
+    reject_symlink_component(path, "write policy")
     path.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n")
     path.chmod(0o644)
     policy["path"] = str(path)
@@ -903,6 +978,9 @@ def sign_user_certificate(
     permit_pty=True,
     access_level=None,
 ):
+    principal = validate_certificate_principal(principal)
+    if login_user:
+        validate_unix_username(login_user)
     policy = load_policy(policy_file)
     login_name = login_user or principal
     active_policy = effective_policy(policy, login_name)
@@ -1259,10 +1337,21 @@ def cmd_connect(before_args, target, after_args):
 def validate_unix_username(username):
     if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", username):
         raise SSHFlingError(
-            "Password mode requires a Linux username matching [a-z_][a-z0-9_-]{0,31}.",
+            "Linux username must match [a-z_][a-z0-9_-]{0,31}.",
             2,
             username=username,
         )
+
+
+def validate_certificate_principal(principal):
+    value = str(principal or "")
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.@-]{0,127}", value):
+        raise SSHFlingError(
+            "Certificate principal must match [A-Za-z0-9_][A-Za-z0-9_.@-]{0,127}.",
+            2,
+            principal=value,
+        )
+    return value
 
 
 def require_password_host_tools():
@@ -1295,7 +1384,11 @@ def ensure_unix_user(username):
 
 
 def password_force_command(username, seconds, expires_at, session_wrapper, policy_file):
-    return f"{session_wrapper} --max-seconds {seconds} --max-connections 1 --username {username} --login-user {username} --policy-file {policy_file} --expires-at {expires_at}"
+    return (
+        f"{shlex.quote(session_wrapper)} --max-seconds {seconds} --max-connections 1 "
+        f"--username {shlex.quote(username)} --login-user {shlex.quote(username)} "
+        f"--policy-file {shlex.quote(policy_file)} --expires-at {expires_at}"
+    )
 
 
 def password_grant_config(username, force_command):
@@ -1318,6 +1411,12 @@ def cmd_setup_password(args):
     if not args.username:
         args.username = random_username()
     validate_unix_username(args.username)
+    if is_root_equivalent_user(args.username):
+        raise SSHFlingError(
+            "Password grants cannot target root-equivalent Unix users. Use certificate mode with an explicit admin/root-equivalent access level for break-glass access.",
+            2,
+            username=args.username,
+        )
 
     policy = load_policy(args.policy_file)
     active_policy = effective_policy(policy, args.username)
@@ -1336,6 +1435,24 @@ def cmd_setup_password(args):
             username=args.username,
         )
     pre_prune = prune_password_grants(args.password_grant_dir, username=args.username, dry_run=args.dry_run)
+    blocking_pre_prune = [item for item in pre_prune if item.get("status") not in {"missing", "pruned"}]
+    if blocking_pre_prune:
+        active = next((item for item in blocking_pre_prune if item.get("status") == "active"), blocking_pre_prune[0])
+        if active.get("status") == "active":
+            raise SSHFlingError(
+                f"Active password grant already exists for {args.username}. Wait until it expires or choose a different --username.",
+                2,
+                username=args.username,
+                expires_at=active.get("expires_at"),
+                metadata_path=active.get("metadata_path"),
+            )
+        raise SSHFlingError(
+            f"Existing password grant metadata for {args.username} was not safely pruned.",
+            2,
+            username=args.username,
+            status=active.get("status"),
+            metadata_path=active.get("metadata_path"),
+        )
     expires_at = int(time.time()) + seconds
     password = secrets.token_urlsafe(18)
     if args.dry_run:
@@ -1344,10 +1461,10 @@ def cmd_setup_password(args):
         user_result = ensure_unix_user(args.username)
         set_user_password(args.username, password)
 
-    wrapper_path = Path(args.session_wrapper).expanduser()
-    config_dir = Path(args.password_sshd_config_dir).expanduser()
+    wrapper_path = Path(args.session_wrapper).expanduser().resolve()
+    config_dir = Path(args.password_sshd_config_dir).expanduser().resolve()
     config_path = config_dir / f"91-sshfling-password-{args.username}.conf"
-    force_command = password_force_command(args.username, seconds, expires_at, str(wrapper_path), args.policy_file)
+    force_command = password_force_command(args.username, seconds, expires_at, str(wrapper_path), policy["path"])
     config = password_grant_config(args.username, force_command)
     created_user = bool(user_result.get("created"))
     metadata = {
@@ -1361,7 +1478,7 @@ def cmd_setup_password(args):
         "expires_at": expires_at,
         "config_path": str(config_path),
         "session_wrapper": str(wrapper_path),
-        "policy_file": args.policy_file,
+        "policy_file": policy["path"],
         "access_level": grant_access_level,
     }
 
@@ -1833,12 +1950,7 @@ def detached_paths(root, name):
 
 
 def write_json_atomic(path, payload, mode=0o600):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    tmp_path.chmod(mode)
-    tmp_path.replace(path)
+    write_text_atomic(path, json.dumps(payload, indent=2, sort_keys=True) + "\n", mode, "write")
 
 
 def read_json_file(path):
@@ -2412,9 +2524,11 @@ def cmd_detached_supervisor(args):
 
 def write_if_changed(path, content, mode=0o644, dry_run=False):
     path = Path(path)
+    reject_symlink_component(path, "write")
     if dry_run:
         return {"path": str(path), "changed": not path.exists() or path.read_text() != content, "dry_run": True}
     path.parent.mkdir(parents=True, exist_ok=True)
+    reject_symlink_component(path, "write")
     changed = not path.exists() or path.read_text() != content
     path.write_text(content)
     path.chmod(mode)
@@ -2424,9 +2538,11 @@ def write_if_changed(path, content, mode=0o644, dry_run=False):
 def install_file(src, dst, mode=0o755, dry_run=False):
     src = Path(src)
     dst = Path(dst)
+    reject_symlink_component(dst, "install")
     if dry_run:
         return {"path": str(dst), "source": str(src), "dry_run": True}
     dst.parent.mkdir(parents=True, exist_ok=True)
+    reject_symlink_component(dst, "install")
     shutil.copy2(src, dst)
     dst.chmod(mode)
     return {"path": str(dst), "source": str(src)}
@@ -2512,6 +2628,60 @@ def password_grant_metadata_path(grant_dir, username):
     return Path(grant_dir).expanduser() / f"{username}.json"
 
 
+def host_user_marker_path(marker_dir, username):
+    validate_unix_username(username)
+    return Path(marker_dir).expanduser() / f"{username}.json"
+
+
+def write_host_user_marker(marker_dir, username, metadata, dry_run=False):
+    path = host_user_marker_path(marker_dir, username)
+    reject_symlink_component(path, "write host user marker")
+    if dry_run:
+        return {"path": str(path), "dry_run": True}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
+    write_text_atomic(path, json.dumps(metadata, indent=2, sort_keys=True) + "\n", 0o600, "write host user marker")
+    return {"path": str(path), "host_user_marker": "written"}
+
+
+def read_host_user_marker(marker_dir, username):
+    path = host_user_marker_path(marker_dir, username)
+    reject_symlink_component(path, "read host user marker")
+    if not path.exists():
+        return None, path
+    try:
+        metadata = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SSHFlingError(f"Invalid host user marker: {path}", 2) from exc
+    return metadata, path
+
+
+def delete_host_user(username, marker_dir=DEFAULT_HOST_USER_MARKER_DIR, dry_run=False):
+    metadata, marker_path = read_host_user_marker(marker_dir, username)
+    if (
+        not metadata
+        or metadata.get("managed_by") != "sshfling"
+        or metadata.get("auth") != "certificate-host"
+        or metadata.get("created_user") is not True
+        or metadata.get("username") != username
+    ):
+        raise SSHFlingError(
+            f"Refusing to delete Unix user {username!r} without a SSHFling-created host-user marker.",
+            2,
+            username=username,
+            marker_path=str(marker_path),
+        )
+    reject_root_equivalent_user_deletion(username, "delete")
+    result = delete_password_user(username, dry_run)
+    result["marker_path"] = str(marker_path)
+    if dry_run:
+        result["would_remove_marker"] = True
+    else:
+        marker_path.unlink(missing_ok=True)
+        result["removed_marker"] = True
+    return result
+
+
 def read_password_grant_metadata(grant_dir, username):
     path = password_grant_metadata_path(grant_dir, username)
     if not path.exists():
@@ -2521,14 +2691,12 @@ def read_password_grant_metadata(grant_dir, username):
 
 def write_password_grant_metadata(grant_dir, username, metadata, dry_run=False):
     path = password_grant_metadata_path(grant_dir, username)
+    reject_symlink_component(path, "write password grant metadata")
     if dry_run:
         return {"path": str(path), "dry_run": True}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.chmod(0o700)
-    tmp_path = path.with_suffix(".json.tmp")
-    tmp_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
-    tmp_path.chmod(0o600)
-    tmp_path.replace(path)
+    write_text_atomic(path, json.dumps(metadata, indent=2, sort_keys=True) + "\n", 0o600, "write password grant metadata")
     return {"path": str(path), "metadata": "written"}
 
 
@@ -2600,6 +2768,7 @@ def remove_empty_dir(path, dry_run=False):
 
 def remove_policy_user(policy_file, username, dry_run=False):
     path = policy_file_path(policy_file)
+    reject_symlink_component(path, "update policy")
     if not path.exists():
         return {"path": str(path), "status": "missing"}
 
@@ -2616,6 +2785,7 @@ def remove_policy_user(policy_file, username, dry_run=False):
         return {"path": str(path), "user": username, "would_remove": True, "dry_run": True}
 
     del policy["users"][username]
+    reject_symlink_component(path, "update policy")
     path.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n")
     path.chmod(0o644)
     return {"path": str(path), "user": username, "removed": True}
@@ -2649,6 +2819,7 @@ def lock_password_user(username, dry_run=False):
 
 
 def delete_password_user(username, dry_run=False):
+    reject_root_equivalent_user_deletion(username, "delete")
     if run(["id", "-u", username], capture=True, check=False).returncode != 0:
         return {"user": username, "status": "missing"}
     if dry_run:
@@ -2708,6 +2879,16 @@ def prune_password_grants(grant_dir, username=None, all_grants=False, delete_use
                     "username": grant_username,
                     "status": "skipped-unmanaged",
                     "reason": "metadata username does not match file name",
+                }
+            )
+            continue
+        if metadata.get("created_user") is True and is_root_equivalent_user(grant_username):
+            results.append(
+                {
+                    "metadata_path": str(path),
+                    "username": grant_username,
+                    "status": "skipped-root-equivalent",
+                    "reason": "refusing to delete root-equivalent Unix user from password grant metadata",
                 }
             )
             continue
@@ -2790,6 +2971,7 @@ def cmd_password_prune(args):
 
 def cmd_host_install(args):
     require_root("host install")
+    validate_unix_username(args.user)
     ca_pub = Path(args.ca_pub).expanduser().resolve()
     if not ca_pub.exists():
         raise SSHFlingError(f"CA public key does not exist: {ca_pub}", 2)
@@ -2799,7 +2981,9 @@ def cmd_host_install(args):
     principals_file = principals_dir / args.user
     wrapper_path = Path(args.session_wrapper).expanduser()
     sshd_config = Path(args.sshd_config).expanduser()
-    principals = args.principal or [args.user]
+    host_user_marker_dir = getattr(args, "host_user_marker_dir", DEFAULT_HOST_USER_MARKER_DIR)
+    marker_path = host_user_marker_path(host_user_marker_dir, args.user)
+    principals = [validate_certificate_principal(principal) for principal in (args.principal or [args.user])]
     principal_lines = "\n".join(dict.fromkeys(principals)) + "\n"
 
     config = f"""# Managed by sshfling.
@@ -2822,6 +3006,10 @@ Match User {args.user}
     installed_access_level = None
     if args.max_time or args.max_connections or requested_access_level:
         rollback_paths.append(policy_file_path(args.policy_file))
+    if args.create_user:
+        rollback_paths.append(marker_path)
+    for managed_path in rollback_paths:
+        reject_symlink_component(managed_path, "manage host install path")
     rollback_snapshots = [] if args.dry_run else [(path, snapshot_file(path)) for path in rollback_paths]
     created_user_for_rollback = False
 
@@ -2859,6 +3047,16 @@ Match User {args.user}
                     password = run(["openssl", "rand", "-base64", "32"], capture=True).stdout.strip()
                     password_hash = run(["openssl", "passwd", "-6", password], capture=True).stdout.strip()
                     run(["usermod", "--password", password_hash, args.user])
+                marker = {
+                    "version": 1,
+                    "managed_by": "sshfling",
+                    "auth": "certificate-host",
+                    "username": args.user,
+                    "created_user": True,
+                    "created_at": int(time.time()),
+                    "created_at_utc": utc_iso(),
+                }
+                results.append(write_host_user_marker(host_user_marker_dir, args.user, marker))
                 results.append({"created_user": args.user})
 
         if not args.dry_run and args.validate:
@@ -2918,12 +3116,13 @@ Match User {args.user}
 
 def cmd_host_uninstall(args):
     require_root("host uninstall")
+    validate_unix_username(args.user)
     trusted_ca = Path(args.trusted_ca).expanduser()
     principals_dir = Path(args.principals_dir).expanduser()
     principals_file = principals_dir / args.user
     wrapper_path = Path(args.session_wrapper).expanduser()
     sshd_config = Path(args.sshd_config).expanduser()
-    principals = args.principal or [args.user]
+    principals = [validate_certificate_principal(principal) for principal in (args.principal or [args.user])]
     principal_lines = "\n".join(dict.fromkeys(principals)) + "\n"
 
     results = [
@@ -2939,7 +3138,7 @@ def cmd_host_uninstall(args):
     if args.remove_policy_user:
         results.append(remove_policy_user(args.policy_file, args.user, args.dry_run))
     if args.delete_user:
-        results.append(delete_password_user(args.user, args.dry_run))
+        results.append(delete_host_user(args.user, getattr(args, "host_user_marker_dir", DEFAULT_HOST_USER_MARKER_DIR), args.dry_run))
 
     if not args.dry_run and args.validate:
         results.append(validate_sshd_effective())
@@ -3075,7 +3274,7 @@ def cmd_serve(args):
 
     allowed = set()
     for raw in args.allowed_principal:
-        allowed.update(part.strip() for part in raw.split(",") if part.strip())
+        allowed.update(validate_certificate_principal(part.strip()) for part in raw.split(",") if part.strip())
     if not allowed:
         raise SSHFlingError("At least one --allowed-principal is required.", 2)
 
@@ -3807,7 +4006,11 @@ def build_parser():
     ca_sub = ca.add_subparsers(dest="ca_command")
     ca_init = ca_sub.add_parser("init", help="Create the SSH user CA keypair.")
     ca_init.add_argument("--ca-key", default=str(default_ca_key_path()), help="CA private key path.")
-    ca_init.add_argument("--force", action="store_true", help="Replace an existing CA keypair.")
+    ca_init.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace an existing CA keypair; requires planned host trust rotation and certificate reissue.",
+    )
     ca_init.set_defaults(func=cmd_ca_init)
 
     cert = subparsers.add_parser("cert", help="Issue temporary SSH user certificates.")
@@ -3858,6 +4061,7 @@ def build_parser():
     host_install.add_argument("--sshd-config", default="/etc/ssh/sshd_config.d/90-sshfling-temp-access.conf", help="Managed sshd config snippet.")
     host_install.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help="Installed session wrapper path.")
     host_install.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help="Installed policy file path.")
+    host_install.add_argument("--host-user-marker-dir", default=DEFAULT_HOST_USER_MARKER_DIR, help=argparse.SUPPRESS)
     host_install.add_argument("--max-time", type=duration_seconds, help="Install a maximum SSH lifetime policy. Hard cap is 24h.")
     host_install.add_argument("--max-connections", type=positive_int, help="Install a maximum active session policy. Hard cap is 10.")
     host_install.add_argument("--access-level", "--role", dest="access_level", help="Install a policy access level for this Unix account. " + access_level_help())
@@ -3874,6 +4078,7 @@ def build_parser():
     host_uninstall.add_argument("--sshd-config", default="/etc/ssh/sshd_config.d/90-sshfling-temp-access.conf", help="Managed sshd config snippet.")
     host_uninstall.add_argument("--session-wrapper", default=DEFAULT_SESSION_WRAPPER, help="Installed session wrapper path.")
     host_uninstall.add_argument("--policy-file", default=DEFAULT_POLICY_FILE, help="Installed policy file path.")
+    host_uninstall.add_argument("--host-user-marker-dir", default=DEFAULT_HOST_USER_MARKER_DIR, help=argparse.SUPPRESS)
     host_uninstall.add_argument("--remove-ca", action="store_true", help="Also remove the installed trusted CA file.")
     host_uninstall.add_argument("--remove-wrapper", action="store_true", help="Also remove the installed session wrapper.")
     host_uninstall.add_argument("--remove-policy-user", action="store_true", help="Remove this user's policy override from the policy file.")

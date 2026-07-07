@@ -324,7 +324,7 @@ require_contains "index.html" "sudo pkgutil --forget io.sshfling.cli"
 require_contains "index.html" "Start-Process msiexec.exe -Wait -ArgumentList"
 require_contains "index.html" "preserve host SSH configuration"
 require_contains "index.html" "Python, OpenSSH, account-management tools, process tools, and util-linux"
-require_not_contains "index.html" 'bash "$tmp/install.sh" uninstall'
+require_not_contains "index.html" "bash \"\$tmp/install.sh\" uninstall"
 require_not_contains "index.html" "uninstall-pkg.sh"
 require_not_contains "index.html" "windows/uninstall.ps1"
 require_not_contains "index.html" "apt-get purge"

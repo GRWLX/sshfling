@@ -45,9 +45,10 @@ sudo sshfling host uninstall --username temp-remote --reload
 sudo systemctl disable --now sshflingd 2>/dev/null || true
 ```
 
-Use `sshfling host uninstall --delete-user` only for Unix accounts created
-solely for SSHFling. Shared CA, wrapper, policy-user, and account removal are
-opt-in host cleanup actions, not package uninstall side effects.
+Use `sshfling host uninstall --delete-user` only for Unix accounts created by
+`sshfling host install --create-user`. SSHFling requires its host-user marker
+before deleting the Unix account. Shared CA, wrapper, policy-user, and account
+removal are opt-in host cleanup actions, not package uninstall side effects.
 
 ## Linux DEB Package
 

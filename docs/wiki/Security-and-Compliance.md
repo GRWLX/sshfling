@@ -115,8 +115,9 @@ For production hosts:
 - Treat `sshfling password prune` as expired-grant cleanup, not as a broad user
   deletion command. It skips active grants, skips unmanaged records, locks
   expired SSHFling-created users by default, deletes those users only with
-  `--delete-users`, and locks/expires existing users explicitly allowed with
-  `--allow-existing-user` without deleting them.
+  `--delete-users`, locks/expires existing users explicitly allowed with
+  `--allow-existing-user` without deleting them, and never deletes
+  root-equivalent users from password-grant metadata or host-user markers.
 - Treat package uninstall as package cleanup only. It removes SSHFling-managed
   package files and repository entries, but preserves host SSH state, password
   grant state, CA material, and `/etc/sshfling` configuration for separate host
@@ -173,6 +174,9 @@ When running `sshfling serve` as a systemd service:
   credential mechanism approved by the platform owner.
 - Keep the CA private key root-owned and only group-readable by `sshflingd` when
   service access is required.
+- Use `sshfling ca init --force` only for a planned CA rotation. It replaces
+  the existing CA keypair, so trusted host CA files and issued certificates must
+  be updated or reissued under the rotation plan.
 - Do not allow the daemon to own or rewrite the CA key, token file, or policy
   file.
 - Restrict network exposure to the intended local or internal interface.

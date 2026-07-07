@@ -27,7 +27,10 @@ Use this checklist before publishing enterprise package artifacts.
 - Use GitHub generated release notes as a starting point, then add a short enterprise-facing summary.
 - Call out security-relevant behavior changes, install or uninstall changes, upgrade impact, policy defaults, and compatibility notes.
 - Confirm access behavior is described accurately: password access is the default, certificate access requires `--certificate`, and certificate-specific setup options are not implicit.
-- Confirm cleanup behavior is described accurately: `password prune` removes expired tracked grants only, `--all` does not remove active grants, `--delete-users` only deletes expired SSHFling-created users, break-glass existing-user grants are locked/expired but not deleted, and package uninstall preserves `/etc/sshfling` configuration without restoring dependency state or original host configuration.
+- Confirm cleanup behavior is described accurately: `password prune` removes expired tracked grants only, `--all` does not remove active grants, `--delete-users` only deletes expired SSHFling-created users, break-glass existing-user grants are locked/expired but not deleted, root-equivalent users are never deleted from password-grant metadata or host-user markers, and package uninstall preserves `/etc/sshfling` configuration without restoring dependency state or original host configuration.
+- Confirm destructive CA operations are described accurately:
+  `sshfling ca init --force` replaces the existing CA keypair and requires a
+  planned host trust update and certificate reissue.
 - Confirm [Install and uninstall runbook](install-uninstall.md) covers every
   advertised channel for the release: Linux DEB/RPM files, signed public APT/RPM
   repos, macOS pkg/Homebrew, Windows MSI/zip/winget/Scoop/Chocolatey,
@@ -83,7 +86,8 @@ Required platform coverage evidence:
 
 ## v0.1.13 Follow-Up Checks
 
-Use this sequence for the `v0.1.13` enterprise release candidate.
+Use this sequence to rebuild or verify `v0.1.13` evidence from the tagged source
+before making an enterprise publication or readiness claim.
 
 ```bash
 git status --short --branch
@@ -108,17 +112,24 @@ tracked source files. If optional external scanners are skipped, record that as
 a release-ticket limitation unless `make release-security-scan-strict` is the
 approved gate.
 
-For `v0.1.12`, GitHub state checked on 2026-07-06 shows a published release and
-asset list, a passing tag-scoped `Release packages without web` run, and a
-passing tag/source-commit `Container image tests` run. It also shows a failed
-tag-scoped `Release packages with public web` run, no tag-scoped `Package
-install tests` run found, and no tag-scoped `Cross OS validation` run found.
-Do not substitute older workflow-dispatch successes from earlier SHAs or
-post-tag GitHub Packages workflow runs as final `v0.1.12` validation unless the
-release ticket explicitly records the mismatch and approval.
+If GHCR images are in scope, attach the GitHub Packages validation run, image
+digests, cosign signing evidence, SBOM/provenance evidence, and the protected
+`github-packages` environment approval or exception.
 
-Do not treat the vNext candidate as publishable until these version-specific
-items are present:
+For `v0.1.13`, GitHub state checked on 2026-07-07 shows a published release and
+asset list, a passing tag/source-commit `Release packages without web` run, a
+passing tag/source-commit `Release packages with public web` verification run,
+and successful GitHub Packages publication from
+`065b03c16a81e9167120e9f41afd4c5e81a79a4a`. The public-web deploy job was
+skipped when package-site publish mode was false, so a Pages deployment URL and
+deployment ID still need separate evidence when the public package site is in
+enterprise scope. `Package install tests` and `Cross OS validation` completed
+with failures for the release commit and require remediation, rerun, or approved
+exceptions before enterprise readiness. Attach the final container image test
+conclusion rather than treating an in-progress run as passing evidence.
+
+Do not treat `v0.1.13` as enterprise-ready until these version-specific items
+are present:
 
 - Clean release commit and matching tag or protected workflow input.
 - `Release packages without web`, `Release packages with public web`, `Package install tests`, `Cross OS validation`, and `Container image tests` run URLs.
@@ -144,6 +155,8 @@ Do not publish an enterprise release until these are fixed or formally excepted:
 - Docs or release notes describe certificate access as the default.
 - Docs or release notes omit that certificate setup requires `--certificate`.
 - Docs or release notes overstate `password prune` cleanup by implying active grants or unmanaged records are removed, or by implying existing users are deleted instead of locked/expired.
+- Docs or release notes mention `sshfling ca init --force` without warning that
+  it replaces the existing CA keypair and requires planned host trust rotation.
 - Docs, release notes, or package metadata imply package uninstall removes `/etc/sshfling` configuration, restores original host SSH configuration, or restores package-manager dependencies such as Python, OpenSSH, account-management tools, `procps`, or `util-linux`.
 - Docs or release notes omit explicit install and uninstall commands for a
   package channel advertised in the release artifacts, package site, or

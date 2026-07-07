@@ -37,6 +37,7 @@ ACTION_DEPLOY_PAGES = "actions/deploy-pages"
 ACTION_UPLOAD_PAGES = "actions/upload-pages-artifact"
 ACTION_RELEASE = "softprops/action-gh-release"
 ACTION_DOCKER_BUILD = "docker/build-push-action"
+ACTION_COSIGN_INSTALLER = "sigstore/cosign-installer"
 
 
 @dataclass
@@ -58,6 +59,7 @@ class Job:
     name: str = ""
     timeout: str = ""
     if_condition: str = ""
+    needs: list[str] = field(default_factory=list)
     permissions: dict[str, str] = field(default_factory=dict)
     steps: list[Step] = field(default_factory=list)
 
@@ -153,6 +155,25 @@ def parse_with_fields(step_lines: list[str]) -> dict[str, str]:
     return fields
 
 
+def parse_needs(job_lines: list[str]) -> list[str]:
+    needs: list[str] = []
+    for index, line in enumerate(job_lines):
+        match = re.match(r"^ {4}needs:\s*(.*?)\s*$", line)
+        if not match:
+            continue
+        scalar = strip_comment_value(match.group(1))
+        if scalar:
+            return [part.strip() for part in scalar.strip("[]").split(",") if part.strip()]
+        for child in job_lines[index + 1 :]:
+            if child.strip() and indent_of(child) <= 4:
+                break
+            child_match = re.match(r"^ {6}-\s*([A-Za-z0-9_-]+)\s*$", child)
+            if child_match:
+                needs.append(child_match.group(1))
+        return needs
+    return needs
+
+
 def parse_step(step_lines: list[str], line_number: int) -> Step:
     text = "\n".join(step_lines)
     step = Step(line=line_number, text=text)
@@ -215,6 +236,7 @@ def parse_jobs(lines: list[str]) -> dict[str, Job]:
             name=extract_key(job_lines, "name", 4),
             timeout=extract_key(job_lines, "timeout-minutes", 4),
             if_condition=extract_key(job_lines, "if", 4),
+            needs=parse_needs(job_lines),
             permissions=parse_mapping(job_lines, "permissions", 4),
             steps=parse_steps(job_lines, start + 1),
         )
@@ -431,6 +453,23 @@ def require_order(workflow: Workflow, text: str, first: str, second: str, messag
     return [f"{workflow_ref(workflow)}: {message}"]
 
 
+def is_true_field(value: str) -> bool:
+    return value.strip().lower() == "true"
+
+
+def step_block_has_exit(step: Step, marker: str) -> bool:
+    start = step.text.find(marker)
+    if start < 0:
+        return False
+    next_branch_positions = [
+        position
+        for position in (step.text.find(token, start + len(marker)) for token in ("\n          elif ", "\n          if ", "\n          fi"))
+        if position >= 0
+    ]
+    end = min(next_branch_positions) if next_branch_positions else len(step.text)
+    return re.search(r"\bexit\s+[1-9][0-9]*\b", step.text[start:end]) is not None
+
+
 def workflow_has_tag_push(workflow: Workflow) -> bool:
     return "push:" in workflow.text and "tags:" in workflow.text and re.search(r"""['"]v\*['"]""", workflow.text)
 
@@ -492,16 +531,11 @@ def check_public_package_gate(workflow: Workflow) -> list[str]:
         return errors
     if not deploy_pages:
         errors.append(f"{workflow_ref(workflow)}: public package workflow is missing deploy-pages job")
-    for dependency in ("linux", "macos", "windows"):
-        if not re.search(rf"^\s+-\s+{re.escape(dependency)}\s*$", package_web.text, re.MULTILINE):
-            errors.append(f"{job_ref(workflow, package_web)}: package-web job must need {dependency}")
+    if set(package_web.needs) != {"linux", "macos", "windows"}:
+        errors.append(f"{job_ref(workflow, package_web)}: package-web job must need exactly linux, macos, and windows")
 
     package_checks = {
         "publish output": "publish: ${{ steps.package_site_mode.outputs.publish }}",
-        "tag-only publish gate": '"$REF_TYPE" != "tag"',
-        "private signing key gate": "SSHFLING_REPO_GPG_PRIVATE_KEY",
-        "fingerprint gate": "SSHFLING_REPO_GPG_FINGERPRINT",
-        "ephemeral key publish block": "Ephemeral repository signing keys are not allowed",
         "public package verification": "packaging/verify-public-web.sh",
         "package-site evidence generation": "--mode package-site",
         "package-site evidence validation": "release-matrix-validate",
@@ -511,7 +545,36 @@ def check_public_package_gate(workflow: Workflow) -> list[str]:
     for label, needle in package_checks.items():
         errors.extend(require_text(workflow, package_web.text, needle, f"package-web job is missing {label}"))
 
+    mode_steps = [step for step in package_web.steps if step.step_id == "package_site_mode"]
+    if not mode_steps:
+        errors.append(f"{job_ref(workflow, package_web)}: package-web job must have a package_site_mode step")
+    for step in mode_steps:
+        mode_checks = {
+            "private signing key input": "SSHFLING_REPO_GPG_PRIVATE_KEY",
+            "fingerprint input": "SSHFLING_REPO_GPG_FINGERPRINT",
+            "tag-only publish gate": '"$REF_TYPE" != "tag"',
+            "stable private key and fingerprint publish branch": '"$HAS_REPO_GPG_PRIVATE_KEY" == "true" && "$HAS_REPO_GPG_FINGERPRINT" == "true"',
+            "stable signature requirement output": "require_repo_signatures=true",
+            "publish output": "echo \"publish=$publish\"",
+            "signature requirement output": "echo \"require_repo_signatures=$require_repo_signatures\"",
+        }
+        for label, needle in mode_checks.items():
+            if needle not in step.text:
+                errors.append(f"{step_ref(workflow, step)}: package site mode step is missing {label}")
+        exit_markers = {
+            "non-tag publish": '"$requested_publish" == "true" && "$REF_TYPE" != "tag"',
+            "tag push without stable signing secrets": '"$requested_publish" == "true" && "$EVENT_NAME" == "push"',
+            "manual publish without private key": '"$requested_publish" == "true" && "$EVENT_NAME" == "workflow_dispatch" && "$HAS_REPO_GPG_PRIVATE_KEY" != "true"',
+            "manual publish without fingerprint": '"$requested_publish" == "true" && "$EVENT_NAME" == "workflow_dispatch" && "$HAS_REPO_GPG_FINGERPRINT" != "true"',
+            "generated test signing key publish": '"$publish" == "true" && "$GENERATE_TEST_SIGNING_KEY" == "true"',
+        }
+        for label, marker in exit_markers.items():
+            if not step_block_has_exit(step, marker):
+                errors.append(f"{step_ref(workflow, step)}: package site mode step must fail closed for {label}")
+
     if deploy_pages:
+        if "package-web" not in deploy_pages.needs:
+            errors.append(f"{job_ref(workflow, deploy_pages)}: deploy-pages job must need package-web")
         if "needs.package-web.outputs.publish == 'true'" not in deploy_pages.if_condition:
             errors.append(f"{job_ref(workflow, deploy_pages)}: deploy-pages job must be gated by package-web publish output")
         deploy_checks = {
@@ -533,8 +596,8 @@ def check_github_packages_gate(workflow: Workflow) -> list[str]:
     errors: list[str] = []
     if not workflow_has_tag_push(workflow):
         errors.append(f"{workflow_ref(workflow)}: GitHub Packages workflow must run on v* tag pushes")
-    if not has_permission(workflow, None, "packages", "write"):
-        errors.append(f"{workflow_ref(workflow)}: GitHub Packages workflow requires packages: write")
+    if "branches:" in workflow.text:
+        errors.append(f"{workflow_ref(workflow)}: GitHub Packages workflow must not publish from branch pushes")
     errors.extend(require_text(workflow, workflow.text, "GITHUB_REF_TYPE", "GitHub Packages workflow is missing tag/version gate"))
     errors.extend(require_text(workflow, workflow.text, "GITHUB_REF_NAME", "GitHub Packages workflow is missing tag/version gate"))
     errors.extend(
@@ -545,6 +608,82 @@ def check_github_packages_gate(workflow: Workflow) -> list[str]:
             "GitHub Packages latest tag must only be enabled for tag refs",
         )
     )
+    validate = workflow.jobs.get("validate")
+    publish = workflow.jobs.get("publish")
+    if not validate:
+        errors.append(f"{workflow_ref(workflow)}: GitHub Packages workflow is missing validate job")
+    if not publish:
+        errors.append(f"{workflow_ref(workflow)}: GitHub Packages workflow is missing publish job")
+        return errors
+
+    if validate:
+        validate_checks = {
+            "source tests": "make test",
+            "release security evidence": "make release-security-scan",
+            "release evidence validation": "make release-security-evidence-validate",
+            "container lifecycle matrix": "make test-containers",
+        }
+        for label, needle in validate_checks.items():
+            errors.extend(require_text(workflow, validate.text, needle, f"validate job is missing {label}"))
+
+    required_needs = {"resolve", "validate"}
+    if set(publish.needs) != required_needs:
+        errors.append(f"{job_ref(workflow, publish)}: publish job must need exactly resolve and validate")
+    if "name: github-packages" not in publish.text:
+        errors.append(f"{job_ref(workflow, publish)}: publish job must use the github-packages environment")
+    if not has_permission(workflow, publish, "id-token", "write"):
+        errors.append(f"{job_ref(workflow, publish)}: publish job requires id-token: write for keyless signing")
+    if not has_permission(workflow, publish, "packages", "write"):
+        errors.append(f"{job_ref(workflow, publish)}: publish job requires packages: write")
+    if "type=ref,event=branch" in publish.text:
+        errors.append(f"{job_ref(workflow, publish)}: publish job must not emit mutable branch image tags")
+
+    build_steps = [step for step in publish.steps if short_action(step.uses) == ACTION_DOCKER_BUILD]
+    if not build_steps:
+        errors.append(f"{job_ref(workflow, publish)}: publish job must build and push images")
+    for step in build_steps:
+        if step.step_id != "build":
+            errors.append(f"{step_ref(workflow, step)}: docker build step must use id: build for digest signing")
+        for field in ("push", "provenance", "sbom"):
+            if not is_true_field(step.with_fields.get(field, "")):
+                errors.append(f"{step_ref(workflow, step)}: docker build step must set {field}: true")
+
+    cosign_steps = [step for step in publish.steps if short_action(step.uses) == ACTION_COSIGN_INSTALLER]
+    if not cosign_steps:
+        errors.append(f"{job_ref(workflow, publish)}: publish job must install cosign for image signing")
+    for step in cosign_steps:
+        if not re.search(r"@(?:v\d+\.\d+\.\d+|[0-9a-fA-F]{40})$", step.uses):
+            errors.append(f"{step_ref(workflow, step)}: cosign installer must be pinned to an exact version tag or commit SHA")
+    if "steps.build.outputs.digest" not in publish.text:
+        errors.append(f"{job_ref(workflow, publish)}: publish job must sign the pushed image digest")
+    if "cosign sign --yes" not in publish.text:
+        errors.append(f"{job_ref(workflow, publish)}: publish job must sign pushed image digests")
+    return errors
+
+
+def check_docs_against_workflows(repo_root: Path, workflows: list[Workflow]) -> list[str]:
+    errors: list[str] = []
+    github_packages = next((workflow for workflow in workflows if workflow.path.name == "github-packages.yml"), None)
+    if not github_packages:
+        return errors
+    if "sigstore/cosign-installer@" not in github_packages.text or "name: github-packages" not in github_packages.text:
+        return errors
+
+    doc_path = repo_root / "docs" / "enterprise-readiness.md"
+    if not doc_path.exists():
+        return errors
+    doc_text = doc_path.read_text(encoding="utf-8")
+    stale_phrases = [
+        "pushes to `main`",
+        "branch/ref",
+        "does not define a protected environment",
+        "not a source-defined publication gate",
+    ]
+    for phrase in stale_phrases:
+        index = doc_text.find(phrase)
+        if index >= 0:
+            line = line_number_for_offset(doc_text, index)
+            errors.append(f"{doc_path.as_posix()}:{line}: stale GHCR documentation phrase after source publish gates were added: {phrase}")
     return errors
 
 
@@ -598,6 +737,7 @@ def main(argv: list[str]) -> int:
         workflow_errors, workflow_warnings = check_workflow(workflow, args.strict_timeouts)
         errors.extend(workflow_errors)
         warnings.extend(workflow_warnings)
+    errors.extend(check_docs_against_workflows(repo_root, workflows))
 
     if warnings:
         print("workflow static check warnings:", file=sys.stderr)
