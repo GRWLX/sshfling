@@ -25,6 +25,21 @@ PASS = "PASS"
 FAIL = "FAIL"
 BLOCKED = "BLOCKED"
 SKIPPED = "SKIPPED"
+UNSUPPORTED = "UNSUPPORTED"
+EXPERIMENTAL = "EXPERIMENTAL"
+NOT_APPLICABLE = "NOT_APPLICABLE"
+FUTURE_WORK = "FUTURE_WORK"
+NON_PASS_STATUSES_WITH_REQUIRED_REASON = {BLOCKED, UNSUPPORTED, EXPERIMENTAL, FUTURE_WORK}
+KNOWN_STATUSES = {
+    PASS,
+    FAIL,
+    BLOCKED,
+    SKIPPED,
+    UNSUPPORTED,
+    EXPERIMENTAL,
+    NOT_APPLICABLE,
+    FUTURE_WORK,
+}
 DEFAULT_VALIDATION_MATRIX = "docs/release/enterprise-release-evidence/security-scans/security-scan-matrix.csv"
 DEFAULT_VALIDATION_MANIFEST = "docs/release/enterprise-release-evidence/security-scans/security-scan-manifest.json"
 DEFAULT_GENERATED_MANIFEST = "docs/release/evidence-manifest.json"
@@ -90,6 +105,38 @@ def load_manifest(path: Path) -> dict[str, dict[str, Any]]:
             raise SystemExit(f"duplicate evidence_id in manifest: {evidence_id}")
         by_id[evidence_id] = item
     return by_id
+
+
+def repo_relative_if_inside(path: Path, repo_root: Path) -> str | None:
+    try:
+        return path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        return None
+
+
+def paired_manifest_for_matrix(matrix_path: Path) -> Path | None:
+    suffix = "-matrix.csv"
+    if not matrix_path.name.endswith(suffix):
+        return None
+    return matrix_path.with_name(matrix_path.name[: -len(suffix)] + "-manifest.json")
+
+
+def resolve_manifest_path(manifest_path: Path, matrix_path: Path, repo_root: Path) -> Path:
+    if manifest_path.exists():
+        return manifest_path
+    if repo_relative_if_inside(manifest_path, repo_root) != DEFAULT_GENERATED_MANIFEST:
+        return manifest_path
+
+    paired_manifest = paired_manifest_for_matrix(matrix_path)
+    if paired_manifest and paired_manifest.exists():
+        rel = repo_relative_if_inside(paired_manifest, repo_root) or str(paired_manifest)
+        print(
+            f"using paired generated manifest for {DEFAULT_GENERATED_MANIFEST}: {rel}",
+            file=sys.stderr,
+        )
+        return paired_manifest
+
+    return manifest_path
 
 
 def file_sha256(path: Path) -> str:
@@ -288,7 +335,7 @@ def validate_matrix(
             "Generate release evidence first, for example with `make release-security-scan`, "
             "or pass --matrix and --manifest for a generated artifact matrix."
         )
-    manifest = load_manifest(manifest_path)
+    manifest = load_manifest(resolve_manifest_path(manifest_path, matrix_path, repo_root))
     counts: Counter[str] = Counter()
     errors: list[str] = []
     hash_cache: dict[Path, str] = {}
@@ -320,17 +367,17 @@ def validate_matrix(
 
             if status == PASS:
                 row_errors.extend(validate_pass_row(row, manifest, repo_root, hash_cache))
-            elif status == BLOCKED:
+            elif status in NON_PASS_STATUSES_WITH_REQUIRED_REASON:
                 reason = row.get("blocker_reason", "").strip()
                 if not reason or reason in {"NONE", "NOT_APPLICABLE", "TBD"}:
-                    row_errors.append(f"{display_row_id}: BLOCKED row is missing blocker_reason")
+                    row_errors.append(f"{display_row_id}: {status} row is missing blocker_reason")
             elif status == FAIL:
                 actual = row.get("actual_result", "").strip()
                 if not actual or actual in {"NONE", "NOT_APPLICABLE", "TBD"}:
                     row_errors.append(f"{display_row_id}: FAIL row is missing actual_result")
-            elif status == SKIPPED:
+            elif status in {SKIPPED, NOT_APPLICABLE}:
                 pass
-            else:
+            elif status not in KNOWN_STATUSES:
                 row_errors.append(f"{display_row_id}: unsupported status {status or '<blank>'}")
 
             if require_pass and status != PASS:

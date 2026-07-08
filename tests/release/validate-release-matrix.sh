@@ -65,6 +65,40 @@ python3 "$repo_root/tools/release_matrix_validate.py" \
   --manifest "$tmpdir/pass-manifest.json" \
   --max-errors 5 >/tmp/sshfling-release-matrix-pass.log
 
+legacy_repo="$tmpdir/legacy-repo"
+legacy_scan_dir="$legacy_repo/docs/release/enterprise-release-evidence/security-scans"
+legacy_evidence_dir="$legacy_repo/evidence"
+mkdir -p "$legacy_scan_dir" "$legacy_evidence_dir"
+printf 'validated legacy manifest alias evidence\n' >"$legacy_evidence_dir/pass.log"
+legacy_sha="$(sha256sum "$legacy_evidence_dir/pass.log" | awk '{print $1}')"
+legacy_ref="evidence/pass.log"
+cat >"$legacy_scan_dir/security-scan-matrix.csv" <<CSV
+row_id,readiness_status,result,evidence_ref,evidence_sha256,source_commit,blocker_reason,actual_result
+SEC-LEGACY,PASS,pass,$legacy_ref,$legacy_sha,abc123,NOT_APPLICABLE,NOT_APPLICABLE
+CSV
+cat >"$legacy_scan_dir/security-scan-manifest.json" <<JSON
+{
+  "schema_version": 1,
+  "evidence": [
+    {
+      "evidence_id": "$legacy_ref",
+      "evidence_ref": "$legacy_ref",
+      "artifact_path": "$legacy_ref",
+      "sha256": "$legacy_sha",
+      "source_commit": "abc123",
+      "result": "pass",
+      "rows": ["SEC-LEGACY"]
+    }
+  ]
+}
+JSON
+python3 "$repo_root/tools/release_matrix_validate.py" \
+  --repo-root "$legacy_repo" \
+  --manifest docs/release/evidence-manifest.json \
+  --max-errors 5 >/tmp/sshfling-release-matrix-legacy-manifest-alias.log 2>&1
+test ! -e "$legacy_repo/docs/release/evidence-manifest.json"
+grep -Fq "using paired generated manifest" /tmp/sshfling-release-matrix-legacy-manifest-alias.log
+
 {
   echo "row_id,readiness_status,result,evidence_ref,evidence_sha256,source_commit,blocker_reason,actual_result"
   printf 'row-one,PASS,pass,%s,%s,abc123,NOT_APPLICABLE,NOT_APPLICABLE\n' "$evidence_ref" "$evidence_sha"
@@ -284,6 +318,20 @@ python3 "$repo_root/tools/release_matrix_validate.py" \
   --matrix "$tmpdir/blocked.csv" \
   --manifest "$tmpdir/blocked-manifest.json" \
   --max-errors 5 >/tmp/sshfling-release-matrix-blocked-shape.log
+
+{
+  echo "row_id,readiness_status,result,evidence_ref,evidence_sha256,source_commit,blocker_reason,actual_result"
+  printf 'row-unsupported,UNSUPPORTED,unsupported,NONE,NONE,abc123,target outside supported package scope,NOT_APPLICABLE\n'
+  printf 'row-experimental,EXPERIMENTAL,experimental,NONE,NONE,abc123,community target requires ecosystem maintainer review,NOT_APPLICABLE\n'
+  printf 'row-na,NOT_APPLICABLE,not_applicable,NONE,NONE,abc123,NOT_APPLICABLE,NOT_APPLICABLE\n'
+  printf 'row-future,FUTURE_WORK,future_work,NONE,NONE,abc123,future platform not claimed for this release,NOT_APPLICABLE\n'
+} >"$tmpdir/non-pass-readiness-statuses.csv"
+python3 "$repo_root/tools/release_matrix_validate.py" \
+  --repo-root "$repo_root" \
+  --matrix "$tmpdir/non-pass-readiness-statuses.csv" \
+  --manifest "$tmpdir/blocked-manifest.json" \
+  --max-errors 5 >/tmp/sshfling-release-matrix-non-pass-statuses.log
+
 if python3 "$repo_root/tools/release_matrix_validate.py" \
   --repo-root "$repo_root" \
   --matrix "$tmpdir/blocked.csv" \

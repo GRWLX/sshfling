@@ -67,6 +67,16 @@ EXCLUDED_DIRS = {
     "package-dist",
     "release-dist",
 }
+OPTIONAL_SCANNER_EXCLUDED_PATHS = [
+    ".git",
+    "build",
+    "dist",
+    "public",
+    "package-dist",
+    "release-dist",
+    "packaging/dotnet/SSHFling.Tool/bin",
+    "packaging/dotnet/SSHFling.Tool/obj",
+]
 
 TEXT_SCAN_MAX_BYTES = 2 * 1024 * 1024
 
@@ -1311,6 +1321,8 @@ def optional_tool_results(
     python_paths = [repo_relative(path, repo_root) for path in python_files(files)]
     docker_paths = [repo_relative(path, repo_root) for path in dockerfiles(files)]
     systemd_paths = [repo_relative(path, repo_root) for path in systemd_units(files)]
+    syft_excludes = [f"./{path}" for path in OPTIONAL_SCANNER_EXCLUDED_PATHS]
+    trivy_skip_dirs = OPTIONAL_SCANNER_EXCLUDED_PATHS
 
     if shell_paths:
         tools.append(
@@ -1395,18 +1407,7 @@ def optional_tool_results(
                     "dir:.",
                     "-o",
                     f"spdx-json={tool_dir / 'syft.spdx.json'}",
-                    "--exclude",
-                    "./.git",
-                    "--exclude",
-                    "./build",
-                    "--exclude",
-                    "./dist",
-                    "--exclude",
-                    "./public",
-                    "--exclude",
-                    "./package-dist",
-                    "--exclude",
-                    "./release-dist",
+                    *[part for path in syft_excludes for part in ("--exclude", path)],
                 ],
                 "output": tool_dir / "syft.log",
             },
@@ -1434,18 +1435,7 @@ def optional_tool_results(
                     "json",
                     "--output",
                     str(tool_dir / "trivy-fs.json"),
-                    "--skip-dirs",
-                    ".git",
-                    "--skip-dirs",
-                    "build",
-                    "--skip-dirs",
-                    "dist",
-                    "--skip-dirs",
-                    "public",
-                    "--skip-dirs",
-                    "package-dist",
-                    "--skip-dirs",
-                    "release-dist",
+                    *[part for path in trivy_skip_dirs for part in ("--skip-dirs", path)],
                     ".",
                 ],
                 "output": tool_dir / "trivy-fs.log",
@@ -2091,7 +2081,7 @@ def main() -> int:
     parser.add_argument("--allow-dirty", action="store_true", help="permit non-release evidence from a dirty working tree")
     parser.add_argument("--run-optional-tools", action="store_true")
     parser.add_argument("--strict-optional-tools", action="store_true")
-    parser.add_argument("--optional-timeout-seconds", type=int, default=180)
+    parser.add_argument("--optional-timeout-seconds", type=int, default=600)
     args = parser.parse_args()
     return generate(args)
 

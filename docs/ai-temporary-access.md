@@ -18,6 +18,21 @@ SSHFling avoids that pattern. It lets an administrator issue access for a narrow
 4. The server-side forced command enforces the wall-clock limit even if the connection is already open.
 5. The operator can list or kill active sessions with `sudo sshfling list`, `sudo sshfling -k ticket-1234`, or `sudo sshfling shutdown`.
 
+For file movement during that window, use the same temporary username with
+native transfer wrappers:
+
+```bash
+sshfling scp ./diagnostics.sh ticket-1234@host.example.com:/tmp/diagnostics.sh
+sshfling rsync --recursive --preserve ./patch/ ticket-1234@host.example.com:/tmp/patch/
+```
+
+These are normal temporary SSH sessions under the same timeout and connection
+policy. `sshfling scp` uses OpenSSH scp and can preserve mode/mtime with
+`--preserve`; it cannot preserve or set owner/group. `sshfling rsync` requires
+rsync on both ends and can request `--mode`, `--chown`, or `--owner-group` only
+when the receiving account has permission. Without preserve or explicit mode
+controls, target umask and filesystem policy decide the final mode and mtime.
+
 For longer enterprise workflows, SSHFling can issue access up to 24 hours. Active session JSON includes the wrapper PID and child process PID fields for operational tracking. If Codex or another tool needs to continue after the SSH connection closes, start it with `sshfling detached start` or hand it to a host supervisor such as systemd or tmux, then track that detached PID and logs. See [Codex and enterprise detached workflows](codex-enterprise-workflow.md).
 
 For environments that require OpenSSH user certificates instead of generated local passwords, an operator can use explicit certificate mode:

@@ -9,8 +9,10 @@ RELEASE_SECURITY_SCAN_FLAGS ?=
 RELEASE_SECURITY_LOCAL_OUTPUT_DIR ?= build/release-security-local
 RELEASE_MATRIX_VALIDATE_FLAGS ?=
 RELEASE_SCANNER_BIN_DIR ?= $(if $(RUNNER_TEMP),$(RUNNER_TEMP),$(CURDIR)/build)/release-scanners/bin
+ENTERPRISE_RELEASE_OUTPUT_DIR ?= docs/release
+ENTERPRISE_RELEASE_EVIDENCE_DIR ?= docs/release/enterprise-release-evidence
 
-.PHONY: install-local uninstall-local test test-containers test-release-security-scan release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet clean
+.PHONY: install-local uninstall-local test test-containers test-release-security-scan release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-readiness-artifacts release-readiness-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet clean
 
 install-local:
 	install -d "$(PREFIX)/bin" "$(TEMPLATE_DIR)/scripts" "$(TEMPLATE_DIR)/secrets" "$(TEMPLATE_DIR)/ssh-client" "$(TEMPLATE_DIR)/ssh-server" "$(TEMPLATE_DIR)/production" "$(TEMPLATE_DIR)/systemd"
@@ -29,10 +31,10 @@ uninstall-local:
 	PREFIX="$(PREFIX)" bash scripts/uninstall-local.sh
 
 test:
-	python3 -m py_compile bin/sshfling tools/release_matrix_validate.py tools/generate_release_evidence.py tools/release_security_scan.py tools/workflow_static_check.py
+	python3 -m py_compile bin/sshfling tools/release_matrix_validate.py tools/generate_release_evidence.py tools/generate_enterprise_release_readiness.py tools/release_security_scan.py tools/workflow_static_check.py
 	python3 -m unittest discover -s tests/release -p 'test_*.py'
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
-	bash -n scripts/install-local.sh scripts/uninstall-local.sh scripts/create-network.sh scripts/generate-ssh-key.sh ssh-client/entrypoint.sh ssh-server/entrypoint.sh ssh-server/limited-session.sh production/sshfling-session packaging/*.sh tests/release/*.sh
+	bash -n scripts/install-local.sh scripts/uninstall-local.sh scripts/create-network.sh scripts/generate-ssh-key.sh ssh-client/entrypoint.sh ssh-server/entrypoint.sh ssh-server/limited-session.sh production/sshfling-session packaging/*.sh tools/provision-release-scanners.sh tests/release/*.sh
 	python3 tools/workflow_static_check.py --strict-timeouts
 	sh tests/cross-os/validate-cli.sh ./bin/sshfling "$(VERSION)"
 	bash tests/release/validate-release-matrix.sh
@@ -65,6 +67,12 @@ release-security-scan-strict:
 
 release-security-evidence-validate:
 	python3 tools/release_matrix_validate.py --matrix "$(RELEASE_SECURITY_EVIDENCE_OUTPUT_DIR)/security-scan-matrix.csv" --manifest "$(RELEASE_SECURITY_EVIDENCE_OUTPUT_DIR)/security-scan-manifest.json" $(RELEASE_MATRIX_VALIDATE_FLAGS)
+
+release-readiness-artifacts:
+	python3 tools/generate_enterprise_release_readiness.py --version "$(VERSION)" --output-dir "$(ENTERPRISE_RELEASE_OUTPUT_DIR)" --evidence-dir "$(ENTERPRISE_RELEASE_EVIDENCE_DIR)"
+
+release-readiness-validate:
+	python3 tools/release_matrix_validate.py --matrix "$(ENTERPRISE_RELEASE_OUTPUT_DIR)/enterprise-release-matrix.csv" --manifest "$(ENTERPRISE_RELEASE_EVIDENCE_DIR)/enterprise-readiness-manifest.json" $(RELEASE_MATRIX_VALIDATE_FLAGS)
 
 release-matrix-validate:
 	@if [ "$(RELEASE_MATRIX)" = "$(RELEASE_SECURITY_EVIDENCE_OUTPUT_DIR)/security-scan-matrix.csv" ] && [ "$(RELEASE_MANIFEST)" = "$(RELEASE_SECURITY_EVIDENCE_OUTPUT_DIR)/security-scan-manifest.json" ]; then \

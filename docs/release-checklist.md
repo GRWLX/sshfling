@@ -162,8 +162,8 @@ are present:
 - Production APT/RPM signing-key fingerprint and evidence that generated test signing keys were not used.
 - macOS notarization and Windows Authenticode evidence, or approved exception records with expiration and re-test dates.
 - Runtime behavior docs and release notes matching password default, explicit
-  certificate mode, prune semantics, package-created account identity safety,
-  and uninstall scope.
+  certificate mode, transfer permission controls, prune semantics,
+  package-created account identity safety, and uninstall scope.
 
 Historical `v0.1.13` state checked on 2026-07-07 showed a published release and
 asset list, a passing tag/source-commit `Release packages without web` run, a
@@ -191,6 +191,10 @@ Do not publish an enterprise release until these are fixed or formally excepted:
 - Docs or release notes describe certificate access as the default.
 - Docs or release notes omit that certificate setup requires `--certificate`.
 - Docs or release notes overstate `password prune` cleanup by implying active grants or unmanaged records are removed, or by implying existing users are deleted instead of locked/expired.
+- Docs or release notes overstate transfer behavior by implying `scp` can set
+  owner/group or arbitrary modes, implying `rsync` is bundled, or omitting that
+  target umask, account privileges, symlink behavior, timeout, and partial-file
+  failure modes affect transfer results.
 - Docs or release notes mention `sshfling ca init --force` without warning that
   it replaces the existing CA keypair and requires planned host trust rotation.
 - Docs, release notes, or package metadata imply package uninstall removes `/etc/sshfling` configuration, restores original host SSH configuration, or restores package-manager dependencies such as Python, OpenSSH, account-management tools, `procps`, or `util-linux`.

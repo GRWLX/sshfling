@@ -186,6 +186,10 @@ class ReleaseSecurityScanTests(unittest.TestCase):
             self.assertIn("--failure-threshold", by_name["hadolint"]["command"])
             self.assertIn("error", by_name["hadolint"]["command"])
             self.assertEqual(by_name["osv-scanner"]["exit_code"], "not_run")
+            self.assertIn("./packaging/dotnet/SSHFling.Tool/bin", by_name["syft"]["command"])
+            self.assertIn("./packaging/dotnet/SSHFling.Tool/obj", by_name["syft"]["command"])
+            self.assertIn("packaging/dotnet/SSHFling.Tool/bin", by_name["trivy-fs"]["command"])
+            self.assertIn("packaging/dotnet/SSHFling.Tool/obj", by_name["trivy-fs"]["command"])
 
     def test_trivy_policy_allows_documented_root_container_exceptions_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

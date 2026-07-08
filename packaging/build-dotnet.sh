@@ -14,6 +14,9 @@ if ! command -v "$dotnet_cmd" >/dev/null 2>&1; then
   exit 127
 fi
 dotnet_resolved="$(command -v "$dotnet_cmd")"
+if command -v readlink >/dev/null 2>&1; then
+  dotnet_resolved="$(readlink -f "$dotnet_resolved")"
+fi
 dotnet_root="$(cd "$(dirname "$dotnet_resolved")" && pwd)"
 
 project="$repo_root/packaging/dotnet/SSHFling.Tool/SSHFling.Tool.csproj"

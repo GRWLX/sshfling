@@ -27,6 +27,9 @@ agreement from GRWLX.
   account-management tools, `procps`, or `util-linux`. Generated community
   manifests need ecosystem-specific review because not every package manager
   has the same config-preservation semantics.
+- `sshfling scp` uses the platform OpenSSH client. `sshfling rsync` is an
+  optional transfer path and requires `rsync` on the client and target host; it
+  is not bundled, pinned, installed, or removed by SSHFling package uninstall.
 - For production macOS pkg distribution, require an Apple Developer ID Installer
   signature, notarization, stapling verification, and release-ticket evidence,
   or record a time-bound exception before deployment.

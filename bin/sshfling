@@ -1384,6 +1384,8 @@ def maybe_connect_argv(argv):
         "package",
         "password",
         "detached",
+        "scp",
+        "rsync",
         "_detached-supervisor",
     }
     for index, token in enumerate(argv):
@@ -1420,6 +1422,8 @@ def audit_command_name(argv):
         "package",
         "password",
         "detached",
+        "scp",
+        "rsync",
     }
     for token in argv:
         if token == "--":
@@ -1441,17 +1445,7 @@ def audit_command_name(argv):
 
 def cmd_connect(before_args, target, after_args):
     ssh_bin = os.environ.get("SSHFLING_SSH_BIN", "ssh")
-    ssh_args = [
-        ssh_bin,
-        "-o",
-        "PreferredAuthentications=password,keyboard-interactive",
-        "-o",
-        "PubkeyAuthentication=no",
-        "-o",
-        "ForwardAgent=no",
-        "-o",
-        "ClearAllForwardings=yes",
-    ] + before_args + [target] + after_args
+    ssh_args = [ssh_bin] + password_transfer_ssh_options() + before_args + [target] + after_args
     target_user, target_host = target.split("@", 1)
     audit_log(
         "client_connect",
@@ -1469,6 +1463,153 @@ def cmd_connect(before_args, target, after_args):
         os.execvp(ssh_bin, ssh_args)
     except FileNotFoundError as exc:
         raise SSHFlingError(f"Missing command: {ssh_bin}", 127) from exc
+
+
+def password_transfer_ssh_options(extra_options=None):
+    options = [
+        "-o",
+        "PreferredAuthentications=password,keyboard-interactive",
+        "-o",
+        "PubkeyAuthentication=no",
+        "-o",
+        "ForwardAgent=no",
+        "-o",
+        "ClearAllForwardings=yes",
+    ]
+    for option in extra_options or []:
+        options.extend(["-o", option])
+    return options
+
+
+def transfer_dry_run_enabled(args):
+    return bool(getattr(args, "dry_run", False) or env_truthy("SSHFLING_TRANSFER_DRY_RUN"))
+
+
+def require_transfer_paths(paths, command_name):
+    if len(paths) < 2:
+        raise SSHFlingError(f"sshfling {command_name} requires at least one source and one destination.", 2)
+    return paths[:-1], paths[-1]
+
+
+def executable_exists(program):
+    if not program:
+        return False
+    if os.path.dirname(program):
+        path = Path(program)
+        return path.is_file() and os.access(path, os.X_OK)
+    return command_path(program) is not None
+
+
+def validate_rsync_permission_value(value, label):
+    value = str(value or "").strip()
+    if not value:
+        raise SSHFlingError(f"{label} must not be empty.", 2)
+    if any(ch.isspace() for ch in value):
+        raise SSHFlingError(f"{label} must not contain whitespace.", 2, value=value)
+    return value
+
+
+def cmd_scp(args):
+    sources, destination = require_transfer_paths(args.paths, "scp")
+    if args.mode:
+        raise SSHFlingError(
+            "sshfling scp cannot safely set explicit destination modes. Use `sshfling rsync --mode ...` for mode rewriting.",
+            2,
+        )
+    if args.chown or args.owner_group:
+        raise SSHFlingError(
+            "sshfling scp cannot safely preserve or set owner/group. Use `sshfling rsync --owner-group` or `sshfling rsync --chown USER:GROUP` with a permitted account.",
+            2,
+        )
+
+    scp_bin = os.environ.get("SSHFLING_SCP_BIN", "scp")
+    scp_args = [scp_bin]
+    if not args.sftp:
+        scp_args.append("-O")
+    if args.recursive:
+        scp_args.append("-r")
+    if args.preserve:
+        scp_args.append("-p")
+    if args.port:
+        scp_args.extend(["-P", str(args.port)])
+    scp_args.extend(password_transfer_ssh_options(args.ssh_option))
+    scp_args.extend(sources)
+    scp_args.append(destination)
+
+    audit_log(
+        "client_scp",
+        source_count=len(sources),
+        recursive=args.recursive,
+        preserve=args.preserve,
+        port=args.port,
+        sftp=args.sftp,
+    )
+
+    if transfer_dry_run_enabled(args):
+        print(shlex.join(scp_args))
+        return 0
+
+    try:
+        os.execvp(scp_bin, scp_args)
+    except FileNotFoundError as exc:
+        raise SSHFlingError(f"Missing command: {scp_bin}", 127) from exc
+
+
+def cmd_rsync(args):
+    sources, destination = require_transfer_paths(args.paths, "rsync")
+    rsync_bin = os.environ.get("SSHFLING_RSYNC_BIN", "rsync")
+    ssh_bin = os.environ.get("SSHFLING_SSH_BIN", "ssh")
+    dry_run = transfer_dry_run_enabled(args)
+    if not dry_run and not executable_exists(rsync_bin):
+        raise SSHFlingError(
+            "rsync is required for sshfling rsync. Install rsync on the client and target, or use `sshfling scp` for basic copies.",
+            127,
+            command=rsync_bin,
+        )
+
+    ssh_command = [ssh_bin] + password_transfer_ssh_options(args.ssh_option)
+    if args.port:
+        ssh_command.extend(["-p", str(args.port)])
+
+    rsync_args = [rsync_bin]
+    if args.archive:
+        rsync_args.append("-a")
+    elif args.recursive:
+        rsync_args.append("-r")
+    if args.links and not args.archive:
+        rsync_args.append("--links")
+    if args.preserve:
+        rsync_args.extend(["--perms", "--times"])
+    if args.owner_group:
+        rsync_args.extend(["--owner", "--group"])
+    if args.mode:
+        rsync_args.append(f"--chmod={validate_rsync_permission_value(args.mode, '--mode')}")
+    if args.chown:
+        rsync_args.append(f"--chown={validate_rsync_permission_value(args.chown, '--chown')}")
+    rsync_args.extend(["-e", shlex.join(ssh_command)])
+    rsync_args.extend(sources)
+    rsync_args.append(destination)
+
+    audit_log(
+        "client_rsync",
+        source_count=len(sources),
+        recursive=args.recursive,
+        archive=args.archive,
+        preserve=args.preserve,
+        owner_group=args.owner_group,
+        mode_set=bool(args.mode),
+        chown_set=bool(args.chown),
+        port=args.port,
+    )
+
+    if dry_run:
+        print(shlex.join(rsync_args))
+        return 0
+
+    try:
+        os.execvp(rsync_bin, rsync_args)
+    except FileNotFoundError as exc:
+        raise SSHFlingError(f"Missing command: {rsync_bin}", 127) from exc
 
 
 def validate_unix_username(username):
@@ -4128,6 +4269,8 @@ def build_parser():
   sudo sshfling shutdown
   sudo sshfling -k
   sshfling s234@1.0.0.1
+  sshfling scp --recursive ./logs s234@1.0.0.1:/tmp/
+  sshfling rsync --recursive --preserve ./dist/ s234@1.0.0.1:/srv/app/
 """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -4350,6 +4493,33 @@ def build_parser():
     detached_supervisor.add_argument("--metadata", required=True)
     detached_supervisor.add_argument("detached_args", nargs=argparse.REMAINDER)
     detached_supervisor.set_defaults(func=cmd_detached_supervisor)
+
+    scp = subparsers.add_parser("scp", help="Copy files through native OpenSSH scp using temporary password access.")
+    scp.add_argument("-r", "--recursive", action="store_true", help="Copy directories recursively.")
+    scp.add_argument("--preserve", "-p", action="store_true", help="Preserve source mode and mtime using scp -p.")
+    scp.add_argument("--mode", help="Unsupported for scp; use rsync --mode for safe destination mode rewriting.")
+    scp.add_argument("--owner-group", action="store_true", help="Unsupported for scp; use rsync when owner/group metadata is required.")
+    scp.add_argument("--chown", help="Unsupported for scp; use rsync --chown USER:GROUP when permitted.")
+    scp.add_argument("--sftp", action="store_true", help="Use scp's SFTP transport instead of forced-command-compatible legacy scp protocol.")
+    scp.add_argument("-P", "--port", type=positive_int, help="SSH port.")
+    scp.add_argument("-o", "--ssh-option", action="append", default=[], help="Extra ssh option passed to scp as -o OPTION. Repeatable.")
+    scp.add_argument("--dry-run", action="store_true", help="Print the native scp command without running it.")
+    scp.add_argument("paths", nargs="+", help="One or more sources followed by a destination.")
+    scp.set_defaults(func=cmd_scp)
+
+    rsync = subparsers.add_parser("rsync", help="Copy files through rsync over SSH using temporary password access.")
+    rsync.add_argument("-r", "--recursive", action="store_true", help="Recurse into directories without archive metadata.")
+    rsync.add_argument("-a", "--archive", action="store_true", help="Use rsync archive mode. Owner/group preservation still depends on account privileges.")
+    rsync.add_argument("--preserve", action="store_true", help="Preserve source mode and mtime with --perms --times.")
+    rsync.add_argument("--links", action="store_true", help="Preserve symlinks as symlinks when not using --archive.")
+    rsync.add_argument("--mode", help="Pass a safe rsync --chmod value such as u=rwX,go=rX.")
+    rsync.add_argument("--owner-group", action="store_true", help="Request rsync owner/group preservation. Requires a permitted receiving account.")
+    rsync.add_argument("--chown", help="Pass rsync --chown=USER:GROUP to set destination owner/group when permitted.")
+    rsync.add_argument("-P", "--port", type=positive_int, help="SSH port.")
+    rsync.add_argument("-o", "--ssh-option", action="append", default=[], help="Extra ssh option passed to the rsync SSH transport. Repeatable.")
+    rsync.add_argument("--dry-run", action="store_true", help="Print the native rsync command without running it.")
+    rsync.add_argument("paths", nargs="+", help="One or more sources followed by a destination.")
+    rsync.set_defaults(func=cmd_rsync)
 
     init = subparsers.add_parser("init", help="Copy deployment templates into a directory.")
     init.add_argument("path", nargs="?", default=None, help="Target directory. Defaults to --project-dir.")

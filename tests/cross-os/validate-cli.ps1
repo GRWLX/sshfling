@@ -303,6 +303,67 @@ try {
     }
   }
 
+  $env:SSHFLING_TRANSFER_DRY_RUN = "1"
+  $env:SSHFLING_SCP_BIN = "scp"
+  $scpOutput = (& $CommandPath scp --recursive --preserve -P 2222 .\logs s123@example.invalid:/tmp/ | Out-String).Trim()
+  foreach ($needle in @(
+      "scp -O -r -p -P 2222",
+      "PreferredAuthentications=password,keyboard-interactive",
+      "PubkeyAuthentication=no",
+      "ForwardAgent=no",
+      "ClearAllForwardings=yes",
+      "s123@example.invalid:/tmp/"
+    )) {
+    if (-not $scpOutput.Contains($needle)) {
+      Fail "scp dry-run missing $needle"
+    }
+  }
+
+  $env:SSHFLING_RSYNC_BIN = "rsync"
+  $env:SSHFLING_SSH_BIN = "ssh"
+  $rsyncOutput = (& $CommandPath rsync --recursive --preserve --mode u=rwX,go=rX --chown deploy:deploy -P 2222 .\dist\ s123@example.invalid:/srv/app/ | Out-String).Trim()
+  foreach ($needle in @(
+      "rsync -r --perms --times",
+      "--chmod=u=rwX,go=rX",
+      "--chown=deploy:deploy",
+      "PreferredAuthentications=password,keyboard-interactive",
+      "-p 2222",
+      "s123@example.invalid:/srv/app/"
+    )) {
+    if (-not $rsyncOutput.Contains($needle)) {
+      Fail "rsync dry-run missing $needle"
+    }
+  }
+
+  Remove-Item Env:\SSHFLING_TRANSFER_DRY_RUN -ErrorAction SilentlyContinue
+  $env:SSHFLING_RSYNC_BIN = "sshfling-rsync-missing.exe"
+  $missingRsyncRaw = & $CommandPath rsync .\dist\ s123@example.invalid:/srv/app/ 2>&1
+  $missingRsyncCode = $LASTEXITCODE
+  $missingRsyncOutput = ($missingRsyncRaw | Out-String)
+  if ($missingRsyncCode -eq 0 -or -not $missingRsyncOutput.Contains("rsync is required for sshfling rsync")) {
+    Fail "missing-rsync error was not actionable: $($missingRsyncOutput.Trim())"
+  }
+
+  $env:SSHFLING_RSYNC_BIN = $tempRoot
+  $rsyncDirRaw = & $CommandPath rsync .\dist\ s123@example.invalid:/srv/app/ 2>&1
+  $rsyncDirCode = $LASTEXITCODE
+  $rsyncDirOutput = ($rsyncDirRaw | Out-String)
+  if ($rsyncDirCode -eq 0 -or -not $rsyncDirOutput.Contains("rsync is required for sshfling rsync")) {
+    Fail "directory rsync path error was not actionable: $($rsyncDirOutput.Trim())"
+  }
+  Remove-Item Env:\SSHFLING_RSYNC_BIN -ErrorAction SilentlyContinue
+
+  $env:SSHFLING_TRANSFER_DRY_RUN = "1"
+  $scpModeRaw = & $CommandPath scp --mode u=rw .\dist\file s123@example.invalid:/srv/app/file 2>&1
+  $scpModeCode = $LASTEXITCODE
+  $scpModeOutput = ($scpModeRaw | Out-String)
+  if ($scpModeCode -eq 0 -or -not $scpModeOutput.Contains("cannot safely set explicit destination modes")) {
+    Fail "scp mode rejection was not actionable: $($scpModeOutput.Trim())"
+  }
+  Remove-Item Env:\SSHFLING_TRANSFER_DRY_RUN -ErrorAction SilentlyContinue
+  Remove-Item Env:\SSHFLING_SCP_BIN -ErrorAction SilentlyContinue
+  Remove-Item Env:\SSHFLING_SSH_BIN -ErrorAction SilentlyContinue
+
   $detachedDir = Join-Path $tempRoot "detached"
   $detachedStartJson = (& $CommandPath --json detached start --name cross --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "import time; print('detached-ready', flush=True); time.sleep(30)" | Out-String)
   $detachedStart = $detachedStartJson | ConvertFrom-Json
@@ -1231,6 +1292,9 @@ finally {
   Remove-Item -Recurse -Force $tempRoot -ErrorAction SilentlyContinue
   Remove-Item Env:\SSHFLING_WEB_PASSWORD -ErrorAction SilentlyContinue
   Remove-Item Env:\SSHFLING_CONNECT_DRY_RUN -ErrorAction SilentlyContinue
+  Remove-Item Env:\SSHFLING_TRANSFER_DRY_RUN -ErrorAction SilentlyContinue
+  Remove-Item Env:\SSHFLING_SCP_BIN -ErrorAction SilentlyContinue
+  Remove-Item Env:\SSHFLING_RSYNC_BIN -ErrorAction SilentlyContinue
   Remove-Item Env:\SSHFLING_SSH_BIN -ErrorAction SilentlyContinue
   Remove-Item Env:\SSHFLING_ACTIVE_MARKER -ErrorAction SilentlyContinue
   if ($hasNativeCommandUseErrorActionPreference) {

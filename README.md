@@ -104,6 +104,52 @@ Certificate setup options such as `--ca-key`, `--public-key-file`, `--out`, `--l
 
 The server-side grant prints the detected server address in the client command. If a host has multiple addresses and you need to override that detection, set `SSHFLING_SERVER_HOST` for the grant command.
 
+File transfer:
+
+```bash
+sshfling scp ./local.txt s234@1.0.0.1:/tmp/local.txt
+sshfling scp --recursive --preserve ./logs s234@1.0.0.1:/tmp/
+sshfling rsync --recursive --preserve ./dist/ s234@1.0.0.1:/srv/app/
+sshfling rsync --archive --chown deploy:deploy --mode u=rwX,go=rX ./dist/ s234@1.0.0.1:/srv/app/
+```
+
+`sshfling scp` wraps native OpenSSH `scp`, prefers temporary password
+authentication, disables public-key and forwarding options like the SSH client
+wrapper, and uses legacy scp protocol by default so OpenSSH forced-command
+sessions can run the remote `scp` command under `sshfling-session`. Use
+`--sftp` only when the target host intentionally allows the SFTP subsystem
+through the same temporary-access policy.
+
+`sshfling rsync` wraps `rsync -e ssh` with the same SSH options. It requires
+`rsync` on the client and the target host; when the client tool is missing,
+SSHFling fails before connecting and suggests using `sshfling scp` for basic
+copies. Use `--recursive` for directory trees, `--archive` when you want
+rsync's archive behavior, `--links` to preserve symlinks without archive mode,
+`--preserve` to keep mode and mtime, `--mode` for rsync `--chmod`, and
+`--chown USER:GROUP` or `--owner-group` only when the receiving account is
+allowed to set or preserve ownership.
+
+Without `--preserve`, destination modes and mtimes come from the native transfer
+tool, the receiving account, and the target filesystem umask. `scp --preserve`
+maps to `scp -p` and preserves source mode and mtime; it does not preserve or
+set owner/group. `rsync --preserve` maps to `--perms --times`; explicit
+owner/group preservation can still fail or be ignored when the receiving
+account lacks privileges. Recursive scp uses scp's native symlink behavior,
+which can dereference symlinks during tree traversal; use rsync `--links` or
+`--archive` when symlink identity matters. Transfers are normal temporary SSH
+sessions, so they count against connection policy, stop when the grant expires,
+and can leave partial files if the timeout cuts off an in-flight copy.
+
+Manual smoke checks against a disposable temporary grant should cover:
+
+```bash
+sshfling scp ./local.txt s234@1.0.0.1:/tmp/sshfling-smoke-file
+sshfling scp --recursive --preserve ./smoke-dir s234@1.0.0.1:/tmp/
+sshfling rsync --recursive --preserve ./smoke-dir/ s234@1.0.0.1:/tmp/sshfling-smoke-rsync/
+sshfling rsync --archive --mode u=rwX,go=rX ./smoke-dir/ s234@1.0.0.1:/tmp/sshfling-smoke-mode/
+SSHFLING_RSYNC_BIN=sshfling-rsync-missing sshfling rsync ./smoke-dir/ s234@1.0.0.1:/tmp/sshfling-smoke-missing/
+```
+
 Rules:
 
 - Server-side grant, shutdown, and kill commands require root/admin.
@@ -523,8 +569,8 @@ GitHub Actions workflows are included for public distribution:
 - `Package install tests` installs from the published package site and verifies the requested `sshfling` version across Linux package repos and community package manifests.
 - `Cross OS validation` installs or builds those outputs across Linux, BSD,
   macOS, and Windows and checks the explicit grant lifetime requirement,
-  24-hour cap, copied service templates, active-session PID fields, and
-  detached job PID lifecycle.
+  24-hour cap, copied service templates, active-session PID fields,
+  transfer command construction, and detached job PID lifecycle.
 
 ### v0.1.14 Release Readiness
 
@@ -545,8 +591,8 @@ is attached for the final commit: release approval, protected tag or equivalent
 change-control evidence, workflow run URLs, artifact checksums, repository
 signing fingerprint, Pages deployment ID where package-site publishing is in
 scope, runtime behavior evidence for password, certificate, access-level,
-prune, and uninstall behavior, and macOS/Windows signing or notarization
-evidence where applicable.
+transfer, prune, and uninstall behavior, and macOS/Windows signing or
+notarization evidence where applicable.
 
 Release evidence generation and validation commands:
 

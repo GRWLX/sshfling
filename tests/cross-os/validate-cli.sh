@@ -168,6 +168,45 @@ printf '%s\n' "$connect_output" | grep -Fq -- "-p 2222" || fail "connect dry-run
 printf '%s\n' "$connect_output" | grep -Fq "s123@example.invalid" || fail "connect dry-run missing target"
 printf '%s\n' "$connect_output" | grep -Fq "whoami" || fail "connect dry-run missing remote command"
 
+SSHFLING_TRANSFER_DRY_RUN=1 SSHFLING_SCP_BIN=scp "$cmd" scp --recursive --preserve -P 2222 ./logs s123@example.invalid:/tmp/ >"$tmp/scp.out"
+scp_output="$(cat "$tmp/scp.out")"
+printf '%s\n' "$scp_output" | grep -Fq "scp -O -r -p -P 2222" || fail "scp dry-run missing legacy recursive preserve flags"
+printf '%s\n' "$scp_output" | grep -Fq "PreferredAuthentications=password,keyboard-interactive" || fail "scp dry-run missing password auth option"
+printf '%s\n' "$scp_output" | grep -Fq "PubkeyAuthentication=no" || fail "scp dry-run missing pubkey disable option"
+printf '%s\n' "$scp_output" | grep -Fq "ForwardAgent=no" || fail "scp dry-run missing agent forwarding disable option"
+printf '%s\n' "$scp_output" | grep -Fq "ClearAllForwardings=yes" || fail "scp dry-run missing forwarding clear option"
+printf '%s\n' "$scp_output" | grep -Fq "s123@example.invalid:/tmp/" || fail "scp dry-run missing remote destination"
+
+SSHFLING_TRANSFER_DRY_RUN=1 SSHFLING_RSYNC_BIN=rsync SSHFLING_SSH_BIN=ssh "$cmd" rsync --recursive --preserve --mode u=rwX,go=rX --chown deploy:deploy -P 2222 ./dist/ s123@example.invalid:/srv/app/ >"$tmp/rsync.out"
+rsync_output="$(cat "$tmp/rsync.out")"
+printf '%s\n' "$rsync_output" | grep -Fq "rsync -r --perms --times" || fail "rsync dry-run missing recursive preserve flags"
+printf '%s\n' "$rsync_output" | grep -Fq -- "--chmod=u=rwX,go=rX" || fail "rsync dry-run missing chmod"
+printf '%s\n' "$rsync_output" | grep -Fq -- "--chown=deploy:deploy" || fail "rsync dry-run missing chown"
+printf '%s\n' "$rsync_output" | grep -Fq "PreferredAuthentications=password,keyboard-interactive" || fail "rsync dry-run missing password auth option"
+printf '%s\n' "$rsync_output" | grep -Fq -- "-p 2222" || fail "rsync dry-run missing ssh port"
+printf '%s\n' "$rsync_output" | grep -Fq "s123@example.invalid:/srv/app/" || fail "rsync dry-run missing remote destination"
+
+set +e
+SSHFLING_RSYNC_BIN=sshfling-rsync-missing "$cmd" rsync ./dist/ s123@example.invalid:/srv/app/ >"$tmp/rsync-missing.out" 2>"$tmp/rsync-missing.err"
+missing_rsync_code="$?"
+set -e
+test "$missing_rsync_code" -ne 0 || fail "rsync command unexpectedly succeeded when rsync was missing"
+grep -Fq "rsync is required for sshfling rsync" "$tmp/rsync-missing.err" || fail "missing-rsync error was not actionable"
+
+set +e
+SSHFLING_RSYNC_BIN="$tmp" "$cmd" rsync ./dist/ s123@example.invalid:/srv/app/ >"$tmp/rsync-dir.out" 2>"$tmp/rsync-dir.err"
+rsync_dir_code="$?"
+set -e
+test "$rsync_dir_code" -ne 0 || fail "rsync command unexpectedly succeeded when rsync path was a directory"
+grep -Fq "rsync is required for sshfling rsync" "$tmp/rsync-dir.err" || fail "directory rsync path error was not actionable"
+
+set +e
+SSHFLING_TRANSFER_DRY_RUN=1 "$cmd" scp --mode u=rw ./dist/file s123@example.invalid:/srv/app/file >"$tmp/scp-mode.out" 2>"$tmp/scp-mode.err"
+scp_mode_code="$?"
+set -e
+test "$scp_mode_code" -ne 0 || fail "scp accepted explicit mode rewriting"
+grep -Fq "cannot safely set explicit destination modes" "$tmp/scp-mode.err" || fail "scp mode rejection was not actionable"
+
 detached_dir="$tmp/detached"
 "$cmd" --json detached start --name cross --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; print("detached-ready", flush=True); time.sleep(30)' >"$tmp/detached-start.json"
 "$cmd" --json detached list --detached-dir "$detached_dir" >"$tmp/detached-list.json"

@@ -119,6 +119,7 @@ BuildArch: noarch
 Requires: python3
 Requires: openssh-clients
 Recommends: openssh-server
+Recommends: rsync
 Requires: shadow-utils
 Requires(pre): shadow-utils
 Requires: procps-ng

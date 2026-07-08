@@ -28,6 +28,10 @@ The policy below is grounded in these repository files:
 ## Runtime Contract
 
 Client mode needs Python 3 and OpenSSH client tools available on `PATH`.
+Interactive and remote-command access use `ssh`; file-copy access through
+`sshfling scp` uses native OpenSSH `scp`. The optional `sshfling rsync` command
+requires `rsync` on the client and target host, but SSHFling does not vendor or
+own that package.
 
 Server-side certificate grants need OpenSSH server tooling on the target host.
 The CLI validates managed sshd configuration with `sshd -t` and can inspect
@@ -45,7 +49,7 @@ normal production grant path.
 ## Version Ownership
 
 SSHFling release artifacts pin the SSHFling version. They do not pin OpenSSH,
-Python, account-management, `procps`, or `util-linux` versions.
+Python, rsync, account-management, `procps`, or `util-linux` versions.
 
 Package metadata declares required capabilities by package name. The selected
 version is resolved by the target package manager, repository configuration,
@@ -64,8 +68,8 @@ The platform owns OpenSSH and other shared runtime packages:
 
 | Platform or ecosystem | Declared dependency behavior |
 | --- | --- |
-| Debian / Ubuntu APT | `.deb` depends on `python3`, `openssh-client`, `passwd`, `procps`, and `util-linux`; it suggests `openssh-server` and Docker-compatible packages. |
-| RHEL / Fedora / Rocky / Alma RPM | `.rpm` requires `python3`, `openssh-clients`, `shadow-utils`, `procps-ng`, and `util-linux`; it recommends `openssh-server` for server-side grant paths. |
+| Debian / Ubuntu APT | `.deb` depends on `python3`, `openssh-client`, `passwd`, `procps`, and `util-linux`; it suggests `openssh-server`, `rsync`, and Docker-compatible packages. |
+| RHEL / Fedora / Rocky / Alma RPM | `.rpm` requires `python3`, `openssh-clients`, `shadow-utils`, `procps-ng`, and `util-linux`; it recommends `openssh-server` for server-side grant paths and `rsync` for rsync transfers. |
 | Arch / AUR | Generated `PKGBUILD` depends on `python`, `openssh`, `shadow`, `procps-ng`, and `util-linux`. |
 | Alpine | Generated `APKBUILD` depends on `python3`, `openssh-client`, `shadow`, `procps`, and `util-linux`. |
 | openSUSE / OBS | Generated spec requires `python3`, `openssh`, `shadow`, `procps`, and `util-linux`. |

@@ -62,6 +62,13 @@ make_source_tar() {
     --exclude=public \
     --exclude=package-dist \
     --exclude=release-dist \
+    --exclude=docs/release/evidence-manifest.json \
+    --exclude=docs/release/enterprise-release-readiness-checklist.md \
+    --exclude=docs/release/enterprise-release-matrix.csv \
+    --exclude=docs/release/enterprise-release-summary.md \
+    --exclude=docs/release/enterprise-release-evidence \
+    --exclude='packaging/dotnet/**/bin' \
+    --exclude='packaging/dotnet/**/obj' \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
     --exclude='secrets/client_ed25519' \

@@ -101,7 +101,7 @@ Section: utils
 Priority: optional
 Architecture: all
 Depends: python3, openssh-client, passwd, procps, util-linux
-Suggests: openssh-server, docker.io | docker-ce | podman-docker
+Suggests: openssh-server, rsync, docker.io | docker-ce | podman-docker
 Maintainer: SSHFling Maintainers <root@localhost>
 Description: Temporary SSH access broker and CLI
  SSHFling grants short-lived SSH access with default password grants, optional

@@ -15,6 +15,25 @@ need() {
 
 need python3
 
+install_apt_package_if_missing() {
+  binary="$1"
+  package="$2"
+  if command -v "$binary" >/dev/null 2>&1; then
+    return 0
+  fi
+  if command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends "$package"
+  fi
+  command -v "$binary" >/dev/null 2>&1 || {
+    echo "$binary is required for strict release security scanning." >&2
+    exit 127
+  }
+}
+
+install_apt_package_if_missing shellcheck shellcheck
+install_apt_package_if_missing systemd-analyze systemd
+
 if ! python3 -m pip --version >/dev/null 2>&1; then
   if command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update
@@ -236,6 +255,9 @@ for tool in bandit hadolint syft gitleaks trivy osv-scanner; do
   else
     command -v "$tool" >/dev/null 2>&1
   fi
+done
+for tool in shellcheck systemd-analyze; do
+  command -v "$tool" >/dev/null 2>&1
 done
 
 echo "Provisioned release scanners in $install_dir"
