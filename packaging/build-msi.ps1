@@ -54,7 +54,7 @@ function Invoke-CheckedNative {
   param(
     [Parameter(Mandatory = $true)]
     [string]$FilePath,
-    [Parameter(ValueFromRemainingArguments = $true)]
+    [Parameter(Mandatory = $true)]
     [string[]]$Arguments
   )
   & $FilePath @Arguments
@@ -126,7 +126,7 @@ $HarvestedWxs = Join-Path $BuildRoot "harvested.wxs"
 $WixObj = Join-Path $BuildRoot "sshfling.wixobj"
 $HarvestedObj = Join-Path $BuildRoot "harvested.wixobj"
 
-Invoke-CheckedNative heat.exe dir $ProductDir -nologo -cg SSHFlingFiles -dr INSTALLFOLDER -srd -sreg -gg -var var.ProductDir -out $HarvestedWxs
+Invoke-CheckedNative heat.exe @("dir", $ProductDir, "-nologo", "-cg", "SSHFlingFiles", "-dr", "INSTALLFOLDER", "-srd", "-sreg", "-gg", "-var", "var.ProductDir", "-out", $HarvestedWxs)
 
 @"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -177,15 +177,15 @@ $MsiPath = Join-Path $Dist "sshfling-$Version.msi"
 $ZipPath = Join-Path $Dist "sshfling-$Version-windows.zip"
 Remove-Item -Force $MsiPath, $ZipPath -ErrorAction SilentlyContinue
 
-Invoke-CheckedNative candle.exe -nologo -arch x64 -dProductDir="$ProductDir" -out $WixObj $Wxs
-Invoke-CheckedNative candle.exe -nologo -arch x64 -dProductDir="$ProductDir" -out $HarvestedObj $HarvestedWxs
-Invoke-CheckedNative light.exe -nologo -out $MsiPath $WixObj $HarvestedObj
+Invoke-CheckedNative candle.exe @("-nologo", "-arch", "x64", "-dProductDir=$ProductDir", "-out", $WixObj, $Wxs)
+Invoke-CheckedNative candle.exe @("-nologo", "-arch", "x64", "-dProductDir=$ProductDir", "-out", $HarvestedObj, $HarvestedWxs)
+Invoke-CheckedNative light.exe @("-nologo", "-out", $MsiPath, $WixObj, $HarvestedObj)
 if (-not (Test-Path $MsiPath) -or (Get-Item $MsiPath).Length -le 0) {
   throw "MSI was not created: $MsiPath"
 }
 if ($RequireAuthenticode) {
-  Invoke-CheckedNative signtool.exe sign /fd SHA256 /sha1 $SignCertSha1 /tr $TimestampUrl /td SHA256 $MsiPath
-  Invoke-CheckedNative signtool.exe verify /pa /tw $MsiPath
+  Invoke-CheckedNative signtool.exe @("sign", "/fd", "SHA256", "/sha1", $SignCertSha1, "/tr", $TimestampUrl, "/td", "SHA256", $MsiPath)
+  Invoke-CheckedNative signtool.exe @("verify", "/pa", "/tw", $MsiPath)
 }
 
 Compress-Archive -Path (Join-Path $ProductDir "*") -DestinationPath $ZipPath
