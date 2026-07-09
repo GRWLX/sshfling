@@ -61,7 +61,7 @@ jobs:
           cache: maven
           cache-dependency-path: packaging/java/pom.xml
 
-      - name: Build and validate executable JAR
+      - name: Build and validate Maven and Gradle package
         env:
           SSHFLING_VERSION: ${{ steps.version.outputs.version }}
         run: SSHFLING_MAVEN_REPO_LOCAL="$HOME/.m2/repository" make package-java VERSION="${SSHFLING_VERSION}"
@@ -72,6 +72,7 @@ jobs:
           name: java-package
           path: |
             dist/sshfling-cli-${{ steps.version.outputs.version }}.jar
+            dist/sshfling-cli-${{ steps.version.outputs.version }}-javadoc.jar
             dist/sshfling-cli-${{ steps.version.outputs.version }}-sources.jar
             dist/sshfling-cli-${{ steps.version.outputs.version }}.pom
           if-no-files-found: error
@@ -172,9 +173,29 @@ jobs:
             -Dartifact="io.sshfling:sshfling-cli:${VERSION}:jar:sources" \
             -DremoteRepositories="github::default::${REGISTRY_URL}" \
             -Dtransitive=false
+          mvn -B -s "$settings_file" -Dmaven.repo.local="$maven_repo" \
+            dependency:get \
+            -Dartifact="io.sshfling:sshfling-cli:${VERSION}:jar:javadoc" \
+            -DremoteRepositories="github::default::${REGISTRY_URL}" \
+            -Dtransitive=false
 
           artifact_dir="$maven_repo/io/sshfling/sshfling-cli/$VERSION"
           test -f "$artifact_dir/sshfling-cli-$VERSION.jar"
+          test -f "$artifact_dir/sshfling-cli-$VERSION-javadoc.jar"
           test -f "$artifact_dir/sshfling-cli-$VERSION-sources.jar"
           test -f "$artifact_dir/sshfling-cli-$VERSION.pom"
           java -jar "$artifact_dir/sshfling-cli-$VERSION.jar" --version | grep -Fx "sshfling $VERSION"
+
+          cp -R packaging/java/consumers/maven "$verify_dir/maven-consumer"
+          mvn -B -f "$verify_dir/maven-consumer/pom.xml" \
+            -Dmaven.repo.local="$maven_repo" \
+            -Dsshfling.version="$VERSION" package
+          java -cp "$verify_dir/maven-consumer/target/classes:$artifact_dir/sshfling-cli-$VERSION.jar" \
+            io.sshfling.validation.MavenConsumer --version | grep -Fx "sshfling $VERSION"
+
+          cp -R packaging/java/consumers/gradle "$verify_dir/gradle-consumer"
+          packaging/java/gradlew --no-daemon --console=plain \
+            -p "$verify_dir/gradle-consumer" \
+            -PsshflingVersion="$VERSION" \
+            -PsshflingRepository="$maven_repo" \
+            run --args=--version | grep -Fx "sshfling $VERSION"

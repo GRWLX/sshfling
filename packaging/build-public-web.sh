@@ -300,6 +300,18 @@ fi
 if compgen -G "$package_dist/*.pom" >/dev/null; then
   cp "$package_dist"/*.pom "$public_dir/downloads/"
 fi
+if compgen -G "$package_dist/*.tgz" >/dev/null; then
+  cp "$package_dist"/*.tgz "$public_dir/downloads/"
+fi
+if compgen -G "$package_dist/*.whl" >/dev/null; then
+  cp "$package_dist"/*.whl "$public_dir/downloads/"
+fi
+if compgen -G "$package_dist/*.crate" >/dev/null; then
+  cp "$package_dist"/*.crate "$public_dir/downloads/"
+fi
+if compgen -G "$package_dist/*.gem" >/dev/null; then
+  cp "$package_dist"/*.gem "$public_dir/downloads/"
+fi
 cp "$package_dist"/*.pkg "$public_dir/downloads/"
 cp "$package_dist"/*.msi "$public_dir/downloads/"
 if compgen -G "$package_dist/*.zip" >/dev/null; then
@@ -339,7 +351,11 @@ if (( repo_signed )); then
   gpg_sign --detach-sign --armor -o "$public_dir/rpm/repodata/repomd.xml.asc" "$public_dir/rpm/repodata/repomd.xml"
 fi
 
-source_tar="$(basename "$(first_file "$public_dir/downloads" "sshfling-*.tar.gz")")"
+source_tar="sshfling-${version}.tar.gz"
+if [[ ! -s "$public_dir/downloads/$source_tar" ]]; then
+  echo "Missing required source archive: $public_dir/downloads/$source_tar" >&2
+  exit 1
+fi
 source_sha="$(sha256sum "$public_dir/downloads/$source_tar" | awk '{print $1}')"
 first_file "$public_dir/apt" "sshfling_*_all.deb" >/dev/null
 first_file "$public_dir/rpm" "sshfling-*.rpm" >/dev/null
@@ -352,11 +368,13 @@ class Sshfling < Formula
   license :cannot_represent
 
   depends_on "python@3"
+  depends_on "jq"
 
   def install
     bin.install "bin/sshfling"
+    (libexec/"sshfling").install "native/sshfling-unix-identity"
     (pkgshare/"templates").install ".env.example", "LICENSE", "README.md", "compose.server.yml", "compose.client.yml"
-    (pkgshare/"templates").install "scripts", "secrets", "ssh-client", "ssh-server", "production", "systemd"
+    (pkgshare/"templates").install "native", "scripts", "secrets", "ssh-client", "ssh-server", "production", "systemd"
   end
 
   test do
@@ -564,6 +582,8 @@ cat >"$public_dir/macos/uninstall-pkg.sh" <<SH
 set -euo pipefail
 
 sudo rm -f /usr/local/bin/sshfling
+sudo rm -f /usr/local/libexec/sshfling/sshfling-unix-identity
+sudo rmdir /usr/local/libexec/sshfling 2>/dev/null || true
 sudo rm -rf /usr/local/share/sshfling
 sudo pkgutil --forget "$pkg_identifier" >/dev/null 2>&1 || true
 
@@ -743,16 +763,138 @@ curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
 dotnet tool install --global SSHFling.Tool --add-source "\$tmp" --version "$version"</code></pre>
   <p>Uninstall:</p>
   <pre><code>dotnet tool uninstall --global SSHFling.Tool</code></pre>
+  <h2>.NET library</h2>
+  <p>The <code>SSHFling</code> NuGet package exposes <code>SSHFlingRunner.Run</code> and <code>SSHFlingRunner.RunAsync</code> for .NET applications. It embeds the same runtime and templates as the global tool.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+curl -fsSL $base_url/downloads/SSHFling.$version.nupkg -o "\$tmp/SSHFling.$version.nupkg"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -F "SSHFling.$version.nupkg" SHA256SUMS | sha256sum -c -)
+dotnet add package SSHFling --source "\$tmp" --version "$version"
+
+// C#
+return SSHFling.SSHFlingRunner.Run(new[] { "--version" });
+
+' Visual Basic
+Environment.ExitCode = SSHFling.SSHFlingRunner.Run(New String() {"--version"})
+
+// F#
+SSHFling.SSHFlingRunner.Run([| "--version" |])</code></pre>
+  <p>Remove the application dependency with <code>dotnet remove package SSHFling</code>.</p>
   <h2>Java executable JAR</h2>
-  <p>The Java package is an executable Maven JAR wrapper around the bundled SSHFling Python CLI. It requires Java 11 or newer, Python 3, and OpenSSH tools on the target host.</p>
+  <p>The Java package is an executable and importable JAR built with both Maven and Gradle. It includes source and Javadocs JARs and requires Java 11 or newer, Python 3, and OpenSSH tools on the target host.</p>
   <pre><code>tmp="\$(mktemp -d)"
 curl -fsSL $base_url/downloads/sshfling-cli-$version.jar -o "\$tmp/sshfling-cli-$version.jar"
+curl -fsSL $base_url/downloads/sshfling-cli-$version-javadoc.jar -o "\$tmp/sshfling-cli-$version-javadoc.jar"
 curl -fsSL $base_url/downloads/sshfling-cli-$version.pom -o "\$tmp/sshfling-cli-$version.pom"
 curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
-(cd "\$tmp" &amp;&amp; grep -E "  sshfling-cli-${version}[.](jar|pom)\$" SHA256SUMS | sha256sum -c -)
+(cd "\$tmp" &amp;&amp; grep -E "  sshfling-cli-${version}(-javadoc)?[.](jar|pom)\$" SHA256SUMS | sha256sum -c -)
 java -jar "\$tmp/sshfling-cli-$version.jar" --version</code></pre>
+  <h3>Maven library consumer</h3>
+  <pre><code>&lt;dependency&gt;
+  &lt;groupId&gt;io.sshfling&lt;/groupId&gt;
+  &lt;artifactId&gt;sshfling-cli&lt;/artifactId&gt;
+  &lt;version&gt;$version&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+  <h3>Gradle library consumer</h3>
+  <pre><code>dependencies {
+    implementation("io.sshfling:sshfling-cli:$version")
+}</code></pre>
+  <p>Java callers invoke <code>SSHFling.run(new String[] { "--version" })</code>.</p>
   <p>Uninstall:</p>
-  <pre><code>rm -f "\$tmp/sshfling-cli-$version.jar" "\$tmp/sshfling-cli-$version.pom"</code></pre>
+  <pre><code>rm -f "\$tmp/sshfling-cli-$version.jar" "\$tmp/sshfling-cli-$version-javadoc.jar" "\$tmp/sshfling-cli-$version.pom"</code></pre>
+  <h2>Node.js npm package</h2>
+  <p>The npm package is a Node.js CLI wrapper around the bundled SSHFling Python CLI. It requires Node.js 18 or newer, Python 3, and OpenSSH tools on the target host.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+curl -fsSL $base_url/downloads/sshfling-$version.tgz -o "\$tmp/sshfling-$version.tgz"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -F "sshfling-$version.tgz" SHA256SUMS | sha256sum -c -)
+npm install -g "\$tmp/sshfling-$version.tgz"</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>npm uninstall -g sshfling</code></pre>
+  <h2>Python wheel</h2>
+  <p>The universal Python wheel installs the primary SSHFling implementation and bundled templates. It requires Python 3.10 or newer and OpenSSH tools on the target host.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+curl -fsSL $base_url/downloads/sshfling-$version-py3-none-any.whl -o "\$tmp/sshfling-$version-py3-none-any.whl"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -F "sshfling-$version-py3-none-any.whl" SHA256SUMS | sha256sum -c -)
+pipx install "\$tmp/sshfling-$version-py3-none-any.whl"</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>pipx uninstall sshfling</code></pre>
+  <h2>Go module</h2>
+  <p>The Go source module provides an importable launcher API and <code>cmd/sshfling</code>. The installed launcher embeds the SSHFling runtime and requires Go 1.22 or newer to build, plus Python 3 and OpenSSH at run time.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+curl -fsSL $base_url/downloads/sshfling-go-$version.zip -o "\$tmp/sshfling-go-$version.zip"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -F "sshfling-go-$version.zip" SHA256SUMS | sha256sum -c -)
+unzip -q "\$tmp/sshfling-go-$version.zip" -d "\$tmp"
+(cd "\$tmp/sshfling-go-$version" &amp;&amp; GOBIN="\$HOME/.local/bin" go install ./cmd/sshfling)</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>rm -f "\$HOME/.local/bin/sshfling"</code></pre>
+  <h2>Rust crate</h2>
+  <p>The Rust crate provides a library launcher and <code>sshfling</code> binary with embedded runtime resources. It requires Rust 1.70 or newer to build, plus Python 3 and OpenSSH at run time.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+curl -fsSL $base_url/downloads/sshfling-cli-$version.crate -o "\$tmp/sshfling-cli-$version.crate"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -F "sshfling-cli-$version.crate" SHA256SUMS | sha256sum -c -)
+tar -xzf "\$tmp/sshfling-cli-$version.crate" -C "\$tmp"
+cargo install --path "\$tmp/sshfling-cli-$version"</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>cargo uninstall sshfling-cli</code></pre>
+  <h2>PHP Composer package</h2>
+  <p>The Composer archive provides a PSR-4 launcher API and CLI wrapper. It requires PHP 8.1 or newer, Composer, Python 3, and OpenSSH tools.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+curl -fsSL $base_url/downloads/sshfling-php-$version.zip -o "\$tmp/sshfling-php-$version.zip"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -F "sshfling-php-$version.zip" SHA256SUMS | sha256sum -c -)
+app="\$HOME/.local/share/sshfling-composer"
+mkdir -p "\$app"
+composer config --working-dir "\$app" repositories.sshfling artifact "\$tmp"
+composer require --working-dir "\$app" "grwlx/sshfling:$version"
+"\$app/vendor/bin/sshfling" --version</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>composer remove --working-dir "\$app" grwlx/sshfling</code></pre>
+  <h2>Ruby gem</h2>
+  <p>The RubyGem provides a Ruby launcher API and CLI wrapper. It requires Ruby 3.0 or newer, Python 3, and OpenSSH tools.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+curl -fsSL $base_url/downloads/sshfling-$version.gem -o "\$tmp/sshfling-$version.gem"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -F "sshfling-$version.gem" SHA256SUMS | sha256sum -c -)
+gem_home="\$HOME/.local/share/sshfling-gems"
+GEM_HOME="\$gem_home" GEM_PATH="\$gem_home" gem install --local --bindir "\$HOME/.local/bin" --no-document "\$tmp/sshfling-$version.gem"</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>GEM_HOME="\$gem_home" GEM_PATH="\$gem_home" gem uninstall --all --executables --bindir "\$HOME/.local/bin" sshfling</code></pre>
+  <h2>C and C++ native libraries</h2>
+  <p>The POSIX native source distribution builds C11 shared and static libraries, a C++17 wrapper, CMake package exports, pkg-config metadata, and the <code>sshfling-c</code> command. Python 3 and OpenSSH tools remain run-time dependencies.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+prefix="\$HOME/.local/share/sshfling-native"
+curl -fsSL $base_url/downloads/sshfling-native-$version.tar.gz -o "\$tmp/sshfling-native-$version.tar.gz"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -F "sshfling-native-$version.tar.gz" SHA256SUMS | sha256sum -c -)
+tar -xzf "\$tmp/sshfling-native-$version.tar.gz" -C "\$tmp"
+cmake -S "\$tmp/sshfling-native-$version" -B "\$tmp/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="\$prefix"
+cmake --build "\$tmp/build" --parallel
+ctest --test-dir "\$tmp/build" --output-on-failure
+cmake --install "\$tmp/build"
+"\$prefix/bin/sshfling-c" --version</code></pre>
+  <p>CMake consumers use <code>find_package(SSHFling CONFIG REQUIRED)</code> and link <code>SSHFling::shared</code> or <code>SSHFling::static</code>. C consumers may also use <code>pkg-config --cflags --libs sshfling</code>.</p>
+  <p>Uninstall the isolated prefix:</p>
+  <pre><code>rm -rf "\$prefix"</code></pre>
+  <h2>Perl source distribution</h2>
+  <p>The CPAN-style source distribution provides the <code>SSHFling</code> module and <code>sshfling</code> executable through ExtUtils::MakeMaker. It requires Perl 5.26 or newer, Python 3, and OpenSSH tools.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+prefix="\$HOME/.local/share/sshfling-perl"
+curl -fsSL $base_url/downloads/sshfling-perl-$version.tar.gz -o "\$tmp/sshfling-perl-$version.tar.gz"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -F "sshfling-perl-$version.tar.gz" SHA256SUMS | sha256sum -c -)
+tar -xzf "\$tmp/sshfling-perl-$version.tar.gz" -C "\$tmp"
+cd "\$tmp/SSHFling-$version"
+perl Makefile.PL INSTALL_BASE="\$prefix"
+make test
+make install
+PERL5LIB="\$prefix/lib/perl5" "\$prefix/bin/sshfling" --version
+PERL5LIB="\$prefix/lib/perl5" perl -MSSHFling -e 'exit SSHFling::run("--version")'</code></pre>
+  <p>Uninstall the isolated prefix:</p>
+  <pre><code>rm -rf "\$prefix"</code></pre>
   <h2>macOS pkg</h2>
   <p>Enterprise macOS distribution should use signed and notarized packages. This helper is a convenience wrapper around the published package artifact.</p>
   <pre><code>tmp="\$(mktemp -d)"
@@ -760,6 +902,8 @@ curl -fsSL $base_url/macos/install-pkg.sh -o "\$tmp/install-pkg.sh"
 sudo bash "\$tmp/install-pkg.sh"</code></pre>
   <p>Uninstall:</p>
   <pre><code>sudo rm -f /usr/local/bin/sshfling
+sudo rm -f /usr/local/libexec/sshfling/sshfling-unix-identity
+sudo rmdir /usr/local/libexec/sshfling 2>/dev/null || true
 sudo rm -rf /usr/local/share/sshfling
 sudo pkgutil --forget $pkg_identifier >/dev/null 2>&amp;1 || true</code></pre>
   <p>The macOS uninstall commands preserve /etc/sshfling, host SSH configuration, CA material, grant state, Python, and OpenSSH for separate fleet policy.</p>

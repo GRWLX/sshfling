@@ -135,7 +135,16 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sshfling-cross-" + [gu
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 $activeMarker = Join-Path $tempRoot "replace-active.ready"
 $env:SSHFLING_ACTIVE_MARKER = $activeMarker
-$sleep30Command = @("python", "-c", "import os, pathlib, time; pathlib.Path(os.environ['SSHFLING_ACTIVE_MARKER']).write_text('ready'); time.sleep(30)")
+$nativePowerShell = (Get-Command pwsh -ErrorAction SilentlyContinue)
+if (-not $nativePowerShell) {
+  $nativePowerShell = Get-Command powershell -ErrorAction Stop
+}
+
+function New-NativePowerShellCommand([string]$Script) {
+  return @($nativePowerShell.Source, "-NoProfile", "-Command", $Script)
+}
+
+$sleep30Command = New-NativePowerShellCommand "[System.IO.File]::WriteAllText(`$env:SSHFLING_ACTIVE_MARKER, 'ready'); Start-Sleep -Seconds 30"
 
 try {
   Assert-WindowsMsiMetadata $CommandPath $Version
@@ -198,7 +207,7 @@ try {
   $passwordDepsCode = $LASTEXITCODE
   $passwordDeps = $passwordDepsJson | ConvertFrom-Json
   $passwordRequired = @($passwordDeps.dependencies | Where-Object { $_.required } | ForEach-Object { $_.name })
-  foreach ($requiredTool in @("sshd", "useradd", "userdel", "chpasswd", "id")) {
+  foreach ($requiredTool in @("sshd", "jq", "useradd", "userdel", "chpasswd", "id")) {
     if ($passwordRequired -notcontains $requiredTool) {
       Fail "password-server dependency inventory missing required tool $requiredTool"
     }
@@ -423,7 +432,8 @@ try {
   Remove-Item Env:\SSHFLING_SSH_BIN -ErrorAction SilentlyContinue
 
   $detachedDir = Join-Path $tempRoot "detached"
-  $detachedStartJson = (& $CommandPath --json detached start --name cross --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "import time; print('detached-ready', flush=True); time.sleep(30)" | Out-String)
+  $detachedStartCommand = New-NativePowerShellCommand "Write-Output 'detached-ready'; Start-Sleep -Seconds 30"
+  $detachedStartJson = (& $CommandPath --json detached start --name cross --time 30s --cwd $tempRoot --detached-dir $detachedDir -- @detachedStartCommand | Out-String)
   $detachedStart = $detachedStartJson | ConvertFrom-Json
   if (-not $detachedStart.ok -or $detachedStart.job.name -ne "cross" -or $detachedStart.job.status -ne "processing") {
     Fail "detached start did not return a processing job"
@@ -441,13 +451,15 @@ try {
   if (-not $detachedKill.ok -or $detachedKill.job.status -ne "killed" -or $detachedKill.killed -lt 1) {
     Fail "detached kill did not stop the started job: $($detachedKillJson.Trim())"
   }
-  $null = (& $CommandPath detached start --name plain --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "import time; time.sleep(30)" | Out-String).Trim()
+  $plainStartCommand = New-NativePowerShellCommand "Start-Sleep -Seconds 30"
+  $null = (& $CommandPath detached start --name plain --time 30s --cwd $tempRoot --detached-dir $detachedDir -- @plainStartCommand | Out-String).Trim()
   $plainKillOutput = (& $CommandPath detached kill --detached-dir $detachedDir plain | Out-String).Trim()
   if (-not [regex]::IsMatch($plainKillOutput, "^killed [1-9][0-9]* detached process\(es\)$")) {
     Fail "plain detached kill output was not stable: $plainKillOutput"
   }
   $missingCwd = Join-Path $tempRoot "missing-cwd"
-  $startFailsRaw = & $CommandPath --json detached start --name start-fails --time 30s --cwd $missingCwd --detached-dir $detachedDir -- python -c "print('bad')" 2>&1
+  $badCommand = New-NativePowerShellCommand "Write-Output 'bad'"
+  $startFailsRaw = & $CommandPath --json detached start --name start-fails --time 30s --cwd $missingCwd --detached-dir $detachedDir -- @badCommand 2>&1
   $startFailsCode = $LASTEXITCODE
   $startFailsJson = ($startFailsRaw | Out-String)
   if ($startFailsCode -eq 0) {
@@ -485,7 +497,7 @@ try {
     $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-active | Out-String)
     Fail "active detached replacement setup was not still processing: $($replaceActiveListJson.Trim())"
   }
-  $replaceActiveRaw = & $CommandPath --json detached start --replace --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" 2>&1
+  $replaceActiveRaw = & $CommandPath --json detached start --replace --name replace-active --time 30s --cwd $tempRoot --detached-dir $detachedDir -- @badCommand 2>&1
   $replaceActiveCode = $LASTEXITCODE
   $replaceActiveJson = ($replaceActiveRaw | Out-String)
   if ($replaceActiveCode -eq 0) {
@@ -496,7 +508,8 @@ try {
     Fail "active detached replace did not explain the active job: $($replaceActiveJson.Trim())"
   }
   $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-active | Out-String)
-  $null = (& $CommandPath --json detached start --name replace-done --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('first', flush=True)" | Out-String)
+  $firstCommand = New-NativePowerShellCommand "Write-Output 'first'"
+  $null = (& $CommandPath --json detached start --name replace-done --time 30s --cwd $tempRoot --detached-dir $detachedDir -- @firstCommand | Out-String)
   $replaceDoneSeen = $false
   for ($attempt = 0; $attempt -lt 10; $attempt++) {
     $replaceDoneListJson = (& $CommandPath --json detached list --name replace-done --detached-dir $detachedDir | Out-String)
@@ -511,7 +524,7 @@ try {
   if (-not $replaceDoneSeen) {
     Fail "detached replacement setup did not reach completed status"
   }
-  $replaceDoneRaw = & $CommandPath --json detached start --name replace-done --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "print('bad')" 2>&1
+  $replaceDoneRaw = & $CommandPath --json detached start --name replace-done --time 30s --cwd $tempRoot --detached-dir $detachedDir -- @badCommand 2>&1
   $replaceDoneCode = $LASTEXITCODE
   $replaceDoneJson = ($replaceDoneRaw | Out-String)
   if ($replaceDoneCode -eq 0) {
@@ -520,7 +533,8 @@ try {
   if (-not $replaceDoneJson.Contains("Use --replace after it is inactive")) {
     Fail "inactive detached replace did not require --replace: $($replaceDoneJson.Trim())"
   }
-  $null = (& $CommandPath --json detached start --replace --name replace-done --time 30s --cwd $tempRoot --detached-dir $detachedDir -- python -c "import time; print('second', flush=True); time.sleep(30)" | Out-String)
+  $secondCommand = New-NativePowerShellCommand "Write-Output 'second'; Start-Sleep -Seconds 30"
+  $null = (& $CommandPath --json detached start --replace --name replace-done --time 30s --cwd $tempRoot --detached-dir $detachedDir -- @secondCommand | Out-String)
   $replaceDoneLog = Join-Path $detachedDir "replace-done.out.log"
   $replaceSecondSeen = $false
   for ($attempt = 0; $attempt -lt 5; $attempt++) {
@@ -540,7 +554,8 @@ try {
     Fail "detached --replace did not reset stdout log"
   }
   $null = (& $CommandPath --json detached kill --detached-dir $detachedDir replace-done | Out-String)
-  $tooLongRaw = & $CommandPath --json detached start --name too-long --time 25h --detached-dir $detachedDir -- python -c "print('no')" 2>&1
+  $noCommand = New-NativePowerShellCommand "Write-Output 'no'"
+  $tooLongRaw = & $CommandPath --json detached start --name too-long --time 25h --detached-dir $detachedDir -- @noCommand 2>&1
   $tooLongCode = $LASTEXITCODE
   $tooLongJson = ($tooLongRaw | Out-String)
   $tooLong = $tooLongJson | ConvertFrom-Json
@@ -831,8 +846,10 @@ with tempfile.TemporaryDirectory() as tmpdir:
         stdout = ""
 
     original_run = sshfling.run
+    original_unix_user_exists = sshfling.unix_user_exists
     original_unix_user_identity = sshfling.unix_user_identity
     sshfling.run = lambda *args, **kwargs: UserExists()
+    sshfling.unix_user_exists = lambda username: True
     sshfling.unix_user_identity = lambda username: {
         "username": username,
         "uid": 67890,
@@ -848,6 +865,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
         )
     finally:
         sshfling.run = original_run
+        sshfling.unix_user_exists = original_unix_user_exists
         sshfling.unix_user_identity = original_unix_user_identity
 
     by_user = {item["username"]: item for item in results}
@@ -892,6 +910,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
     assert "metadata" not in root_equivalent, root_equivalent
 
     sshfling.run = lambda *args, **kwargs: UserExists()
+    sshfling.unix_user_exists = lambda username: True
+    sshfling.unix_user_identity = lambda username: {}
     try:
         active_results = sshfling.prune_password_grants(
             grant_dir,
@@ -913,6 +933,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
         )
     finally:
         sshfling.run = original_run
+        sshfling.unix_user_exists = original_unix_user_exists
+        sshfling.unix_user_identity = original_unix_user_identity
 
     assert len(active_results) == 1, active_results
     assert active_results[0]["status"] == "active", active_results
@@ -1303,6 +1325,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
       "LICENSE",
       "compose.server.yml",
       "compose.client.yml",
+      "native\sshfling-linux-account",
+      "native\sshfling-unix-identity",
       "scripts\install-local.sh",
       "scripts\uninstall-local.sh",
       "scripts\create-network.sh",
@@ -1340,6 +1364,15 @@ with tempfile.TemporaryDirectory() as tmpdir:
   $productionWrapper = Get-Content -Raw -Path (Join-Path $project "production\sshfling-session")
   if (-not $productionWrapper.Contains("max_allowed_seconds=86400")) {
     Fail "production wrapper did not allow 24h sessions"
+  }
+  if ($productionWrapper -match "\bpython(3)?\b") {
+    Fail "production wrapper should use native shell policy parsing, not Python"
+  }
+  if ($productionWrapper.Contains("exec {")) {
+    Fail "production wrapper should remain compatible with macOS Bash 3.2"
+  }
+  if ($productionWrapper.Contains("run_limited /bin/bash")) {
+    Fail "production wrapper should use the active platform Bash path"
   }
   $dockerWrapper = Get-Content -Raw -Path (Join-Path $project "ssh-server\limited-session.sh")
   if (-not $dockerWrapper.Contains("max_allowed_seconds=86400")) {

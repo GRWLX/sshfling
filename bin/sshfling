@@ -24,11 +24,6 @@ import threading
 import time
 from pathlib import Path
 
-try:
-    import pwd
-except ImportError:  # pragma: no cover - Windows does not provide pwd.
-    pwd = None
-
 VERSION = "0.1.16"
 DEFAULT_NETWORK = "timed-ssh-net"
 DEFAULT_SESSION_WRAPPER = "/usr/local/libexec/sshfling-session"
@@ -99,6 +94,8 @@ TEMPLATE_ENTRIES = [
     "README.md",
     "compose.server.yml",
     "compose.client.yml",
+    "native/sshfling-linux-account",
+    "native/sshfling-unix-identity",
     "scripts/install-local.sh",
     "scripts/uninstall-local.sh",
     "scripts/create-network.sh",
@@ -411,6 +408,151 @@ def source_root():
     return Path(__file__).resolve().parents[1]
 
 
+def native_helper_candidates(filename, override_env):
+    candidates = []
+    override = os.environ.get(override_env)
+    if override:
+        candidates.append(Path(override).expanduser())
+    cli_prefix = Path(__file__).resolve().parent.parent
+    template_dir = os.environ.get("SSHFLING_TEMPLATE_DIR")
+    candidates.extend(
+        [
+            Path(__file__).resolve().parent / filename,
+            cli_prefix / "libexec/sshfling" / filename,
+            source_root() / "native" / filename,
+        ]
+    )
+    if template_dir:
+        candidates.append(Path(template_dir).expanduser() / "native" / filename)
+    candidates.extend(
+        [
+            Path("/usr/libexec/sshfling") / filename,
+            Path("/usr/local/libexec/sshfling") / filename,
+            Path.home() / ".local/libexec/sshfling" / filename,
+        ]
+    )
+    return candidates
+
+
+def find_native_helper(filename, override_env):
+    candidates = native_helper_candidates(filename, override_env)
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate.resolve(), candidates
+    return None, candidates
+
+
+def native_linux_account_helper(required=False):
+    if not sys.platform.startswith("linux"):
+        if required:
+            raise SSHFlingError(
+                "Linux account operations require the native sshfling-linux-account backend on a Linux host.",
+                127,
+            )
+        return None
+
+    helper, candidates = find_native_helper("sshfling-linux-account", "SSHFLING_LINUX_ACCOUNT_HELPER")
+    if helper:
+        return helper
+    if required:
+        raise SSHFlingError(
+            "Native Linux account backend is missing. Reinstall SSHFling or set SSHFLING_LINUX_ACCOUNT_HELPER.",
+            127,
+            checked=[str(path) for path in candidates],
+        )
+    return None
+
+
+def native_unix_identity_helper(required=False):
+    if os.name == "nt":
+        if required:
+            raise SSHFlingError("Native Unix identity lookup is unavailable on Windows.", 127)
+        return None
+
+    helper, candidates = find_native_helper("sshfling-unix-identity", "SSHFLING_UNIX_IDENTITY_HELPER")
+    if helper:
+        return helper
+    if required:
+        raise SSHFlingError(
+            "Native Unix identity backend is missing. Reinstall SSHFling or set SSHFLING_UNIX_IDENTITY_HELPER.",
+            127,
+            checked=[str(path) for path in candidates],
+        )
+    return None
+
+
+def parse_native_backend_records(output):
+    records = []
+    for line in (output or "").splitlines():
+        fields = line.split("\t")
+        if not fields or fields[0] not in {"result", "attempt"}:
+            raise SSHFlingError("Native command backend returned an invalid record.", 1, output=output)
+        record = {"record": fields[0]}
+        for field in fields[1:]:
+            if "=" not in field:
+                raise SSHFlingError("Native command backend returned an invalid field.", 1, output=output)
+            key, value = field.split("=", 1)
+            if not key or key in record:
+                raise SSHFlingError("Native command backend returned a duplicate field.", 1, output=output)
+            record[key] = value
+        records.append(record)
+    return records
+
+
+def run_native_linux_account(action, *arguments, input_text=None, check=True):
+    helper = native_linux_account_helper(required=True)
+    command = [str(helper), action, *[str(value) for value in arguments]]
+    if input_text is None:
+        proc = run(command, capture=True, check=False)
+    else:
+        proc = run_with_input(command, input_text, capture=True, check=False)
+    records = parse_native_backend_records(proc.stdout) if proc.stdout else []
+    if check and proc.returncode != 0:
+        message = (proc.stderr or "").strip() or f"Native Linux account action failed: {action}"
+        raise SSHFlingError(message, proc.returncode, action=action, records=records)
+    return proc, records
+
+
+def run_native_unix_identity(username):
+    helper = native_unix_identity_helper(required=True)
+    proc = run([str(helper), "identity", str(username)], capture=True, check=False)
+    records = parse_native_backend_records(proc.stdout) if proc.stdout else []
+    if proc.returncode != 0:
+        message = (proc.stderr or "").strip() or f"Native Unix identity lookup failed: {username}"
+        raise SSHFlingError(message, proc.returncode, username=username, records=records)
+    return native_result_record(records, "identity")
+
+
+def native_result_record(records, action):
+    results = [record for record in records if record.get("record") == "result"]
+    if len(results) != 1:
+        raise SSHFlingError(
+            f"Native command backend returned {len(results)} result records for {action}.",
+            1,
+        )
+    return results[0]
+
+
+def native_result_for_user(records, action, username):
+    result = native_result_record(records, action)
+    if result.get("user") != username:
+        raise SSHFlingError(
+            f"Native command backend returned a result for the wrong user during {action}.",
+            1,
+        )
+    return result
+
+
+def native_result_flag(result, field, action):
+    value = result.get(field)
+    if value not in {"true", "false"}:
+        raise SSHFlingError(
+            f"Native Linux account backend returned an invalid {field!r} flag for {action}.",
+            1,
+        )
+    return value == "true"
+
+
 def find_template_dir():
     candidates = []
 
@@ -637,22 +779,26 @@ DEPENDENCY_MODES = {
     ],
     "password-server": [
         {"name": "sshd", "required": True, "kind": "openssh-server"},
+        {"name": "jq", "required": True, "kind": "policy-parser"},
+        {"name": "sshfling-unix-identity", "required": True, "kind": "native-backend"},
+        {"name": "sshfling-linux-account", "required": True, "kind": "native-backend"},
         {"name": "useradd", "required": True, "kind": "account-tools"},
         {"name": "userdel", "required": True, "kind": "account-tools"},
         {"name": "chpasswd", "required": True, "kind": "account-tools"},
         {"name": "usermod", "required": False, "kind": "account-tools"},
         {"name": "passwd", "required": False, "kind": "account-tools"},
         {"name": "chage", "required": False, "kind": "account-tools"},
-        {"name": "id", "required": True, "kind": "account-tools"},
         {"name": "ps", "required": False, "kind": "process-tools"},
     ],
     "certificate-host": [
         {"name": "sshd", "required": True, "kind": "openssh-server"},
+        {"name": "jq", "required": True, "kind": "policy-parser"},
+        {"name": "sshfling-unix-identity", "required": True, "kind": "native-backend"},
+        {"name": "sshfling-linux-account", "required": False, "kind": "native-backend"},
         {"name": "ssh-keygen", "required": True, "kind": "openssh-client"},
         {"name": "useradd", "required": False, "kind": "account-tools"},
-        {"name": "usermod", "required": False, "kind": "account-tools"},
+        {"name": "userdel", "required": False, "kind": "account-tools"},
         {"name": "openssl", "required": False, "kind": "password-hash"},
-        {"name": "id", "required": True, "kind": "account-tools"},
         {"name": "ps", "required": False, "kind": "process-tools"},
     ],
 }
@@ -693,7 +839,14 @@ def dependency_inventory(mode="all"):
             if key in seen:
                 continue
             seen.add(key)
-            path = command_path(item["name"])
+            if item["name"] == "sshfling-unix-identity":
+                helper = native_unix_identity_helper(required=False)
+                path = str(helper) if helper else None
+            elif item["name"] == "sshfling-linux-account":
+                helper = native_linux_account_helper(required=False)
+                path = str(helper) if helper else None
+            else:
+                path = command_path(item["name"])
             result = {
                 "mode": mode_name,
                 "name": item["name"],
@@ -976,31 +1129,50 @@ def unix_user_identity(username):
     username = str(username or "")
     if not username:
         return None
-    identity = {"username": username}
-    if pwd is not None:
-        try:
-            entry = pwd.getpwnam(username)
-            identity.update({"uid": int(entry.pw_uid), "gid": int(entry.pw_gid), "home": entry.pw_dir})
-            return identity
-        except (KeyError, TypeError, ValueError):
-            pass
+    if native_unix_identity_helper(required=False) is None:
+        return None
+    result = run_native_unix_identity(username)
+    if result.get("user") != username:
+        raise SSHFlingError("Native Unix identity backend returned a result for the wrong user.", 1)
+    if result.get("status") == "missing":
+        return None
+    if result.get("status") != "present":
+        raise SSHFlingError("Native Unix identity backend returned an invalid identity result.", 1)
+    try:
+        return {
+            "username": username,
+            "uid": int(result["uid"]),
+            "gid": int(result["gid"]),
+            "home": result["home"],
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        raise SSHFlingError("Native Unix identity backend returned an invalid identity.", 1) from exc
 
-    if not command_path("id"):
-        return None
-    uid_proc = run(["id", "-u", username], capture=True, check=False)
-    if uid_proc.returncode != 0:
-        return None
-    try:
-        identity["uid"] = int((uid_proc.stdout or "").strip())
-    except ValueError:
-        return None
-    gid_proc = run(["id", "-g", username], capture=True, check=False)
-    try:
-        if gid_proc.returncode == 0:
-            identity["gid"] = int((gid_proc.stdout or "").strip())
-    except ValueError:
-        pass
-    return identity
+
+def native_attempts(records, username):
+    command_templates = {
+        ("lock", "usermod"): f"usermod --lock {username}",
+        ("lock", "passwd"): f"passwd -l {username}",
+        ("expire", "chage"): f"chage -E 0 {username}",
+        ("delete-home", "userdel"): f"userdel --remove {username}",
+        ("delete", "userdel"): f"userdel {username}",
+    }
+    attempts = []
+    for record in records:
+        if record.get("record") != "attempt":
+            continue
+        key = (record.get("action"), record.get("tool"))
+        try:
+            returncode = int(record["returncode"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SSHFlingError("Native Linux account backend returned an invalid attempt.", 1) from exc
+        attempts.append(
+            {
+                "command": command_templates.get(key, f"{record.get('tool', 'unknown')} {record.get('action', '')}".strip()),
+                "returncode": returncode,
+            }
+        )
+    return attempts
 
 
 def unix_identity_metadata(identity):
@@ -1383,6 +1555,8 @@ def cmd_policy_show(args):
 
 def cmd_policy_install(args):
     require_root("policy install")
+    if args.user and os.name != "nt":
+        require_native_identity_backend()
     policy = write_policy(args.policy_file, args.max_time, args.max_connections, args.user, getattr(args, "access_level", None))
     active = effective_policy(policy, args.user)
     audit_log(
@@ -1908,10 +2082,45 @@ def validate_certificate_principal(principal):
 
 
 def require_password_host_tools():
-    missing = [name for name in ["useradd", "chpasswd", "sshd"] if not command_path(name)]
+    missing = [
+        name
+        for name in ["useradd", "userdel", "chpasswd", "usermod", "chage", "sshd", "jq"]
+        if not command_path(name)
+    ]
+    if native_linux_account_helper(required=False) is None:
+        missing.append("sshfling-linux-account")
+    if native_unix_identity_helper(required=False) is None:
+        missing.append("sshfling-unix-identity")
     if missing:
         raise SSHFlingError(
             "Password grant setup requires Linux account tools and OpenSSH server tooling. Install shadow/passwd and openssh-server tooling, or use certificate mode.",
+            127,
+            missing=missing,
+        )
+
+
+def require_native_policy_parser(dry_run=False):
+    if not dry_run and not command_path("jq"):
+        raise SSHFlingError(
+            "jq is required for native forced-session policy enforcement. Install jq before configuring this SSH host.",
+            127,
+            missing=["jq"],
+        )
+
+
+def require_native_identity_backend():
+    native_unix_identity_helper(required=True)
+
+
+def require_certificate_user_tools(dry_run=False):
+    if dry_run:
+        return
+    missing = [name for name in ["useradd", "userdel", "openssl"] if not command_path(name)]
+    if native_linux_account_helper(required=False) is None:
+        missing.append("sshfling-linux-account")
+    if missing:
+        raise SSHFlingError(
+            "Certificate host --create-user requires the native Linux account backend, shadow account tools, and OpenSSL.",
             127,
             missing=missing,
         )
@@ -1927,22 +2136,86 @@ def require_sshd_for_validation(validate=True, dry_run=False):
 
 
 def unix_user_exists(username):
-    return run(["id", "-u", username], capture=True, check=False).returncode == 0
+    proc, records = run_native_linux_account("exists", username, check=False)
+    if proc.returncode not in {0, 1}:
+        raise SSHFlingError((proc.stderr or "").strip() or f"Could not inspect Linux account: {username}", proc.returncode)
+    result = native_result_for_user(records, "exists", username)
+    exists = native_result_flag(result, "exists", "exists")
+    expected_status = "present" if exists else "missing"
+    expected_returncode = 0 if exists else 1
+    if result.get("status") != expected_status or proc.returncode != expected_returncode:
+        raise SSHFlingError("Native Linux account backend returned an invalid exists result.", 1)
+    return exists
 
 
 def set_user_password(username, password):
-    run_with_input(["chpasswd"], f"{username}:{password}\n", capture=True)
-    if command_path("usermod"):
-        run(["usermod", "--unlock", username], capture=True, check=False)
-    if command_path("chage"):
-        run(["chage", "-E", "-1", username], capture=True, check=False)
+    _, records = run_native_linux_account("set-password", username, input_text=f"{password}\n")
+    result = native_result_for_user(records, "set-password", username)
+    password_set = native_result_flag(result, "password_set", "set-password")
+    if result.get("status") != "updated" or not password_set:
+        raise SSHFlingError("Native Linux account backend returned an invalid set-password result.", 1)
 
 
-def ensure_unix_user(username):
+def provision_session_locks(session_wrapper, username, expected_identity=None, dry_run=False):
+    wrapper = Path(session_wrapper).expanduser()
+    if dry_run:
+        return {
+            "user": username,
+            "session_locks": "would-provision",
+            "slots": 10,
+            "dry_run": True,
+        }
+
+    proc = run([str(wrapper), "--provision-locks", username], capture=True, check=False)
+    records = parse_native_backend_records(proc.stdout) if proc.stdout else []
+    if proc.returncode != 0:
+        message = (proc.stderr or "").strip() or f"Could not provision session locks for {username}."
+        raise SSHFlingError(message, proc.returncode, username=username, records=records)
+    result = native_result_for_user(records, "provision-locks", username)
+    uid_text = result.get("uid", "")
+    slots_text = result.get("slots", "")
+    lock_root = result.get("lock_root", "")
+    if (
+        result.get("status") != "provisioned"
+        or not re.fullmatch(r"0|[1-9][0-9]*", uid_text)
+        or slots_text != "10"
+        or not Path(lock_root).is_absolute()
+    ):
+        raise SSHFlingError("Native session wrapper returned an invalid lock-provisioning result.", 1)
+    uid = int(uid_text)
+    if expected_identity and uid != int(expected_identity["uid"]):
+        raise SSHFlingError("Native session locks were provisioned for the wrong uid.", 1)
+    return {
+        "user": username,
+        "session_locks": "provisioned",
+        "uid": uid,
+        "slots": 10,
+        "lock_root": lock_root,
+    }
+
+
+def ensure_unix_user(username, allow_existing=False):
     if unix_user_exists(username):
+        if not allow_existing:
+            raise SSHFlingError(
+                "Refusing to create a password grant because the Unix user appeared during setup.",
+                2,
+                username=username,
+            )
         return {"user": username, "created": False, "identity": unix_user_identity(username)}
-    run(["useradd", "--create-home", "--shell", default_login_shell(), username])
-    return {"user": username, "created": True, "identity": unix_user_identity(username)}
+    _, records = run_native_linux_account("create", username, default_login_shell())
+    result = native_result_for_user(records, "create", username)
+    created = native_result_flag(result, "created", "create")
+    expected_status = "created" if created else "present"
+    if result.get("status") != expected_status:
+        raise SSHFlingError("Native Linux account backend returned an invalid create result.", 1)
+    if not created and not allow_existing:
+        raise SSHFlingError(
+            "Refusing to create a password grant because the Unix user appeared during setup.",
+            2,
+            username=username,
+        )
+    return {"user": username, "created": created, "identity": unix_user_identity(username)}
 
 
 def password_force_command(username, seconds, expires_at, session_wrapper, policy_file):
@@ -2059,10 +2332,17 @@ def cmd_setup_password(args):
 
         if not args.dry_run:
             results.append(reload_sshd())
-            user_result = ensure_unix_user(args.username)
+            user_result = ensure_unix_user(args.username, allow_existing=args.allow_existing_user)
             created_user = bool(user_result.get("created"))
             created_user_for_rollback = created_user
             user_identity = user_result.get("identity") or unix_user_identity(args.username)
+            results.append(
+                provision_session_locks(
+                    wrapper_path,
+                    args.username,
+                    expected_identity=user_identity,
+                )
+            )
 
         metadata = {
             "version": 1,
@@ -3423,7 +3703,7 @@ def remove_policy_user(policy_file, username, dry_run=False):
 
 def lock_password_user(username, dry_run=False, expected_identity=None):
     reject_root_equivalent_user_deletion(username, "lock")
-    if run(["id", "-u", username], capture=True, check=False).returncode != 0:
+    if not unix_user_exists(username):
         return {"user": username, "status": "missing"}
     mismatch = unix_identity_mismatch(username, expected_identity)
     if mismatch:
@@ -3431,45 +3711,40 @@ def lock_password_user(username, dry_run=False, expected_identity=None):
     if dry_run:
         return {"user": username, "would_lock": True, "dry_run": True}
 
-    attempts = []
-    locked = False
-    expired = False
-    if command_path("usermod"):
-        proc = run(["usermod", "--lock", username], capture=True, check=False)
-        attempts.append({"command": f"usermod --lock {username}", "returncode": proc.returncode})
-        locked = proc.returncode == 0
-    if command_path("passwd") and not locked:
-        proc = run(["passwd", "-l", username], capture=True, check=False)
-        attempts.append({"command": f"passwd -l {username}", "returncode": proc.returncode})
-        locked = proc.returncode == 0
-    if command_path("chage"):
-        proc = run(["chage", "-E", "0", username], capture=True, check=False)
-        attempts.append({"command": f"chage -E 0 {username}", "returncode": proc.returncode})
-        expired = proc.returncode == 0
-
-    if not locked:
-        raise SSHFlingError(f"Could not lock expired password user: {username}", 1, attempts=attempts)
-    return {"user": username, "locked": locked, "expired": expired, "attempts": attempts}
+    proc, records = run_native_linux_account("lock", username, check=False)
+    attempts = native_attempts(records, username)
+    if proc.returncode != 0:
+        raise SSHFlingError(f"Could not lock expired password user: {username}", proc.returncode, attempts=attempts)
+    result = native_result_for_user(records, "lock", username)
+    locked = native_result_flag(result, "locked", "lock")
+    expired = native_result_flag(result, "expired", "lock")
+    if result.get("status") != "locked" or not locked:
+        raise SSHFlingError("Native Linux account backend returned an invalid lock result.", 1)
+    return {
+        "user": username,
+        "locked": locked,
+        "expired": expired,
+        "attempts": attempts,
+    }
 
 
 def delete_password_user(username, dry_run=False, expected_identity=None):
     reject_root_equivalent_user_deletion(username, "delete")
-    if run(["id", "-u", username], capture=True, check=False).returncode != 0:
+    if not unix_user_exists(username):
         return {"user": username, "status": "missing"}
     mismatch = unix_identity_mismatch(username, expected_identity)
     if mismatch:
         return {"user": username, "status": "skipped-user-mismatch", **mismatch}
     if dry_run:
         return {"user": username, "would_delete": True, "dry_run": True}
-    if not command_path("userdel"):
-        raise SSHFlingError("userdel is required for --delete-users.", 127)
-
-    proc = run(["userdel", "--remove", username], capture=True, check=False)
-    if proc.returncode != 0:
-        proc = run(["userdel", username], capture=True, check=False)
+    proc, records = run_native_linux_account("delete", username, check=False)
     if proc.returncode != 0:
         raise SSHFlingError(f"Could not delete password user: {username}", proc.returncode, stderr=proc.stderr)
-    return {"user": username, "deleted": True}
+    result = native_result_for_user(records, "delete", username)
+    deleted = native_result_flag(result, "deleted", "delete")
+    if result.get("status") != "deleted" or not deleted:
+        raise SSHFlingError("Native Linux account backend returned an invalid delete result.", 1)
+    return {"user": username, "deleted": deleted}
 
 
 def cleanup_password_grant_sessions(username, dry_run=False):
@@ -3653,6 +3928,10 @@ def cmd_password_prune(args):
 
 def cmd_host_install(args):
     require_root("host install")
+    require_native_policy_parser(args.dry_run)
+    require_native_identity_backend()
+    if args.create_user:
+        require_certificate_user_tools(args.dry_run)
     validate_unix_username(args.user)
     ca_pub = Path(args.ca_pub).expanduser().resolve()
     if not ca_pub.exists():
@@ -3699,6 +3978,7 @@ Match User {args.user}
     require_sshd_for_validation(args.validate, args.dry_run)
     rollback_snapshots = [] if args.dry_run else [(path, snapshot_file(path)) for path in rollback_paths]
     created_user_for_rollback = False
+    created_identity = None
 
     results = []
     try:
@@ -3727,26 +4007,64 @@ Match User {args.user}
                 results.append(write_policy(args.policy_file, max_time, max_connections, args.user, access_level))
 
         if args.create_user and not args.dry_run:
-            if run(["id", "-u", args.user], capture=True, check=False).returncode != 0:
-                run(["useradd", "--create-home", "--shell", default_login_shell(), args.user])
-                created_user_for_rollback = True
+            if not unix_user_exists(args.user):
+                _, records = run_native_linux_account("create-certificate-user", args.user, default_login_shell())
+                create_result = native_result_for_user(records, "create-certificate-user", args.user)
+                created_user_for_rollback = native_result_flag(
+                    create_result,
+                    "created",
+                    "create-certificate-user",
+                )
+                expected_status = "created" if created_user_for_rollback else "present"
+                if create_result.get("status") != expected_status:
+                    raise SSHFlingError(
+                        "Native Linux account backend returned an invalid certificate-user create result.",
+                        1,
+                    )
+                if created_user_for_rollback:
+                    unlocked = native_result_flag(
+                        create_result,
+                        "unlocked",
+                        "create-certificate-user",
+                    )
+                    if not unlocked:
+                        raise SSHFlingError(
+                            "Native Linux account backend did not unlock the created certificate user.",
+                            1,
+                        )
                 created_identity = unix_user_identity(args.user)
-                if command_path("openssl"):
-                    password = run(["openssl", "rand", "-base64", "32"], capture=True).stdout.strip()
-                    password_hash = run(["openssl", "passwd", "-6", password], capture=True).stdout.strip()
-                    run(["usermod", "--password", password_hash, args.user])
-                marker = {
-                    "version": 1,
-                    "managed_by": "sshfling",
-                    "auth": "certificate-host",
-                    "username": args.user,
-                    "created_user": True,
-                    "created_at": int(time.time()),
-                    "created_at_utc": utc_iso(),
-                    **unix_identity_metadata(created_identity),
-                }
-                results.append(write_host_user_marker(host_user_marker_dir, args.user, marker))
-                results.append({"created_user": args.user})
+                if created_user_for_rollback:
+                    marker = {
+                        "version": 1,
+                        "managed_by": "sshfling",
+                        "auth": "certificate-host",
+                        "username": args.user,
+                        "created_user": True,
+                        "created_at": int(time.time()),
+                        "created_at_utc": utc_iso(),
+                        **unix_identity_metadata(created_identity),
+                    }
+                    results.append(write_host_user_marker(host_user_marker_dir, args.user, marker))
+                    results.append({"created_user": args.user})
+                else:
+                    results.append({"user": args.user, "created": False, "status": "present"})
+
+        if args.dry_run:
+            results.append(provision_session_locks(wrapper_path, args.user, dry_run=True))
+        else:
+            session_identity = created_identity or unix_user_identity(args.user)
+            if not session_identity:
+                raise SSHFlingError(
+                    f"Cannot provision forced-session locks for missing Unix user: {args.user}",
+                    1,
+                )
+            results.append(
+                provision_session_locks(
+                    wrapper_path,
+                    args.user,
+                    expected_identity=session_identity,
+                )
+            )
 
         if not args.dry_run and args.validate:
             results.append(

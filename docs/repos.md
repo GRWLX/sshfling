@@ -2,8 +2,11 @@
 
 The repo includes two GitHub Actions release paths:
 
-- `Release packages without web` builds `.deb`, `.rpm`, `.msi`, `.pkg`, a source tarball, and release checksums.
-- `Release packages with public web` builds the same package set and publishes a GitHub Pages package site with APT, RPM, Homebrew, macOS pkg, Windows MSI, and community package manifests for additional ecosystems.
+- `Release packages without web` builds native OS packages, the language
+  ecosystem artifacts listed below, a source tarball, and release checksums.
+- `Release packages with public web` builds the same package set and publishes
+  a GitHub Pages package site with APT, RPM, Homebrew, direct language-package
+  downloads, macOS pkg, Windows MSI, and additional community manifests.
 
 For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.14`.
 
@@ -16,8 +19,9 @@ BASE_URL="https://OWNER.github.io/REPO"
 ```
 
 For operator-facing install and uninstall commands across DEB/RPM, public
-repos, macOS, Windows, BSD/community manifests, containers, and dependency
-rollback caveats, see [Install and uninstall runbook](install-uninstall.md).
+repos, language ecosystems, macOS, Windows, BSD/community manifests,
+containers, and dependency rollback caveats, see
+[Install and uninstall runbook](install-uninstall.md).
 
 Enterprise Linux installs should use the signed APT or RPM repository examples
 below. The saved installer script is a convenience wrapper for interactive
@@ -273,10 +277,18 @@ Uninstall removes the .NET tool registration only:
 dotnet tool uninstall --global SSHFling.Tool
 ```
 
+The site also publishes `downloads/SSHFling.VERSION.nupkg` as an importable
+NuGet library. Add it to an application from the verified directory with
+`dotnet add package SSHFling --source "$verified_download_dir" --version
+"$VERSION"`; remove the reference with `dotnet remove package SSHFling`.
+Clean C#, Visual Basic, and F# consumers validate the public API documented in
+[libraries.md](libraries.md).
+
 ## Public Java Package
 
 The public package site publishes `downloads/sshfling-cli-VERSION.jar`,
-`downloads/sshfling-cli-VERSION-sources.jar`, and
+`downloads/sshfling-cli-VERSION-sources.jar`,
+`downloads/sshfling-cli-VERSION-javadoc.jar`, and
 `downloads/sshfling-cli-VERSION.pom` for direct download. Download them, verify
 `downloads/SHA256SUMS`, and run the executable JAR:
 
@@ -284,14 +296,57 @@ The public package site publishes `downloads/sshfling-cli-VERSION.jar`,
 java -jar "$verified_download_dir/sshfling-cli-$VERSION.jar" --version
 ```
 
-The Maven coordinates are `io.sshfling:sshfling-cli:$VERSION`. GitHub Packages
+The Maven coordinates are `io.sshfling:sshfling-cli:$VERSION`; both Maven and
+Gradle clean consumers invoke the public `SSHFling.run` API. GitHub Packages
 deployment is handled by the `Java package` workflow when a version tag is
 pushed or a manual workflow dispatch explicitly sets `publish=true`.
 
 The Java package does not bundle Python, OpenSSH, Docker, host
-account-management tools, host SSH configuration, Java, or Maven. Uninstall
+account-management tools, host SSH configuration, Java, Maven, or Gradle. Uninstall
 direct-download usage by deleting the downloaded files and removing any wrapper
 script or shell alias your deployment created.
+
+## Public Node.js npm Package
+
+The public package site publishes `downloads/sshfling-VERSION.tgz` as a direct
+download npm package, not an npm registry feed. Download it, verify
+`downloads/SHA256SUMS`, and install from the verified local tarball:
+
+```bash
+npm install -g "$verified_download_dir/sshfling-$VERSION.tgz"
+```
+
+The installed command is `sshfling`. The npm package does not bundle Python,
+OpenSSH, Docker, host account-management tools, host SSH configuration,
+Node.js, or npm. Uninstall removes the npm package registration and command
+shim only:
+
+```bash
+npm uninstall -g sshfling
+```
+
+## Public Language Ecosystem Packages
+
+The package site also publishes direct-download artifacts for Python, Go, Rust,
+PHP, Ruby, POSIX C/C++, and Perl. These are verified local artifacts, not hosted
+PyPI, Go proxy, crates.io, Packagist, RubyGems.org, CPAN, or native package
+registries:
+
+| Ecosystem | Artifact | Package/install identity |
+| --- | --- | --- |
+| Python | `downloads/sshfling-VERSION-py3-none-any.whl` | `pipx install`; module and command `sshfling` |
+| Go | `downloads/sshfling-go-VERSION.zip` | module `github.com/GRWLX/sshfling/packaging/go`; `go install ./cmd/sshfling` |
+| Rust | `downloads/sshfling-cli-VERSION.crate` | crate `sshfling-cli`; binary `sshfling` |
+| PHP | `downloads/sshfling-php-VERSION.zip` | Composer package `grwlx/sshfling` |
+| Ruby | `downloads/sshfling-VERSION.gem` | gem and command `sshfling` |
+| C/C++ | `downloads/sshfling-native-VERSION.tar.gz` | CMake shared/static targets, pkg-config metadata, and `sshfling-c` |
+| Perl | `downloads/sshfling-perl-VERSION.tar.gz` | MakeMaker source distribution, module `SSHFling`, and command `sshfling` |
+
+Download the selected artifact and `downloads/SHA256SUMS`, verify the exact
+filename, then follow [Install and Uninstall](install-uninstall.md). Each wrapper
+bundles the canonical SSHFling runtime and templates but does not bundle host
+Python, OpenSSH, Docker, account-management tools, or host SSH configuration.
+Package-manager removal removes only the selected package and command shim.
 
 ## Public Community Manifests
 

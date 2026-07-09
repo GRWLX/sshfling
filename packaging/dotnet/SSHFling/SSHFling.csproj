@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>SSHFling</PackageId>
+    <Version>0.0.0</Version>
+    <Authors>GRWLX</Authors>
+    <Company>GRWLX</Company>
+    <Description>Library API for running the bundled SSHFling command-line runtime.</Description>
+    <PackageTags>ssh;openssh;temporary-access;library;dotnet</PackageTags>
+    <PackageProjectUrl>https://github.com/GRWLX/sshfling</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <RepositoryUrl>https://github.com/GRWLX/sshfling</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Deterministic>true</Deterministic>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../../LICENSE" Pack="true" PackagePath="" />
+    <None Include="../../../README.md" Pack="true" PackagePath="" />
+
+    <EmbeddedResource Include="../../../bin/sshfling" LogicalName="SSHFling.Resources.sshfling.py" />
+    <EmbeddedResource Include="../../../.env.example" LogicalName="SSHFling.Resources.templates.env.example" />
+    <EmbeddedResource Include="../../../LICENSE" LogicalName="SSHFling.Resources.templates.LICENSE" />
+    <EmbeddedResource Include="../../../README.md" LogicalName="SSHFling.Resources.templates.README.md" />
+    <EmbeddedResource Include="../../../compose.server.yml" LogicalName="SSHFling.Resources.templates.compose.server.yml" />
+    <EmbeddedResource Include="../../../compose.client.yml" LogicalName="SSHFling.Resources.templates.compose.client.yml" />
+    <EmbeddedResource Include="../../../native/sshfling-linux-account" LogicalName="SSHFling.Resources.templates.native.sshfling-linux-account" />
+    <EmbeddedResource Include="../../../native/sshfling-unix-identity" LogicalName="SSHFling.Resources.templates.native.sshfling-unix-identity" />
+    <EmbeddedResource Include="../../../scripts/install-local.sh" LogicalName="SSHFling.Resources.templates.scripts.install-local.sh" />
+    <EmbeddedResource Include="../../../scripts/uninstall-local.sh" LogicalName="SSHFling.Resources.templates.scripts.uninstall-local.sh" />
+    <EmbeddedResource Include="../../../scripts/create-network.sh" LogicalName="SSHFling.Resources.templates.scripts.create-network.sh" />
+    <EmbeddedResource Include="../../../scripts/generate-ssh-key.sh" LogicalName="SSHFling.Resources.templates.scripts.generate-ssh-key.sh" />
+    <EmbeddedResource Include="../../../secrets/.gitkeep" LogicalName="SSHFling.Resources.templates.secrets.gitkeep" />
+    <EmbeddedResource Include="../../../ssh-client/Dockerfile" LogicalName="SSHFling.Resources.templates.ssh-client.Dockerfile" />
+    <EmbeddedResource Include="../../../ssh-client/entrypoint.sh" LogicalName="SSHFling.Resources.templates.ssh-client.entrypoint.sh" />
+    <EmbeddedResource Include="../../../ssh-server/Dockerfile" LogicalName="SSHFling.Resources.templates.ssh-server.Dockerfile" />
+    <EmbeddedResource Include="../../../ssh-server/entrypoint.sh" LogicalName="SSHFling.Resources.templates.ssh-server.entrypoint.sh" />
+    <EmbeddedResource Include="../../../ssh-server/limited-session.sh" LogicalName="SSHFling.Resources.templates.ssh-server.limited-session.sh" />
+    <EmbeddedResource Include="../../../ssh-server/sshd_config" LogicalName="SSHFling.Resources.templates.ssh-server.sshd_config" />
+    <EmbeddedResource Include="../../../production/sshfling-session" LogicalName="SSHFling.Resources.templates.production.sshfling-session" />
+    <EmbeddedResource Include="../../../systemd/sshflingd.service" LogicalName="SSHFling.Resources.templates.systemd.sshflingd.service" />
+    <EmbeddedResource Include="../../../systemd/sshfling-prune.service" LogicalName="SSHFling.Resources.templates.systemd.sshfling-prune.service" />
+    <EmbeddedResource Include="../../../systemd/sshfling-prune.timer" LogicalName="SSHFling.Resources.templates.systemd.sshfling-prune.timer" />
+    <EmbeddedResource Include="../../../systemd/sshflingd.env.example" LogicalName="SSHFling.Resources.templates.systemd.sshflingd.env.example" />
+  </ItemGroup>
+</Project>

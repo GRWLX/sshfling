@@ -1,0 +1,21 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$autoload = $GLOBALS['_composer_autoload_path'] ?? dirname(__DIR__) . '/vendor/autoload.php';
+if (!is_file($autoload)) {
+    $autoload = dirname(__DIR__, 3) . '/autoload.php';
+}
+if (!is_file($autoload)) {
+    fwrite(STDERR, "sshfling: Composer autoloader not found.\n");
+    exit(1);
+}
+require $autoload;
+
+try {
+    exit(\GRWLX\SSHFling\SSHFling::run(array_slice($argv, 1)));
+} catch (Throwable $error) {
+    fwrite(STDERR, 'sshfling: ' . $error->getMessage() . PHP_EOL);
+    exit(1);
+}

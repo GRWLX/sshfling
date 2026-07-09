@@ -28,6 +28,8 @@
     <Content Include="../../../README.md" Link="templates/README.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../compose.server.yml" Link="templates/compose.server.yml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../compose.client.yml" Link="templates/compose.client.yml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../native/sshfling-linux-account" Link="templates/native/sshfling-linux-account" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../native/sshfling-unix-identity" Link="templates/native/sshfling-unix-identity" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../scripts/install-local.sh" Link="templates/scripts/install-local.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../scripts/uninstall-local.sh" Link="templates/scripts/uninstall-local.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../scripts/create-network.sh" Link="templates/scripts/create-network.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />

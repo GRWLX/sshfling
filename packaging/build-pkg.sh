@@ -58,9 +58,10 @@ if [[ -n "$notary_profile" ]] && ! command -v xcrun >/dev/null 2>&1; then
 fi
 
 rm -rf "$build_root"
-install -d "$payload/usr/local/bin" "$payload/usr/local/share/sshfling" "$payload/usr/local/share/sshfling/defaults" "$payload/usr/local/share/sshfling/templates" "$resources" "$scripts" "$dist_dir"
+install -d "$payload/usr/local/bin" "$payload/usr/local/libexec/sshfling" "$payload/usr/local/share/sshfling" "$payload/usr/local/share/sshfling/defaults" "$payload/usr/local/share/sshfling/templates" "$resources" "$scripts" "$dist_dir"
 
 install -m 0755 "$repo_root/bin/sshfling" "$payload/usr/local/bin/sshfling"
+install -m 0755 "$repo_root/native/sshfling-unix-identity" "$payload/usr/local/libexec/sshfling/sshfling-unix-identity"
 install -m 0644 "$repo_root/packaging/policy.json" "$payload/usr/local/share/sshfling/defaults/policy.json"
 install -m 0644 "$repo_root/LICENSE" "$payload/usr/local/share/sshfling/LICENSE"
 install -m 0644 "$repo_root/LICENSE" "$resources/LICENSE"
@@ -105,6 +106,7 @@ SSHFling ${version} package notes
 
 Installed files:
 - /usr/local/bin/sshfling
+- /usr/local/libexec/sshfling/sshfling-unix-identity
 - /usr/local/share/sshfling
 - /usr/local/share/sshfling/defaults/policy.json
 
@@ -115,9 +117,12 @@ Install-time state:
   upgrade because it can be operator-managed policy.
 
 Runtime dependencies:
-- The macOS pkg does not bundle Python or OpenSSH.
+- The macOS pkg does not bundle Python, OpenSSH, or jq.
 - Client commands require python3 and OpenSSH client tools on PATH.
-- Server-side host setup requires the target host's OpenSSH server tooling.
+- Server-side host setup requires the target host's OpenSSH server tooling and
+  jq for native forced-session policy parsing.
+- UID, GID, and home-directory checks use the packaged native Unix identity
+  backend with macOS directory-service commands rather than Python's pwd API.
 
 Uninstall and revert scope:
 - The published uninstall helper removes the SSHFling command and packaged

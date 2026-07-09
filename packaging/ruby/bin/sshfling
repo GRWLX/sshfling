@@ -1,0 +1,10 @@
+#!/usr/bin/env ruby
+
+require "sshfling"
+
+begin
+  exit SSHFling.run(ARGV)
+rescue StandardError => error
+  warn "sshfling: #{error.message}"
+  exit 1
+end

@@ -38,6 +38,7 @@ trap cleanup EXIT
 log "syntax checks"
 python3 -m py_compile bin/sshfling
 bash -n \
+  native/sshfling-linux-account \
   scripts/install-local.sh \
   scripts/uninstall-local.sh \
   scripts/create-network.sh \
@@ -50,6 +51,7 @@ bash -n \
   packaging/build-deb.sh \
   packaging/build-rpm.sh \
   packaging/build-pkg.sh
+sh -n native/sshfling-unix-identity
 bin/sshfling -h >"$work/help.out"
 grep -q -- "-t TIME, --time TIME" "$work/help.out"
 grep -q -- "-k \\[USERNAME\\], --kill \\[USERNAME\\]" "$work/help.out"
@@ -462,12 +464,12 @@ SSHPASS="$SSHPASS" sshpass -e bin/sshfling \
 grep -q '^s234$' "$work/password-whoami.out"
 
 for _ in $(seq 1 50); do
-  if bin/sshfling --json list --username s234 | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin)["count"] == 0 else 1)'; then
+  if bin/sshfling --json list --username s234 | grep -Eq '"count"[[:space:]]*:[[:space:]]*0'; then
     break
   fi
   sleep 0.1
 done
-bin/sshfling --json list --username s234 | python3 -c 'import json,sys; assert json.load(sys.stdin)["count"] == 0'
+bin/sshfling --json list --username s234 | grep -Eq '"count"[[:space:]]*:[[:space:]]*0'
 
 SSHPASS="$SSHPASS" sshpass -e bin/sshfling \
   -p 2222 \

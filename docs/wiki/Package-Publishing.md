@@ -12,9 +12,12 @@ site that includes:
 - Debian and Ubuntu `.deb` packages with APT metadata.
 - RHEL, Fedora, Rocky Linux, AlmaLinux, and UBI `.rpm` packages with RPM repo
   metadata.
-- A Homebrew formula, .NET global tool `.nupkg`, Java executable JAR/POM,
-  macOS `.pkg`, Windows MSI, Windows portable zip, source tarball, and
-  checksums.
+- A Homebrew formula, .NET global-tool and library `.nupkg` files, Java
+  executable/source/Javadocs JARs and POM with Maven and Gradle consumers,
+  Node.js npm `.tgz`, Python wheel, Go module zip, Rust `.crate`, PHP Composer
+  zip, Ruby `.gem`, POSIX C/C++ native source distribution, Perl source
+  distribution, macOS `.pkg`, Windows MSI, Windows portable zip, main source
+  tarball, and checksums.
 - Community package manifests for Arch/AUR, Alpine, FreeBSD Ports, OpenBSD
   Ports, pkgsrc, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft,
   Termux, AppImage, Scoop, winget, and Chocolatey.
@@ -171,6 +174,16 @@ Linux workstation:
 ```bash
 ./packaging/build-deb.sh
 ./packaging/build-rpm.sh
+./packaging/build-dotnet.sh
+./packaging/build-java.sh
+./packaging/build-node.sh
+./packaging/build-python.sh
+./packaging/build-go.sh
+./packaging/build-rust.sh
+./packaging/build-php.sh
+./packaging/build-ruby.sh
+./packaging/build-native-libraries.sh
+./packaging/build-perl.sh
 ```
 
 Build platform-specific packages on matching hosts:

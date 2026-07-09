@@ -26,6 +26,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    import tomllib
+except ImportError:  # pragma: no cover - release runners use Python 3.11+.
+    tomllib = None
+
 
 MATRIX_FIELDS = [
     "row_id",
@@ -85,6 +90,10 @@ OPTIONAL_SCANNER_EXCLUDED_PATHS = [
     "docs/release/enterprise-release-evidence",
     "packaging/dotnet/SSHFling.Tool/bin",
     "packaging/dotnet/SSHFling.Tool/obj",
+    "packaging/dotnet/SSHFling/bin",
+    "packaging/dotnet/SSHFling/obj",
+    "packaging/dotnet/SSHFling.Consumer/bin",
+    "packaging/dotnet/SSHFling.Consumer/obj",
     "packaging/java/target",
 ]
 OPTIONAL_SCANNER_EXCLUDED_PREFIXES = (
@@ -1070,6 +1079,208 @@ def collect_maven_dependencies(path: Path, repo_root: Path) -> list[dict[str, st
     return dependencies
 
 
+def collect_npm_dependencies(path: Path, repo_root: Path) -> list[dict[str, str]]:
+    dependencies: list[dict[str, str]] = []
+    rel = repo_relative(path, repo_root)
+    try:
+        manifest = json.loads(read_text(path))
+    except json.JSONDecodeError:
+        return dependencies
+
+    sections = {
+        "dependencies": "runtime",
+        "optionalDependencies": "optional",
+        "peerDependencies": "peer",
+        "devDependencies": "development",
+    }
+    for section, scope in sections.items():
+        entries = manifest.get(section, {})
+        if not isinstance(entries, dict):
+            continue
+        for name, version in sorted(entries.items()):
+            if not isinstance(name, str) or not name:
+                continue
+            dependencies.append(
+                {
+                    "ecosystem": "npm",
+                    "kind": f"npm-{section}",
+                    "name": name,
+                    "source": rel,
+                    "package_manager": "npm",
+                    "scope": scope,
+                    "version": str(version) if version else "NOASSERTION",
+                }
+            )
+    return dependencies
+
+
+def manifest_dependency(
+    *, ecosystem: str, kind: str, name: str, source: str, package_manager: str, scope: str, version: str
+) -> dict[str, str]:
+    return {
+        "ecosystem": ecosystem,
+        "kind": kind,
+        "name": name,
+        "source": source,
+        "package_manager": package_manager,
+        "scope": scope,
+        "version": version or "NOASSERTION",
+    }
+
+
+def requirement_name(requirement: str) -> str:
+    match = re.match(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)", requirement)
+    return match.group(1) if match else requirement.strip()
+
+
+def collect_python_dependencies(path: Path, repo_root: Path) -> list[dict[str, str]]:
+    if tomllib is None:
+        return []
+    try:
+        manifest = tomllib.loads(read_text(path))
+    except (ValueError, TypeError):
+        return []
+    rel = repo_relative(path, repo_root)
+    dependencies: list[dict[str, str]] = []
+    sections = [
+        (manifest.get("project", {}).get("dependencies", []), "python-project-dependency", "runtime"),
+        (manifest.get("build-system", {}).get("requires", []), "python-build-requirement", "build"),
+    ]
+    for entries, kind, scope in sections:
+        if not isinstance(entries, list):
+            continue
+        for requirement in entries:
+            if not isinstance(requirement, str) or not requirement.strip():
+                continue
+            dependencies.append(
+                manifest_dependency(
+                    ecosystem="pypi",
+                    kind=kind,
+                    name=requirement_name(requirement),
+                    source=rel,
+                    package_manager="pip",
+                    scope=scope,
+                    version=requirement,
+                )
+            )
+    return dependencies
+
+
+def collect_cargo_dependencies(path: Path, repo_root: Path) -> list[dict[str, str]]:
+    if tomllib is None:
+        return []
+    try:
+        manifest = tomllib.loads(read_text(path))
+    except (ValueError, TypeError):
+        return []
+    rel = repo_relative(path, repo_root)
+    dependencies: list[dict[str, str]] = []
+    sections = {
+        "dependencies": "runtime",
+        "dev-dependencies": "development",
+        "build-dependencies": "build",
+    }
+    for section, scope in sections.items():
+        entries = manifest.get(section, {})
+        if not isinstance(entries, dict):
+            continue
+        for name, constraint in sorted(entries.items()):
+            version = constraint.get("version", "NOASSERTION") if isinstance(constraint, dict) else constraint
+            dependencies.append(
+                manifest_dependency(
+                    ecosystem="cargo",
+                    kind=f"cargo-{section}",
+                    name=name,
+                    source=rel,
+                    package_manager="cargo",
+                    scope=scope,
+                    version=str(version),
+                )
+            )
+    return dependencies
+
+
+def collect_composer_dependencies(path: Path, repo_root: Path) -> list[dict[str, str]]:
+    try:
+        manifest = json.loads(read_text(path))
+    except json.JSONDecodeError:
+        return []
+    rel = repo_relative(path, repo_root)
+    dependencies: list[dict[str, str]] = []
+    for section, scope in (("require", "runtime"), ("require-dev", "development")):
+        entries = manifest.get(section, {})
+        if not isinstance(entries, dict):
+            continue
+        for name, constraint in sorted(entries.items()):
+            dependencies.append(
+                manifest_dependency(
+                    ecosystem="composer",
+                    kind=f"composer-{section}",
+                    name=name,
+                    source=rel,
+                    package_manager="composer",
+                    scope=scope,
+                    version=str(constraint),
+                )
+            )
+    return dependencies
+
+
+def collect_go_dependencies(path: Path, repo_root: Path) -> list[dict[str, str]]:
+    rel = repo_relative(path, repo_root)
+    dependencies: list[dict[str, str]] = []
+    in_require_block = False
+    for raw_line in read_text(path).splitlines():
+        line = raw_line.split("//", 1)[0].strip()
+        if line == "require (":
+            in_require_block = True
+            continue
+        if in_require_block and line == ")":
+            in_require_block = False
+            continue
+        if line.startswith("require "):
+            line = line.removeprefix("require ").strip()
+        elif not in_require_block:
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        dependencies.append(
+            manifest_dependency(
+                ecosystem="golang",
+                kind="go-require",
+                name=parts[0],
+                source=rel,
+                package_manager="go",
+                scope="runtime",
+                version=parts[1],
+            )
+        )
+    return dependencies
+
+
+def collect_gem_dependencies(path: Path, repo_root: Path) -> list[dict[str, str]]:
+    rel = repo_relative(path, repo_root)
+    dependencies: list[dict[str, str]] = []
+    pattern = re.compile(
+        r"add_(?:(runtime|development)_)?dependency\s*\(?\s*['\"]([^'\"]+)['\"](?:\s*,\s*['\"]([^'\"]+)['\"])?"
+    )
+    for scope_name, name, constraint in pattern.findall(read_text(path)):
+        scope = "development" if scope_name == "development" else "runtime"
+        dependencies.append(
+            manifest_dependency(
+                ecosystem="rubygems",
+                kind="gem-dependency",
+                name=name,
+                source=rel,
+                package_manager="gem",
+                scope=scope,
+                version=constraint or "NOASSERTION",
+            )
+        )
+    return dependencies
+
+
 def collect_dependencies(files: list[Path], repo_root: Path) -> dict[str, Any]:
     dependencies: list[dict[str, str]] = []
     seen: set[tuple[str, str, str, str]] = set()
@@ -1165,6 +1376,54 @@ def collect_dependencies(files: list[Path], repo_root: Path) -> dict[str, Any]:
                     continue
                 seen.add(key)
                 dependencies.append(dependency)
+        elif path.name == "package.json":
+            dependency_manifests.add(repo_relative(path, repo_root))
+            for dependency in collect_npm_dependencies(path, repo_root):
+                key = (
+                    dependency["ecosystem"],
+                    dependency["kind"],
+                    dependency["name"],
+                    dependency["source"],
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                dependencies.append(dependency)
+        elif path.name == "pyproject.toml":
+            dependency_manifests.add(repo_relative(path, repo_root))
+            for dependency in collect_python_dependencies(path, repo_root):
+                key = (dependency["ecosystem"], dependency["kind"], dependency["name"], dependency["source"])
+                if key not in seen:
+                    seen.add(key)
+                    dependencies.append(dependency)
+        elif path.name == "Cargo.toml":
+            dependency_manifests.add(repo_relative(path, repo_root))
+            for dependency in collect_cargo_dependencies(path, repo_root):
+                key = (dependency["ecosystem"], dependency["kind"], dependency["name"], dependency["source"])
+                if key not in seen:
+                    seen.add(key)
+                    dependencies.append(dependency)
+        elif path.name == "composer.json":
+            dependency_manifests.add(repo_relative(path, repo_root))
+            for dependency in collect_composer_dependencies(path, repo_root):
+                key = (dependency["ecosystem"], dependency["kind"], dependency["name"], dependency["source"])
+                if key not in seen:
+                    seen.add(key)
+                    dependencies.append(dependency)
+        elif path.name == "go.mod":
+            dependency_manifests.add(repo_relative(path, repo_root))
+            for dependency in collect_go_dependencies(path, repo_root):
+                key = (dependency["ecosystem"], dependency["kind"], dependency["name"], dependency["source"])
+                if key not in seen:
+                    seen.add(key)
+                    dependencies.append(dependency)
+        elif path.suffix == ".gemspec":
+            dependency_manifests.add(repo_relative(path, repo_root))
+            for dependency in collect_gem_dependencies(path, repo_root):
+                key = (dependency["ecosystem"], dependency["kind"], dependency["name"], dependency["source"])
+                if key not in seen:
+                    seen.add(key)
+                    dependencies.append(dependency)
 
     dependencies.sort(key=lambda item: (item["ecosystem"], item["kind"], item["name"], item["source"]))
     notes = [

@@ -5,7 +5,7 @@ copy_sshfling_templates() {
   local src_root="$1"
   local dest="$2"
 
-  install -d "$dest/scripts" "$dest/secrets" "$dest/ssh-client" "$dest/ssh-server" "$dest/production" "$dest/systemd"
+  install -d "$dest/native" "$dest/scripts" "$dest/secrets" "$dest/ssh-client" "$dest/ssh-server" "$dest/production" "$dest/systemd"
 
   install -m 0644 "$src_root/.env.example" "$dest/.env.example"
   install -m 0644 "$src_root/LICENSE" "$dest/LICENSE"
@@ -28,6 +28,8 @@ copy_sshfling_templates() {
   install -m 0644 "$src_root/ssh-server/sshd_config" "$dest/ssh-server/sshd_config"
 
   install -m 0755 "$src_root/production/sshfling-session" "$dest/production/sshfling-session"
+  install -m 0755 "$src_root/native/sshfling-linux-account" "$dest/native/sshfling-linux-account"
+  install -m 0755 "$src_root/native/sshfling-unix-identity" "$dest/native/sshfling-unix-identity"
   install -m 0644 "$src_root/systemd/sshflingd.service" "$dest/systemd/sshflingd.service"
   install -m 0644 "$src_root/systemd/sshfling-prune.service" "$dest/systemd/sshfling-prune.service"
   install -m 0644 "$src_root/systemd/sshfling-prune.timer" "$dest/systemd/sshfling-prune.timer"

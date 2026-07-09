@@ -68,7 +68,15 @@ import sys
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 code = int(sys.argv[2])
 required = {item["name"] for item in payload["dependencies"] if item["required"]}
-assert {"sshd", "useradd", "userdel", "chpasswd", "id"}.issubset(required), payload
+assert {
+    "sshd",
+    "jq",
+    "sshfling-unix-identity",
+    "sshfling-linux-account",
+    "useradd",
+    "userdel",
+    "chpasswd",
+}.issubset(required), payload
 if payload["missing_required"]:
     assert code != 0, payload
 else:
@@ -265,7 +273,7 @@ test "$scp_mode_code" -ne 0 || fail "scp accepted explicit mode rewriting"
 grep -Fq "cannot safely set explicit destination modes" "$tmp/scp-mode.err" || fail "scp mode rejection was not actionable"
 
 detached_dir="$tmp/detached"
-"$cmd" --json detached start --name cross --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; print("detached-ready", flush=True); time.sleep(30)' >"$tmp/detached-start.json"
+"$cmd" --json detached start --name cross --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- sh -c 'printf "%s\n" detached-ready; sleep 30' >"$tmp/detached-start.json"
 "$cmd" --json detached list --detached-dir "$detached_dir" >"$tmp/detached-list.json"
 python3 - "$tmp/detached-start.json" "$tmp/detached-list.json" <<'PY'
 import json
@@ -294,11 +302,11 @@ assert payload["job"]["status"] == "killed", payload
 assert payload["killed"] >= 1, payload
 assert payload["pids"], payload
 PY
-"$cmd" detached start --name plain --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(30)' >"$tmp/detached-plain-start.out"
+"$cmd" detached start --name plain --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- sh -c 'sleep 30' >"$tmp/detached-plain-start.out"
 "$cmd" detached kill --detached-dir "$detached_dir" plain >"$tmp/detached-plain-kill.out"
 grep -Eq '^killed [1-9][0-9]* detached process\(es\)$' "$tmp/detached-plain-kill.out" || fail "plain detached kill output was not stable"
 set +e
-"$cmd" --json detached start --name start-fails --time 30s --cwd "$tmp/missing-cwd" --detached-dir "$detached_dir" -- python3 -c 'print("bad")' >"$tmp/detached-start-fails.out" 2>"$tmp/detached-start-fails.err"
+"$cmd" --json detached start --name start-fails --time 30s --cwd "$tmp/missing-cwd" --detached-dir "$detached_dir" -- sh -c 'printf "%s\n" bad' >"$tmp/detached-start-fails.out" 2>"$tmp/detached-start-fails.err"
 start_fails_code="$?"
 set -e
 if [ "$start_fails_code" -eq 0 ]; then
@@ -318,9 +326,9 @@ assert job["status"] == "failed", job
 assert job.get("pid") is None, job
 assert "error" in job, job
 PY
-"$cmd" --json detached start --name replace-active --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(30)' >"$tmp/detached-replace-active-start.json"
+"$cmd" --json detached start --name replace-active --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- sh -c 'sleep 30' >"$tmp/detached-replace-active-start.json"
 set +e
-"$cmd" --json detached start --replace --name replace-active --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'print("bad")' >"$tmp/detached-replace-active.out" 2>"$tmp/detached-replace-active.err"
+"$cmd" --json detached start --replace --name replace-active --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- sh -c 'printf "%s\n" bad' >"$tmp/detached-replace-active.out" 2>"$tmp/detached-replace-active.err"
 replace_active_code="$?"
 set -e
 if [ "$replace_active_code" -eq 0 ]; then
@@ -329,7 +337,7 @@ if [ "$replace_active_code" -eq 0 ]; then
 fi
 grep -Fq "already active" "$tmp/detached-replace-active.out" || fail "active detached replace did not explain the active job"
 "$cmd" --json detached kill --detached-dir "$detached_dir" replace-active >/dev/null
-"$cmd" --json detached start --name replace-done --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'print("first", flush=True)' >"$tmp/detached-replace-done-start.json"
+"$cmd" --json detached start --name replace-done --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- sh -c 'printf "%s\n" first' >"$tmp/detached-replace-done-start.json"
 replace_done_seen=0
 replace_done_attempts=0
 while [ "$replace_done_attempts" -lt 10 ]; do
@@ -353,14 +361,14 @@ if [ "$replace_done_seen" -ne 1 ]; then
   fail "detached replacement setup did not reach completed status"
 fi
 set +e
-"$cmd" --json detached start --name replace-done --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'print("bad")' >"$tmp/detached-replace-done.out" 2>"$tmp/detached-replace-done.err"
+"$cmd" --json detached start --name replace-done --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- sh -c 'printf "%s\n" bad' >"$tmp/detached-replace-done.out" 2>"$tmp/detached-replace-done.err"
 replace_done_code="$?"
 set -e
 if [ "$replace_done_code" -eq 0 ]; then
   fail "inactive detached job was replaced without --replace"
 fi
 grep -Fq "Use --replace after it is inactive" "$tmp/detached-replace-done.out" || fail "inactive detached replace did not require --replace"
-"$cmd" --json detached start --replace --name replace-done --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; print("second", flush=True); time.sleep(30)' >"$tmp/detached-replace-done-replaced.json"
+"$cmd" --json detached start --replace --name replace-done --time 30s --cwd "$tmp" --detached-dir "$detached_dir" -- sh -c 'printf "%s\n" second; sleep 30' >"$tmp/detached-replace-done-replaced.json"
 replace_done_log="$detached_dir/replace-done.out.log"
 replace_second_seen=0
 replace_second_attempts=0
@@ -381,7 +389,7 @@ if grep -Fq "first" "$replace_done_log" 2>/dev/null; then
   fail "detached --replace did not reset stdout log"
 fi
 "$cmd" --json detached kill --detached-dir "$detached_dir" replace-done >/dev/null
-"$cmd" --json detached start --name timeout --time 1s --cwd "$tmp" --detached-dir "$detached_dir" -- python3 -c 'import time; time.sleep(10)' >"$tmp/detached-timeout-start.json"
+"$cmd" --json detached start --name timeout --time 1s --cwd "$tmp" --detached-dir "$detached_dir" -- sh -c 'sleep 10' >"$tmp/detached-timeout-start.json"
 timeout_seen=0
 timeout_attempts=0
 while [ "$timeout_attempts" -lt 12 ]; do
@@ -406,7 +414,7 @@ if [ "$timeout_seen" -ne 1 ]; then
   fail "detached timeout job did not reach timed_out status"
 fi
 set +e
-"$cmd" --json detached start --name too-long --time 25h --detached-dir "$detached_dir" -- python3 -c 'print("no")' >"$tmp/detached-too-long.out" 2>"$tmp/detached-too-long.err"
+"$cmd" --json detached start --name too-long --time 25h --detached-dir "$detached_dir" -- sh -c 'printf "%s\n" no' >"$tmp/detached-too-long.out" 2>"$tmp/detached-too-long.err"
 detached_too_long_code="$?"
 set -e
 if [ "$detached_too_long_code" -eq 0 ]; then
@@ -414,7 +422,7 @@ if [ "$detached_too_long_code" -eq 0 ]; then
 fi
 grep -Fq "cannot exceed 24 hours" "$tmp/detached-too-long.out" || fail "detached too-long JSON missing 24h error"
 set +e
-SSHFLING_FORCED_SESSION=1 "$cmd" --json detached start --name forced-denied --time 30s --detached-dir "$detached_dir" -- python3 -c 'print("no")' >"$tmp/detached-forced-denied.out" 2>"$tmp/detached-forced-denied.err"
+SSHFLING_FORCED_SESSION=1 "$cmd" --json detached start --name forced-denied --time 30s --detached-dir "$detached_dir" -- sh -c 'printf "%s\n" no' >"$tmp/detached-forced-denied.out" 2>"$tmp/detached-forced-denied.err"
 forced_denied_code="$?"
 set -e
 if [ "$forced_denied_code" -eq 0 ]; then
@@ -619,6 +627,8 @@ for rel in \
   LICENSE \
   compose.server.yml \
   compose.client.yml \
+  native/sshfling-linux-account \
+  native/sshfling-unix-identity \
   scripts/install-local.sh \
   scripts/uninstall-local.sh \
   scripts/create-network.sh \
@@ -643,6 +653,18 @@ grep -Fq "SSH_SESSION_SECONDS=60" "$project/.env" || fail "init did not write SS
 grep -Fq "SSH_PORT_ON_HOST=2222" "$project/.env" || fail "init did not write SSH_PORT_ON_HOST"
 grep -Fq "SSHFLING_MAX_SECONDS=86400" "$project/systemd/sshflingd.env.example" || fail "systemd env did not default SSHFLING_MAX_SECONDS to 86400"
 grep -Fq "max_allowed_seconds=86400" "$project/production/sshfling-session" || fail "production wrapper did not allow 24h sessions"
+if grep -Eq 'python3|python' "$project/production/sshfling-session"; then
+  fail "production wrapper should use native shell policy parsing, not Python"
+fi
+if grep -Eq 'python3|python' "$project/native/sshfling-unix-identity"; then
+  fail "Unix identity lookup should use native shell commands, not Python"
+fi
+if grep -Fq 'exec {' "$project/production/sshfling-session"; then
+  fail "production wrapper should remain compatible with macOS Bash 3.2"
+fi
+if grep -Fq 'run_limited /bin/bash' "$project/production/sshfling-session"; then
+  fail "production wrapper should use the active platform Bash path"
+fi
 grep -Fq "max_allowed_seconds=86400" "$project/ssh-server/limited-session.sh" || fail "docker wrapper did not allow 24h sessions"
 
 python3 - "$cmd" <<'PY'
@@ -1038,8 +1060,10 @@ with tempfile.TemporaryDirectory() as tmpdir:
         stdout = ""
 
     original_run = sshfling.run
+    original_unix_user_exists = sshfling.unix_user_exists
     original_unix_user_identity = sshfling.unix_user_identity
     sshfling.run = lambda *args, **kwargs: UserExists()
+    sshfling.unix_user_exists = lambda username: True
     sshfling.unix_user_identity = lambda username: {
         "username": username,
         "uid": 67890,
@@ -1055,6 +1079,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
         )
     finally:
         sshfling.run = original_run
+        sshfling.unix_user_exists = original_unix_user_exists
         sshfling.unix_user_identity = original_unix_user_identity
 
     by_user = {item["username"]: item for item in results}
@@ -1104,6 +1129,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
     assert "metadata" not in root_equivalent, root_equivalent
 
     sshfling.run = lambda *args, **kwargs: UserExists()
+    sshfling.unix_user_exists = lambda username: True
+    sshfling.unix_user_identity = lambda username: {}
     try:
         active_results = sshfling.prune_password_grants(
             grant_dir,
@@ -1125,6 +1152,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
         )
     finally:
         sshfling.run = original_run
+        sshfling.unix_user_exists = original_unix_user_exists
+        sshfling.unix_user_identity = original_unix_user_identity
 
     assert len(active_results) == 1, active_results
     assert active_results[0]["status"] == "active", active_results
@@ -1171,7 +1200,11 @@ with tempfile.TemporaryDirectory() as tmpdir:
         sshfling.require_root = lambda action: None
         sshfling.require_password_host_tools = lambda: None
         sshfling.unix_user_exists = lambda username: True
-        sshfling.ensure_unix_user = lambda username: {"user": username, "created": False}
+        sshfling.ensure_unix_user = lambda username, allow_existing=False: {
+            "user": username,
+            "created": False,
+            "allow_existing": allow_existing,
+        }
         def capture_password(username, password):
             captured["password_user"] = username
             captured["password"] = password
@@ -1459,7 +1492,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
     }
     try:
         sshfling.require_root = lambda action: None
-        sshfling.command_path = lambda name: "/usr/sbin/sshd" if name == "sshd" else None
+        command_paths = {"sshd": "/usr/sbin/sshd", "jq": "/usr/bin/jq"}
+        sshfling.command_path = lambda name: command_paths.get(name)
         sshfling.resource_file = lambda relative: template
         def fail_validation(*args, **kwargs):
             raise sshfling.SSHFlingError("forced validation failure", 2)

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -122,6 +124,81 @@ class LanguageSupportMatrixTests(unittest.TestCase):
         }
 
         self.assertEqual(status_value(rows_by_language["PowerShell"]).upper(), "BLOCKED")
+
+    def test_javascript_typescript_package_surface_is_supported(self) -> None:
+        rows_by_language = {
+            language_name(row): row for row in generate_language_support_matrix.LANGUAGE_SUPPORT
+        }
+        node_package = REPO_ROOT / "packaging" / "node" / "package.json"
+        package_metadata = json.loads(node_package.read_text(encoding="utf-8"))
+
+        self.assertEqual(status_value(rows_by_language["TypeScript"]).upper(), "PASS")
+        self.assertEqual(status_value(rows_by_language["JavaScript"]).upper(), "PASS")
+        self.assertEqual(package_metadata["name"], "sshfling")
+        self.assertEqual(package_metadata["bin"]["sshfling"], "./bin/sshfling.js")
+        self.assertEqual(package_metadata["types"], "./index.d.ts")
+        self.assertIn(".", package_metadata["exports"])
+        self.assertTrue((REPO_ROOT / "packaging" / "node" / "index.js").is_file())
+        self.assertTrue((REPO_ROOT / "packaging" / "node" / "index.d.ts").is_file())
+        self.assertTrue((REPO_ROOT / "packaging" / "node" / "bin" / "sshfling.js").is_file())
+        self.assertIn("package-node", (REPO_ROOT / "Makefile").read_text(encoding="utf-8"))
+
+    def test_python_go_rust_php_and_ruby_package_surfaces_are_supported(self) -> None:
+        rows_by_language = {
+            language_name(row): row for row in generate_language_support_matrix.LANGUAGE_SUPPORT
+        }
+        for language in ("Python", "Go", "Rust", "PHP", "Ruby"):
+            self.assertEqual(status_value(rows_by_language[language]).upper(), "PASS")
+
+        python_metadata = tomllib.loads(
+            (REPO_ROOT / "packaging/python/pyproject.toml").read_text(encoding="utf-8")
+        )
+        rust_metadata = tomllib.loads(
+            (REPO_ROOT / "packaging/rust/Cargo.toml").read_text(encoding="utf-8")
+        )
+        php_metadata = json.loads(
+            (REPO_ROOT / "packaging/php/composer.json").read_text(encoding="utf-8")
+        )
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+
+        self.assertEqual(python_metadata["project"]["scripts"]["sshfling"], "sshfling.cli:main")
+        self.assertIn("module github.com/GRWLX/sshfling/packaging/go", (REPO_ROOT / "packaging/go/go.mod").read_text(encoding="utf-8"))
+        self.assertEqual(rust_metadata["package"]["name"], "sshfling-cli")
+        self.assertEqual(php_metadata["name"], "grwlx/sshfling")
+        self.assertTrue((REPO_ROOT / "packaging/ruby/sshfling.gemspec").is_file())
+
+        for package in ("python", "go", "rust", "php", "ruby"):
+            self.assertTrue((REPO_ROOT / f"packaging/build-{package}.sh").is_file())
+            self.assertIn(f"package-{package}", makefile)
+
+    def test_native_dotnet_language_and_perl_surfaces_are_supported(self) -> None:
+        rows_by_language = {
+            language_name(row): row for row in generate_language_support_matrix.LANGUAGE_SUPPORT
+        }
+        for language in (
+            "C",
+            "C++",
+            "C#/.NET",
+            "Visual Basic/.NET",
+            "F#",
+            "Perl",
+            "CMake",
+        ):
+            self.assertEqual(status_value(rows_by_language[language]).upper(), "PASS")
+
+        required_paths = (
+            "packaging/native/CMakeLists.txt",
+            "packaging/native/include/sshfling/sshfling.h",
+            "packaging/native/include/sshfling/sshfling.hpp",
+            "packaging/dotnet/SSHFling.Consumer.VB/Program.vb",
+            "packaging/dotnet/SSHFling.Consumer.FSharp/Program.fs",
+            "packaging/perl/Makefile.PL",
+            "packaging/perl/lib/SSHFling.pm",
+            "packaging/build-native-libraries.sh",
+            "packaging/build-perl.sh",
+        )
+        for path in required_paths:
+            self.assertTrue((REPO_ROOT / path).is_file(), path)
 
     def test_unsupported_languages_are_not_pass(self) -> None:
         unsupported_pass = [

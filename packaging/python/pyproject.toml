@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sshfling"
+dynamic = ["version"]
+description = "Temporary SSH access using standard OpenSSH"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "GRWLX" },
+]
+keywords = ["ssh", "openssh", "temporary-access", "cli"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "License :: Other/Proprietary License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/GRWLX/sshfling"
+Repository = "https://github.com/GRWLX/sshfling"
+Documentation = "https://github.com/GRWLX/sshfling/tree/main/docs"
+
+[project.scripts]
+sshfling = "sshfling.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "sshfling.cli.VERSION" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sshfling = [
+  "templates/**/*",
+  "templates/.env.example",
+  "templates/secrets/.gitkeep",
+]

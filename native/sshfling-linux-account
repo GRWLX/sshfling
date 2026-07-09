@@ -1,0 +1,311 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+die() {
+  local message="$1"
+  local code="${2:-1}"
+  echo "sshfling-linux-account: $message" >&2
+  exit "$code"
+}
+
+validate_username() {
+  [[ "${1:-}" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
+    || die "invalid Linux username: ${1:-}" 2
+}
+
+require_tool() {
+  command -v "$1" >/dev/null 2>&1 || die "missing command: $1" 127
+}
+
+require_root() {
+  (( EUID == 0 )) || die "account mutation requires root privileges" 77
+}
+
+passwd_entry() {
+  local username="$1"
+  local entry=""
+  local status
+
+  if command -v getent >/dev/null 2>&1; then
+    if entry="$(getent passwd "$username" 2>/dev/null)"; then
+      :
+    else
+      status="$?"
+      if [[ "$status" -eq 2 ]]; then
+        return 3
+      fi
+      echo "sshfling-linux-account: getent passwd lookup failed for $username (exit $status)" >&2
+      return "$status"
+    fi
+  elif [[ -r /etc/passwd ]]; then
+    if entry="$(awk -F: -v user="$username" '$1 == user { print; exit }' /etc/passwd)"; then
+      :
+    else
+      status="$?"
+      echo "sshfling-linux-account: passwd file lookup failed for $username (exit $status)" >&2
+      return "$status"
+    fi
+  else
+    echo "sshfling-linux-account: no passwd lookup backend is available" >&2
+    return 127
+  fi
+  [[ -n "$entry" ]] || return 3
+  [[ "$entry" != *$'\n'* ]] || {
+    echo "sshfling-linux-account: passwd lookup returned multiple records for $username" >&2
+    return 70
+  }
+  printf '%s\n' "$entry"
+}
+
+account_exists() {
+  local username="$1"
+  local status
+
+  if passwd_entry "$username" >/dev/null; then
+    return 0
+  else
+    status="$?"
+  fi
+  [[ "$status" -eq 3 ]] && return 1
+  return "$status"
+}
+
+identity_fields() {
+  local username="$1"
+  local entry
+  local account_name uid gid home
+
+  if entry="$(passwd_entry "$username")"; then
+    :
+  else
+    return "$?"
+  fi
+  IFS=: read -r account_name _ uid gid _ home _ <<<"$entry"
+  [[ "$account_name" == "$username" && "$uid" =~ ^[0-9]+$ && "$gid" =~ ^[0-9]+$ ]] \
+    || die "invalid passwd entry for $username" 1
+  [[ "$home" != *$'\t'* && "$home" != *$'\n'* ]] \
+    || die "unsupported control character in home directory for $username" 1
+  printf '%s\t%s\t%s\n' "$uid" "$gid" "$home"
+}
+
+emit_identity() {
+  local username="$1"
+  local fields uid gid home status
+
+  if fields="$(identity_fields "$username")"; then
+    :
+  else
+    status="$?"
+    if [[ "$status" -eq 3 ]]; then
+      printf 'result\tstatus=missing\tuser=%s\n' "$username"
+      return 0
+    fi
+    exit "$status"
+  fi
+  IFS=$'\t' read -r uid gid home <<<"$fields"
+  printf 'result\tstatus=present\tuser=%s\tuid=%s\tgid=%s\thome=%s\n' \
+    "$username" "$uid" "$gid" "$home"
+}
+
+reject_root_equivalent() {
+  local username="$1"
+  local fields uid status
+
+  [[ "$username" != "root" && "$username" != "administrator" ]] \
+    || die "refusing to mutate root-equivalent account: $username" 2
+  if fields="$(identity_fields "$username")"; then
+    IFS=$'\t' read -r uid _ <<<"$fields"
+    [[ "$uid" != "0" ]] || die "refusing to mutate uid 0 account: $username" 2
+  else
+    status="$?"
+    [[ "$status" -eq 3 ]] || exit "$status"
+  fi
+}
+
+validate_shell() {
+  local shell_path="$1"
+  [[ "$shell_path" == /* && -x "$shell_path" ]] \
+    || die "login shell must be an executable absolute path: $shell_path" 2
+}
+
+create_user() {
+  local username="$1"
+  local shell_path="$2"
+  local status
+
+  if account_exists "$username"; then
+    printf 'result\tstatus=present\tuser=%s\tcreated=false\n' "$username"
+    return 0
+  else
+    status="$?"
+    [[ "$status" -eq 1 ]] || exit "$status"
+  fi
+  require_tool useradd
+  require_tool userdel
+  useradd --create-home --shell "$shell_path" "$username"
+  if account_exists "$username"; then
+    :
+  else
+    status="$?"
+    userdel --remove "$username" >/dev/null 2>&1 || userdel "$username" >/dev/null 2>&1 || true
+    [[ "$status" -eq 1 ]] || exit "$status"
+    die "useradd completed but account is not visible: $username" 1
+  fi
+  printf 'result\tstatus=created\tuser=%s\tcreated=true\n' "$username"
+}
+
+attempt() {
+  local action="$1"
+  local tool="$2"
+  shift 2
+  local returncode
+
+  set +e
+  "$tool" "$@" >/dev/null 2>&1
+  returncode="$?"
+  set -e
+  printf 'attempt\taction=%s\ttool=%s\treturncode=%s\n' "$action" "$tool" "$returncode"
+  return "$returncode"
+}
+
+command_name="${1:-}"
+shift || true
+
+case "$command_name" in
+  identity)
+    [[ "$#" -eq 1 ]] || die "usage: identity USER" 2
+    validate_username "$1"
+    emit_identity "$1"
+    ;;
+  exists)
+    [[ "$#" -eq 1 ]] || die "usage: exists USER" 2
+    validate_username "$1"
+    if account_exists "$1"; then
+      printf 'result\tstatus=present\tuser=%s\texists=true\n' "$1"
+      exit 0
+    else
+      status="$?"
+    fi
+    [[ "$status" -eq 1 ]] || exit "$status"
+    printf 'result\tstatus=missing\tuser=%s\texists=false\n' "$1"
+    exit 1
+    ;;
+  create)
+    [[ "$#" -eq 2 ]] || die "usage: create USER SHELL" 2
+    validate_username "$1"
+    validate_shell "$2"
+    require_root
+    reject_root_equivalent "$1"
+    create_user "$1" "$2"
+    ;;
+  set-password)
+    [[ "$#" -eq 1 ]] || die "usage: set-password USER" 2
+    validate_username "$1"
+    require_root
+    reject_root_equivalent "$1"
+    if account_exists "$1"; then
+      :
+    else
+      status="$?"
+      [[ "$status" -eq 1 ]] || exit "$status"
+      die "account does not exist: $1" 1
+    fi
+    require_tool chpasswd
+    require_tool usermod
+    require_tool chage
+    IFS= read -r password || die "password must be provided on stdin" 2
+    [[ -n "$password" ]] || die "password must not be empty" 2
+    printf '%s:%s\n' "$1" "$password" | chpasswd
+    unset password
+    usermod --unlock "$1"
+    chage -E -1 "$1"
+    printf 'result\tstatus=updated\tuser=%s\tpassword_set=true\n' "$1"
+    ;;
+  lock)
+    [[ "$#" -eq 1 ]] || die "usage: lock USER" 2
+    validate_username "$1"
+    require_root
+    reject_root_equivalent "$1"
+    if account_exists "$1"; then
+      :
+    else
+      status="$?"
+      [[ "$status" -eq 1 ]] || exit "$status"
+      printf 'result\tstatus=missing\tuser=%s\n' "$1"
+      exit 0
+    fi
+    locked=false
+    expired=false
+    if command -v usermod >/dev/null 2>&1; then
+      if attempt lock usermod --lock "$1"; then locked=true; fi
+    fi
+    if [[ "$locked" == false ]] && command -v passwd >/dev/null 2>&1; then
+      if attempt lock passwd -l "$1"; then locked=true; fi
+    fi
+    if command -v chage >/dev/null 2>&1; then
+      if attempt expire chage -E 0 "$1"; then expired=true; fi
+    fi
+    [[ "$locked" == true ]] || die "could not lock account: $1" 1
+    printf 'result\tstatus=locked\tuser=%s\tlocked=%s\texpired=%s\n' \
+      "$1" "$locked" "$expired"
+    ;;
+  delete)
+    [[ "$#" -eq 1 ]] || die "usage: delete USER" 2
+    validate_username "$1"
+    require_root
+    reject_root_equivalent "$1"
+    if account_exists "$1"; then
+      :
+    else
+      status="$?"
+      [[ "$status" -eq 1 ]] || exit "$status"
+      printf 'result\tstatus=missing\tuser=%s\n' "$1"
+      exit 0
+    fi
+    require_tool userdel
+    if ! attempt delete-home userdel --remove "$1"; then
+      attempt delete userdel "$1" || true
+    fi
+    if account_exists "$1"; then
+      die "userdel completed but account is still visible: $1" 1
+    else
+      status="$?"
+      [[ "$status" -eq 1 ]] || exit "$status"
+    fi
+    printf 'result\tstatus=deleted\tuser=%s\tdeleted=true\n' "$1"
+    ;;
+  create-certificate-user)
+    [[ "$#" -eq 2 ]] || die "usage: create-certificate-user USER SHELL" 2
+    validate_username "$1"
+    validate_shell "$2"
+    require_root
+    reject_root_equivalent "$1"
+    if account_exists "$1"; then
+      printf 'result\tstatus=present\tuser=%s\tcreated=false\n' "$1"
+      exit 0
+    else
+      status="$?"
+      [[ "$status" -eq 1 ]] || exit "$status"
+    fi
+    require_tool useradd
+    require_tool userdel
+    require_tool openssl
+    password_hash="$(openssl rand -base64 32 | openssl passwd -6 -stdin)"
+    [[ "$password_hash" == \$6\$* && "$password_hash" != *$'\n'* && "$password_hash" != *$'\r'* ]] \
+      || die "OpenSSL returned an invalid SHA-512 password hash" 1
+    useradd --create-home --shell "$2" --password "$password_hash" "$1"
+    unset password_hash
+    if account_exists "$1"; then
+      :
+    else
+      status="$?"
+      userdel --remove "$1" >/dev/null 2>&1 || userdel "$1" >/dev/null 2>&1 || true
+      [[ "$status" -eq 1 ]] || exit "$status"
+      die "useradd completed but account is not visible: $1" 1
+    fi
+    printf 'result\tstatus=created\tuser=%s\tcreated=true\tunlocked=true\n' "$1"
+    ;;
+  *)
+    die "usage: {identity|exists|create|set-password|lock|delete|create-certificate-user} ..." 2
+    ;;
+esac

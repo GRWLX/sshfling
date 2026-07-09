@@ -38,10 +38,11 @@ sudo apt update
 ```
 
 See [Install and uninstall runbook](docs/install-uninstall.md) for DEB/RPM,
-public repository, .NET global tool, macOS, Windows, BSD/community, container,
-dependency, and original-state instructions. See
+public repository, .NET, Java, npm, Python, Go, Rust, PHP, Ruby, macOS, Windows,
+BSD/community, container, dependency, and original-state instructions. See
 [Repository and package registration](docs/repos.md) for package publishing
-details, [OpenSSH dependency policy](docs/openssh-dependencies.md) for
+details, [Library APIs](docs/libraries.md) for importable package examples,
+[OpenSSH dependency policy](docs/openssh-dependencies.md) for
 dependency ownership, version, install, uninstall, and original-state
 expectations, and [Uninstall and cleanup](#uninstall-and-cleanup) for host SSH
 configuration and local state removal.
@@ -161,6 +162,12 @@ Rules:
 - SSHFling discloses use in system logs through `logger` with the `sshfling` and `sshfling-session` tags. Audit records include grant/session metadata such as user, principal, lifetime, serial, and outcome, but not passwords, bearer tokens, cookies, private keys, public key material, or raw remote commands.
 
 Under the hood, password mode writes a temporary sshd `Match User` block that forces the timeout wrapper. Certificate mode uses OpenSSH user certificates and the same host-side timeout wrapper.
+
+OS-sensitive operations use native command backends: the forced-session wrapper
+parses policy with Bash and `jq`, UID/GID/home checks use a POSIX shell helper
+with `getent` or macOS directory services, and Linux account create/lock/delete
+uses a Bash helper around shadow tools. The shared CLI orchestration remains
+Python; privileged account and session-policy enforcement do not invoke Python.
 
 SSHFling also fits AI-assisted operations where the target server should not run an AI CLI, agent, SDK, or vendor daemon. An operator can grant a short-lived standard SSH session to a human or AI tool from a workstation, while the server continues to rely on OpenSSH, local policy, and a forced command wrapper for timeout enforcement. See [AI-assisted temporary server access](docs/ai-temporary-access.md) and [Codex and enterprise detached workflows](docs/codex-enterprise-workflow.md).
 
@@ -446,7 +453,7 @@ curl -fsSL https://grwlx.github.io/sshfling/macos/uninstall-pkg.sh -o "$tmp/unin
 sudo bash "$tmp/uninstall-pkg.sh"
 ```
 
-The macOS pkg uninstall helper removes `/usr/local/bin/sshfling` and `/usr/local/share/sshfling`, then forgets the pkg receipt. It intentionally preserves `/etc/sshfling` because that directory can contain local policy, CA material, or operator-managed configuration.
+The macOS pkg uninstall helper removes `/usr/local/bin/sshfling`, the packaged native identity helper under `/usr/local/libexec/sshfling`, and `/usr/local/share/sshfling`, then forgets the pkg receipt. It intentionally preserves `/etc/sshfling` because that directory can contain local policy, CA material, or operator-managed configuration.
 
 .NET global tool:
 
@@ -562,6 +569,14 @@ Build packages from this source checkout:
 ./packaging/build-rpm.sh
 ./packaging/build-dotnet.sh
 ./packaging/build-java.sh
+./packaging/build-node.sh
+./packaging/build-python.sh
+./packaging/build-go.sh
+./packaging/build-rust.sh
+./packaging/build-php.sh
+./packaging/build-ruby.sh
+./packaging/build-native-libraries.sh
+./packaging/build-perl.sh
 powershell -NoProfile -File packaging/build-msi.ps1
 ./packaging/build-pkg.sh
 ```
@@ -570,11 +585,30 @@ Package outputs go to `dist/`.
 
 - `.deb` needs `dpkg-deb`.
 - `.rpm` needs `rpmbuild`.
-- `.nupkg` needs the .NET 10 SDK to build. The installed .NET global tool
-  still requires Python 3 and OpenSSH tools on the target host.
-- `sshfling-cli-VERSION.jar` needs Maven and JDK 11 or newer to build. The
-  Java executable JAR still requires Python 3 and OpenSSH tools on the target
+- The `SSHFling.Tool.VERSION.nupkg` global tool and `SSHFling.VERSION.nupkg`
+  library need the .NET 10 SDK to build and Python 3/OpenSSH at run time. Clean
+  C#, Visual Basic, and F# consumers validate the library package.
+- The Java executable, source, and Javadocs JARs need Maven, the pinned Gradle
+  wrapper, and JDK 11 or newer to build. Maven and Gradle library consumers
+  still require Python 3 and OpenSSH tools on the target host.
+- `sshfling-VERSION.tgz` needs Node.js 18 or newer and npm to build. The
+  installed npm package still requires Python 3 and OpenSSH tools on the target
   host.
+- `sshfling-VERSION-py3-none-any.whl` needs Python 3.10 or newer, pip, and
+  optionally pipx for CLI validation.
+- `sshfling-go-VERSION.zip` needs Go 1.22 or newer and installs the embedded
+  launcher with `go install ./cmd/sshfling`.
+- `sshfling-cli-VERSION.crate` needs Rust 1.70 or newer, Cargo, rustfmt, and
+  Clippy to build and validate.
+- `sshfling-php-VERSION.zip` needs PHP 8.1 or newer and Composer.
+- `sshfling-VERSION.gem` needs Ruby 3.0 or newer, RubyGems, and Bundler.
+- `sshfling-native-VERSION.tar.gz` needs a POSIX host, CMake 3.20 or newer, a
+  C11/C++17 compiler, pkg-config, Ninja, and make. It installs
+  shared/static C libraries, a C++ wrapper, and `sshfling-c`.
+- `sshfling-perl-VERSION.tar.gz` needs Perl 5.26 or newer, MakeMaker, and make.
+- The Go, Rust, PHP, Ruby, C/C++, and Perl launchers bundle the canonical
+  SSHFling Python source and templates; they still require host Python 3 and
+  OpenSSH tools at run time.
 - `.msi` needs Windows PowerShell and WiX Toolset v3.
 - `.pkg` needs macOS `pkgbuild` and `productbuild`.
 
@@ -595,7 +629,7 @@ GitHub Actions workflows are included for public distribution:
 
 - `Container image tests` builds packages into Docker-based install targets and runs the SSHFling server/client image smoke tests through `make test-containers`.
 - `Release packages without web` builds release artifacts only.
-- `Release packages with public web` verifies a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, .NET global tool, Java executable JAR, macOS `.pkg`, Windows MSI installs, and community package manifests for BSDs, Arch/AUR, Alpine, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey. Manual runs are dry-run verification unless `publish=true`; tag runs publish only when stable repository signing secrets are present and the configured Pages environment permits deployment.
+- `Release packages with public web` verifies a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, .NET, Java, npm, Python wheel, Go module, Rust crate, Composer, RubyGems, native C/C++ libraries, Perl, macOS `.pkg`, Windows MSI, and the generated community package manifests. Manual runs are dry-run verification unless `publish=true`; tag runs publish only when stable repository signing secrets are present and the configured Pages environment permits deployment.
 - `Package install tests` installs from the published package site and verifies the requested `sshfling` version across Linux package repos and community package manifests.
 - `Cross OS validation` installs or builds those outputs across Linux, BSD,
   macOS, and Windows and checks the explicit grant lifetime requirement,
@@ -655,7 +689,15 @@ NIXPKGS_ALLOW_UNFREE=1 nix run --impure github:GRWLX/sshfling
 
 For this tool, native packages are the right default for deployment fleets because the command wraps Docker, writes deployment files, and is likely to be installed by admins.
 
-NPM would be good for developer-first distribution, especially `npm install -g sshfling`, but it would add a Node runtime expectation. The NuGet package is a .NET global tool wrapper for developer and admin convenience; it still depends on host Python and OpenSSH. Homebrew is the best macOS developer path, winget/Intune are better Windows distribution paths, and APT/YUM are best for Linux fleets.
+Language ecosystem packages are available for npm, pip/pipx, Go, Cargo,
+Composer, RubyGems/Bundler, NuGet, and Java through Maven and Gradle. Importable
+launcher APIs and clean consumer examples are documented in
+[docs/libraries.md](docs/libraries.md), with 100+ verification cells in
+[docs/language-deployment-support.md](docs/language-deployment-support.md).
+They are developer and admin convenience paths around the same Python runtime and host OpenSSH dependency;
+native APT/YUM packages remain the preferred Linux fleet deployment path.
+Homebrew is the preferred macOS developer path, and winget/Intune are better
+Windows fleet paths.
 
 ## License
 

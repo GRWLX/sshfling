@@ -76,7 +76,51 @@ def row(
 
 PASS_PACKAGE_EVIDENCE = (
     "make test VERSION=0.1.16; make package-deb package-rpm package-dotnet "
-    "package-java VERSION=0.1.16; GitHub release v0.1.16 artifacts"
+    "package-java package-node package-python package-go package-rust package-php "
+    "package-ruby package-native-libraries package-perl VERSION=0.1.16; "
+    "GitHub release v0.1.16 artifacts"
+)
+PASS_PYTHON_EVIDENCE = (
+    "make package-python VERSION=0.1.16; isolated pip and pipx install/import/CLI/uninstall "
+    "validation in packaging/build-python.sh"
+)
+PASS_NODE_EVIDENCE = (
+    "make test VERSION=0.1.16; make package-node VERSION=0.1.16; npm "
+    "CommonJS/ESM import and run, strict TypeScript compile, bin, and uninstall validation"
+)
+PASS_JAVA_EVIDENCE = (
+    "make package-java VERSION=0.1.16; Maven clean install, Gradle clean build, "
+    "executable/source/Javadocs artifacts, and clean Maven/Gradle library consumers"
+)
+PASS_DOTNET_EVIDENCE = (
+    "make package-dotnet VERSION=0.1.16; NuGet global tool plus SSHFling library pack, "
+    "isolated tool install plus C#, Visual Basic, and F# PackageReference restore, API run, "
+    "and removal validation"
+)
+PASS_NATIVE_EVIDENCE = (
+    "make package-native-libraries VERSION=0.1.16; warning-clean C11/C++17 Ninja/Release "
+    "and Make/Debug builds, ASan/UBSan CTest, CMake shared/static and pkg-config consumers, "
+    "CLI smoke test, install/removal validation"
+)
+PASS_PERL_EVIDENCE = (
+    "make package-perl VERSION=0.1.16; MakeMaker test/dist, archive inspection, isolated "
+    "INSTALL_BASE module/CLI execution, init workflow, and removal validation"
+)
+PASS_GO_EVIDENCE = (
+    "make package-go VERSION=0.1.16; go test/vet/install and archive validation in "
+    "packaging/build-go.sh"
+)
+PASS_RUST_EVIDENCE = (
+    "make package-rust VERSION=0.1.16; cargo fmt/test/clippy/package/install/uninstall and "
+    "publish dry-run evidence"
+)
+PASS_PHP_EVIDENCE = (
+    "make package-php VERSION=0.1.16; Composer validate/archive/install/autoload/CLI/remove "
+    "validation in packaging/build-php.sh"
+)
+PASS_RUBY_EVIDENCE = (
+    "make package-ruby VERSION=0.1.16; gem and Bundler install/CLI/uninstall validation in "
+    "packaging/build-ruby.sh"
 )
 PASS_SCRIPT_EVIDENCE = (
     "make test VERSION=0.1.16; shell syntax checks through release validation; "
@@ -103,51 +147,51 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     row(
         "Python",
         "PASS",
-        "Primary CLI/runtime implementation in bin/sshfling and Python tests.",
-        PASS_PACKAGE_EVIDENCE,
-        "Shipped and tested as SSHFling's primary implementation.",
+        "Primary CLI/runtime plus a universal Python wheel under packaging/python.",
+        PASS_PYTHON_EVIDENCE,
+        "Shipped and tested as SSHFling's primary implementation with pip and pipx installation.",
     ),
     row(
         "TypeScript",
-        "UNSUPPORTED",
-        "No package.json, tsconfig, npm package, declarations, or TypeScript runtime adapter.",
-        UNSUPPORTED_EVIDENCE,
-        "High-usage language, but SSHFling does not ship a TypeScript surface.",
+        "PASS",
+        "TypeScript declarations under packaging/node with npm package metadata.",
+        PASS_NODE_EVIDENCE,
+        "Shipped as typed npm package metadata for the Node.js CLI wrapper.",
     ),
     row(
         "JavaScript",
-        "UNSUPPORTED",
-        "No npm package, browser bundle, Node CLI wrapper, package.json, or JavaScript source.",
-        UNSUPPORTED_EVIDENCE,
-        "High-usage language, but SSHFling does not ship a JavaScript surface.",
+        "PASS",
+        "Node.js CLI wrapper and CommonJS package surface under packaging/node.",
+        PASS_NODE_EVIDENCE,
+        "Shipped as an npm package that delegates to the bundled SSHFling Python CLI.",
     ),
     row(
         "Java",
         "PASS",
-        "Java wrapper/package surface under packaging/java with Maven metadata and JAR artifacts.",
-        PASS_PACKAGE_EVIDENCE,
-        "Shipped as Java package artifacts and validated in the release workflow.",
+        "Public Java launcher library plus executable, sources, and Javadocs artifacts built with Maven and Gradle.",
+        PASS_JAVA_EVIDENCE,
+        "Shipped with clean Maven and Gradle consumer projects that invoke SSHFling.run.",
     ),
     row(
         "C",
-        "FUTURE_WORK",
-        "No native C library, CLI binary, ABI, headers, or package artifact.",
-        FUTURE_EVIDENCE,
-        "Native C support requires a separate implemented and tested binding or binary.",
+        "PASS",
+        "POSIX C11 shared/static launcher libraries, public header, CLI, CMake exports, and pkg-config metadata under packaging/native.",
+        PASS_NATIVE_EVIDENCE,
+        "Shipped as source with clean shared, static, CMake, pkg-config, CLI, and install consumers.",
     ),
     row(
         "C++",
-        "FUTURE_WORK",
-        "No native C++ library, ABI, headers, package, or CMake export.",
-        FUTURE_EVIDENCE,
-        "Native C++ support requires a separate implemented and tested binding or binary.",
+        "PASS",
+        "C++17 header wrapper over the native C ABI with an exported CMake target and clean consumer.",
+        PASS_NATIVE_EVIDENCE,
+        "Shipped as a typed C++ wrapper and validated through a clean static-library CMake consumer.",
     ),
     row(
         "C#/.NET",
         "PASS",
-        "Cross-platform .NET tool wrapper under packaging/dotnet.",
-        PASS_PACKAGE_EVIDENCE,
-        "Shipped as a NuGet tool package and validated locally for release packaging.",
+        "Cross-platform NuGet library and .NET global tool under packaging/dotnet.",
+        PASS_DOTNET_EVIDENCE,
+        "Shipped as separate importable library and command packages with clean consumer validation.",
     ),
     row(
         "SQL",
@@ -158,24 +202,24 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     ),
     row(
         "Go",
-        "UNSUPPORTED",
-        "No go.mod, Go source, Go install path, or Go package artifact.",
-        UNSUPPORTED_EVIDENCE,
-        "No supported Go module or binary is shipped.",
+        "PASS",
+        "Go module and importable launcher API under packaging/go with an installable CLI command.",
+        PASS_GO_EVIDENCE,
+        "Shipped as a source module archive that embeds the SSHFling Python runtime and templates.",
     ),
     row(
         "Rust",
-        "UNSUPPORTED",
-        "No Cargo.toml, Rust crate, Rust source, or cargo publish path.",
-        UNSUPPORTED_EVIDENCE,
-        "No supported Rust crate or binary is shipped.",
+        "PASS",
+        "Rust library and CLI crate under packaging/rust with bundled runtime resources.",
+        PASS_RUST_EVIDENCE,
+        "Shipped as a Cargo crate and validated through package, install, and publish dry-run flows.",
     ),
     row(
         "PHP",
-        "UNSUPPORTED",
-        "No Composer package, PHP source, or PHP extension.",
-        UNSUPPORTED_EVIDENCE,
-        "No supported PHP package is shipped.",
+        "PASS",
+        "PSR-4 Composer library and CLI wrapper under packaging/php.",
+        PASS_PHP_EVIDENCE,
+        "Shipped as a Composer artifact package with clean install and removal evidence.",
     ),
     row(
         "Shell/POSIX sh",
@@ -204,12 +248,30 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     row("Kotlin", "UNSUPPORTED", "No Kotlin/JVM package or source.", UNSUPPORTED_EVIDENCE, "No supported Kotlin surface is shipped."),
     row("Swift", "UNSUPPORTED", "No Swift package, source, or Apple native API wrapper.", UNSUPPORTED_EVIDENCE, "No supported Swift surface is shipped."),
     row("R", "FUTURE_WORK", "No R package, R source, or CRAN-style release path.", FUTURE_EVIDENCE, "Data-science package support would need a new package surface."),
-    row("Ruby", "UNSUPPORTED", "No Ruby gem, Ruby source, or gemspec.", UNSUPPORTED_EVIDENCE, "No supported Ruby package is shipped."),
+    row(
+        "Ruby",
+        "PASS",
+        "Ruby library and executable gem under packaging/ruby.",
+        PASS_RUBY_EVIDENCE,
+        "Shipped as a RubyGem and validated with both RubyGems and Bundler.",
+    ),
     row("Dart", "UNSUPPORTED", "No Dart package, pubspec, Flutter plugin, or Dart source.", UNSUPPORTED_EVIDENCE, "No supported Dart surface is shipped."),
     row("Lua", "UNSUPPORTED", "No Lua module, luarocks package, or Lua source.", UNSUPPORTED_EVIDENCE, "No supported Lua surface is shipped."),
-    row("Perl", "UNSUPPORTED", "No CPAN distribution, Perl source, or Perl wrapper.", UNSUPPORTED_EVIDENCE, "No supported Perl surface is shipped."),
+    row(
+        "Perl",
+        "PASS",
+        "Perl module and executable with ExtUtils::MakeMaker metadata under packaging/perl.",
+        PASS_PERL_EVIDENCE,
+        "Shipped as a CPAN-style source distribution with isolated module and CLI validation.",
+    ),
     row("Scala", "UNSUPPORTED", "No Scala/SBT package or Scala source.", UNSUPPORTED_EVIDENCE, "No supported Scala surface is shipped."),
-    row("Visual Basic/.NET", "UNSUPPORTED", "No VB.NET source or package surface.", UNSUPPORTED_EVIDENCE, "The .NET tool is C#-based; no VB.NET API is shipped."),
+    row(
+        "Visual Basic/.NET",
+        "PASS",
+        "Visual Basic consumer project references the SSHFling NuGet library and invokes SSHFlingRunner.",
+        PASS_DOTNET_EVIDENCE,
+        "The language consumes the shipped .NET library through a clean local NuGet restore and runtime workflow.",
+    ),
     row("MATLAB", "UNSUPPORTED", "No MATLAB toolbox, M files, or mex interface.", UNSUPPORTED_EVIDENCE, "No supported MATLAB package is shipped."),
     row("Objective-C", "UNSUPPORTED", "No Objective-C source, framework, or Cocoa package surface.", UNSUPPORTED_EVIDENCE, "No supported Objective-C surface is shipped."),
     row("Groovy", "UNSUPPORTED", "No Groovy source, Gradle plugin, or Maven artifact for Groovy.", UNSUPPORTED_EVIDENCE, "No supported Groovy surface is shipped."),
@@ -228,7 +290,13 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     row("Erlang", "UNSUPPORTED", "No Erlang application, rebar config, or Hex package.", UNSUPPORTED_EVIDENCE, "No supported Erlang surface is shipped."),
     row("Haskell", "UNSUPPORTED", "No Cabal/Stack project or Haskell source.", UNSUPPORTED_EVIDENCE, "No supported Haskell surface is shipped."),
     row("Clojure", "UNSUPPORTED", "No deps.edn/Leiningen project or Clojure source.", UNSUPPORTED_EVIDENCE, "No supported Clojure surface is shipped."),
-    row("F#", "UNSUPPORTED", "No F# source or package surface.", UNSUPPORTED_EVIDENCE, "No supported F# surface is shipped."),
+    row(
+        "F#",
+        "PASS",
+        "F# consumer project references the SSHFling NuGet library and invokes SSHFlingRunner.",
+        PASS_DOTNET_EVIDENCE,
+        "The language consumes the shipped .NET library through a clean local NuGet restore and runtime workflow.",
+    ),
     row("OCaml", "UNSUPPORTED", "No dune/opam package or OCaml source.", UNSUPPORTED_EVIDENCE, "No supported OCaml surface is shipped."),
     row("Zig", "UNSUPPORTED", "No Zig source or build.zig.", UNSUPPORTED_EVIDENCE, "No supported Zig surface is shipped."),
     row("Nim", "UNSUPPORTED", "No Nim source or nimble package.", UNSUPPORTED_EVIDENCE, "No supported Nim surface is shipped."),
@@ -293,7 +361,14 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     row("CircuitPython", "UNSUPPORTED", "No CircuitPython library package.", UNSUPPORTED_EVIDENCE, "No supported CircuitPython surface is shipped."),
     row("Elvish", "UNSUPPORTED", "No Elvish shell integration or package.", UNSUPPORTED_EVIDENCE, "No supported Elvish surface is shipped.", "shell"),
     row("Nushell", "UNSUPPORTED", "No Nushell integration or package.", UNSUPPORTED_EVIDENCE, "No supported Nushell surface is shipped.", "shell"),
-    row("CMake", "UNSUPPORTED", "No CMake project, package config, or native build surface.", UNSUPPORTED_EVIDENCE, "No supported CMake surface is shipped.", "build DSL"),
+    row(
+        "CMake",
+        "PASS",
+        "Native C/C++ project exports versioned SSHFling CMake package targets for shared and static linking.",
+        PASS_NATIVE_EVIDENCE,
+        "Clean external C and C++ projects resolve the installed package with find_package(SSHFling CONFIG REQUIRED).",
+        "build DSL",
+    ),
     row("Make",
         "PASS",
         "Top-level Makefile drives release validation and package targets.",
@@ -362,7 +437,18 @@ def validate_language_support(entries: Iterable[dict[str, str]] = LANGUAGE_SUPPO
         errors.append("Python must remain first in the composite ordering")
 
     names = [entry["language"] for entry in entries]
-    for required in ("TypeScript", "JavaScript", "Java", "C", "C++", "C#/.NET"):
+    for required in (
+        "TypeScript",
+        "JavaScript",
+        "Java",
+        "C",
+        "C++",
+        "C#/.NET",
+        "Visual Basic/.NET",
+        "F#",
+        "Perl",
+        "CMake",
+    ):
         if required not in names:
             errors.append(f"missing required language row: {required}")
 
@@ -447,6 +533,14 @@ def render_markdown(entries: Iterable[dict[str, str]] = LANGUAGE_SUPPORT) -> str
             source_lines,
             "",
             f"Status summary: {status_summary}.",
+            "",
+            "OS-native command-language policy: Python remains the primary",
+            "SSHFling CLI implementation and release-tooling language, but",
+            "host OS execution paths should use the target OS command language",
+            "where practical: POSIX sh/Bash for Unix-like hosts and PowerShell",
+            "for Windows. Python one-liners should not be used as a substitute",
+            "for native shell behavior in forced-command wrappers, package",
+            "maintainer scripts, or cross-OS command execution tests.",
             "",
             BEGIN_MARKER,
             "",

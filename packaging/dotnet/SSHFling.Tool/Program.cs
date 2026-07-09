@@ -114,6 +114,8 @@ static void NormalizeTemplateModes(string templateDir)
 
     var executableTemplates = new[]
     {
+        "native/sshfling-linux-account",
+        "native/sshfling-unix-identity",
         "production/sshfling-session",
         "scripts/create-network.sh",
         "scripts/generate-ssh-key.sh",

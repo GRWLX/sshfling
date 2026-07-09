@@ -22,7 +22,7 @@ jobs:
   linux:
     name: Linux packages
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -40,7 +40,22 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends dpkg-dev file maven rpm
+          sudo apt-get install -y --no-install-recommends \
+            cargo cmake composer dpkg-dev file g++ make maven ninja-build php-cli \
+            php-zip pkg-config rpm ruby ruby-dev rust-clippy rustfmt zip
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python package tools
+        run: python -m pip install --disable-pip-version-check "setuptools>=68" wheel pipx
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.22.x"
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
@@ -55,12 +70,19 @@ jobs:
           cache: maven
           cache-dependency-path: packaging/java/pom.xml
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
       - name: Validate sources
         run: make test
 
-      - name: Build Debian, RPM, NuGet, Java, and source packages
+      - name: Build Linux and language ecosystem packages
         env:
           SSHFLING_VERSION: ${{ steps.version.outputs.version }}
+          SSHFLING_REQUIRE_PIPX: "1"
+          SSHFLING_RUST_PUBLISH_DRY_RUN: "1"
         run: |
           set -euo pipefail
           export SSHFLING_MAVEN_REPO_LOCAL="$HOME/.m2/repository"
@@ -68,6 +90,14 @@ jobs:
           ./packaging/build-rpm.sh
           ./packaging/build-dotnet.sh
           ./packaging/build-java.sh
+          ./packaging/build-node.sh
+          ./packaging/build-python.sh
+          ./packaging/build-go.sh
+          ./packaging/build-rust.sh
+          ./packaging/build-php.sh
+          ./packaging/build-ruby.sh
+          ./packaging/build-native-libraries.sh
+          ./packaging/build-perl.sh
           git archive \
             --format=tar.gz \
             --prefix="sshfling-${SSHFLING_VERSION}/" \
@@ -84,6 +114,11 @@ jobs:
             dist/*.nupkg
             dist/*.jar
             dist/*.pom
+            dist/*.tgz
+            dist/*.whl
+            dist/*.crate
+            dist/*.gem
+            dist/*.zip
             dist/*.tar.gz
           if-no-files-found: error
 
@@ -373,9 +408,19 @@ jobs:
             "sshfling-${version}-1.noarch.rpm"
             "sshfling-${version}.tar.gz"
             "SSHFling.Tool.${version}.nupkg"
+            "SSHFling.${version}.nupkg"
             "sshfling-cli-${version}.jar"
+            "sshfling-cli-${version}-javadoc.jar"
             "sshfling-cli-${version}-sources.jar"
             "sshfling-cli-${version}.pom"
+            "sshfling-${version}.tgz"
+            "sshfling-${version}-py3-none-any.whl"
+            "sshfling-go-${version}.zip"
+            "sshfling-cli-${version}.crate"
+            "sshfling-php-${version}.zip"
+            "sshfling-${version}.gem"
+            "sshfling-native-${version}.tar.gz"
+            "sshfling-perl-${version}.tar.gz"
             "sshfling-${version}.pkg"
             "sshfling-${version}.msi"
             "sshfling-${version}-windows.zip"
@@ -409,9 +454,19 @@ jobs:
             "sshfling-${VERSION}-1.noarch.rpm"
             "sshfling-${VERSION}.tar.gz"
             "SSHFling.Tool.${VERSION}.nupkg"
+            "SSHFling.${VERSION}.nupkg"
             "sshfling-cli-${VERSION}.jar"
+            "sshfling-cli-${VERSION}-javadoc.jar"
             "sshfling-cli-${VERSION}-sources.jar"
             "sshfling-cli-${VERSION}.pom"
+            "sshfling-${VERSION}.tgz"
+            "sshfling-${VERSION}-py3-none-any.whl"
+            "sshfling-go-${VERSION}.zip"
+            "sshfling-cli-${VERSION}.crate"
+            "sshfling-php-${VERSION}.zip"
+            "sshfling-${VERSION}.gem"
+            "sshfling-native-${VERSION}.tar.gz"
+            "sshfling-perl-${VERSION}.tar.gz"
             "sshfling-${VERSION}.pkg"
             "sshfling-${VERSION}.msi"
             "sshfling-${VERSION}-windows.zip"

@@ -10,6 +10,9 @@ login_user=""
 policy_file="/etc/sshfling/policy.json"
 expires_at=""
 allow_detached_start=0
+session_lock_root=""
+provision_lock_user=""
+jq_command="jq"
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
@@ -41,12 +44,159 @@ while [[ "$#" -gt 0 ]]; do
       grant_max_connections="${2:-}"
       shift 2
       ;;
+    --lock-root)
+      session_lock_root="${2:-}"
+      shift 2
+      ;;
+    --provision-locks)
+      provision_lock_user="${2:-}"
+      shift 2
+      ;;
+    --jq-bin)
+      jq_command="${2:-}"
+      shift 2
+      ;;
     *)
       echo "Unknown sshfling-session option: $1" >&2
       exit 2
       ;;
   esac
 done
+
+default_session_lock_root() {
+  local operating_system
+
+  operating_system="$(uname -s 2>/dev/null)" || return 1
+  case "$operating_system" in
+    Darwin) printf '%s\n' /private/var/db/sshfling/session-locks ;;
+    FreeBSD|OpenBSD|NetBSD|DragonFly) printf '%s\n' /var/db/sshfling/session-locks ;;
+    *) printf '%s\n' /var/lib/sshfling/session-locks ;;
+  esac
+}
+
+stat_number() {
+  local gnu_format="$1"
+  local bsd_format="$2"
+  local path="$3"
+  local value
+
+  if value="$(stat -c "$gnu_format" "$path" 2>/dev/null)"; then
+    :
+  elif value="$(stat -f "$bsd_format" "$path" 2>/dev/null)"; then
+    :
+  else
+    return 1
+  fi
+  [[ "$value" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$value"
+}
+
+root_managed_directory() {
+  local path="$1"
+  local owner mode mode_value
+
+  [[ -d "$path" && ! -L "$path" ]] || return 1
+  owner="$(stat_number %u %u "$path")" || return 1
+  mode="$(stat_number %a %Lp "$path")" || return 1
+  [[ "$owner" == 0 ]] || return 1
+  mode_value=$(( 8#$mode ))
+  (( (mode_value & 0022) == 0 ))
+}
+
+validate_lock_path_components() {
+  local path="$1"
+  local require_all="$2"
+  local current=""
+  local component
+  local -a components=()
+
+  [[ "$path" == /* && "$path" != *$'\n'* && "$path" != *$'\r'* && "$path" != *$'\t'* ]] \
+    || return 1
+  [[ "/${path#/}/" != *'/../'* && "/${path#/}/" != *'/./'* ]] || return 1
+  IFS=/ read -r -a components <<<"${path#/}"
+  root_managed_directory / || return 1
+  for component in "${components[@]}"; do
+    [[ -n "$component" ]] || return 1
+    current="${current}/${component}"
+    if [[ -e "$current" || -L "$current" ]]; then
+      root_managed_directory "$current" || return 1
+    elif [[ "$require_all" == 1 ]]; then
+      return 1
+    fi
+  done
+}
+
+provision_session_locks() {
+  local target_user="$1"
+  local uid gid user_lock_dir lock_file owner slot
+
+  (( EUID == 0 )) || {
+    echo "sshfling-session lock provisioning requires root privileges." >&2
+    return 77
+  }
+  [[ "$target_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || {
+    echo "Invalid lock-provisioning username: $target_user" >&2
+    return 2
+  }
+  for tool in id mkdir stat chown chgrp chmod; do
+    command -v "$tool" >/dev/null 2>&1 || {
+      echo "$tool is required to provision sshfling session locks." >&2
+      return 127
+    }
+  done
+  uid="$(id -u "$target_user" 2>/dev/null)" || {
+    echo "Cannot provision session locks for missing user: $target_user" >&2
+    return 1
+  }
+  gid="$(id -g "$target_user" 2>/dev/null)" || return 1
+  [[ "$uid" =~ ^(0|[1-9][0-9]*)$ && "$gid" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+  validate_lock_path_components "$session_lock_root" 0 || {
+    echo "Refusing an unsafe sshfling session lock path: $session_lock_root" >&2
+    return 1
+  }
+
+  user_lock_dir="${session_lock_root%/}/${uid}"
+  (umask 022; mkdir -p "$user_lock_dir") || return 1
+  chown 0 "$session_lock_root" "$user_lock_dir"
+  chgrp 0 "$session_lock_root" "$user_lock_dir"
+  chmod 0755 "$session_lock_root" "$user_lock_dir"
+  validate_lock_path_components "$user_lock_dir" 1 || {
+    echo "Could not secure sshfling session lock directories." >&2
+    return 1
+  }
+
+  slot=1
+  while (( slot <= 10 )); do
+    lock_file="${user_lock_dir}/session-${slot}.lock"
+    if [[ -L "$lock_file" || ( -e "$lock_file" && ! -f "$lock_file" ) ]]; then
+      echo "Refusing unsafe sshfling session lock file: $lock_file" >&2
+      return 1
+    fi
+    if [[ ! -e "$lock_file" ]]; then
+      (umask 077; set -o noclobber; : >"$lock_file") || return 1
+    fi
+    chown "$uid" "$lock_file"
+    chgrp "$gid" "$lock_file"
+    chmod 0400 "$lock_file"
+    owner="$(stat_number %u %u "$lock_file")" || return 1
+    [[ -f "$lock_file" && ! -L "$lock_file" && "$owner" == "$uid" ]] || return 1
+    slot=$(( slot + 1 ))
+  done
+  printf 'result\tstatus=provisioned\tuser=%s\tuid=%s\tslots=10\tlock_root=%s\n' \
+    "$target_user" "$uid" "$user_lock_dir"
+}
+
+if [[ -z "$session_lock_root" ]]; then
+  session_lock_root="$(default_session_lock_root)" || {
+    echo "Could not determine the sshfling session lock path." >&2
+    exit 1
+  }
+fi
+
+if [[ -n "$provision_lock_user" ]]; then
+  provision_session_locks "$provision_lock_user"
+  exit $?
+fi
 
 if [[ -z "$login_user" ]]; then
   login_user="$(id -un 2>/dev/null || true)"
@@ -60,24 +210,108 @@ audit_log() {
   fi
 }
 
-if [[ -r "$policy_file" ]] && command -v python3 >/dev/null 2>&1; then
-  policy_values="$(
-    python3 - "$policy_file" "$login_user" <<'PY'
-import json
-import sys
-path = sys.argv[1]
-username = sys.argv[2] if len(sys.argv) > 2 else ""
-with open(path) as fh:
-    policy = json.load(fh)
-if "default" in policy:
-    caps = dict(policy.get("default") or {})
-    caps.update((policy.get("users") or {}).get(username, {}))
-else:
-    caps = policy
-print(int(caps.get("max_time_seconds", 86400)))
-print(int(caps.get("max_connections", 10)))
-PY
-  )"
+read_policy_limits() {
+  local path="$1"
+  local target_user="$2"
+  local jq_bin="$jq_command"
+  local values
+
+  if ! command -v "$jq_bin" >/dev/null 2>&1; then
+    echo "jq is required to enforce the sshfling session policy." >&2
+    return 127
+  fi
+
+  # The expression below is evaluated by jq, not the shell.
+  # shellcheck disable=SC2016
+  values="$("$jq_bin" -er --arg target "$target_user" '
+    def field_or($name; $fallback):
+      if has($name) then .[$name] else $fallback end;
+    def valid_integer($maximum):
+      type == "number" and floor == . and . >= 1 and . <= $maximum;
+    def valid_access_level:
+      type == "string"
+      and (
+        ascii_downcase
+        | gsub("[_ ]"; "-")
+        | . == "standard"
+          or . == "standard-user"
+          or . == "user"
+          or . == "operator"
+          or . == "ops"
+          or . == "sudo"
+          or . == "sudo-limited"
+          or . == "sudo-limited-user"
+          or . == "limited-sudo"
+          or . == "admin"
+          or . == "administrator"
+          or . == "root"
+          or . == "root-equivalent"
+          or . == "admin/root-equivalent"
+      );
+    def valid_caps($fallback_seconds; $fallback_connections):
+      type == "object"
+      and (field_or("max_time_seconds"; $fallback_seconds) | valid_integer(86400))
+      and (field_or("max_connections"; $fallback_connections) | valid_integer(10))
+      and ((has("access_level") | not) or (.access_level | valid_access_level));
+
+    if type != "object" then error("policy root must be an object") else . end
+    | . as $policy
+    | (
+        if has("default") then
+          if .default == null then {}
+          elif (.default | type) == "object" then .default
+          else error("policy default must be an object")
+          end
+        else
+          $policy
+        end
+      ) as $defaults
+    | ($defaults | field_or("max_time_seconds"; 86400)) as $default_seconds
+    | ($defaults | field_or("max_connections"; 10)) as $default_connections
+    | if ($defaults | valid_caps(86400; 10)) | not then
+        error("invalid default policy limits")
+      else . end
+    | (
+        if ($policy | has("users")) then
+          if $policy.users == null then {}
+          elif ($policy.users | type) == "object" then $policy.users
+          else error("policy users must be an object")
+          end
+        else
+          {}
+        end
+      ) as $users
+    | if ($users | all(.[]; valid_caps($default_seconds; $default_connections))) | not then
+        error("invalid user policy limits")
+      else . end
+    | ($users[$target] // {}) as $user_caps
+    | ($user_caps | field_or("max_time_seconds"; $default_seconds)),
+      ($user_caps | field_or("max_connections"; $default_connections))
+  ' "$path")" || return $?
+
+  [[ -n "$(printf '%s\n' "$values" | sed -n '1p')" ]] || return 2
+  [[ -n "$(printf '%s\n' "$values" | sed -n '2p')" ]] || return 2
+  [[ -z "$(printf '%s\n' "$values" | sed -n '3p')" ]] || return 2
+  printf '%s\n' "$values"
+}
+
+if [[ -e "$policy_file" || -L "$policy_file" ]]; then
+  if [[ ! -r "$policy_file" ]]; then
+    audit_log session_rejected reason=unreadable_policy policy_file="$policy_file"
+    echo "Cannot read sshfling policy file: $policy_file" >&2
+    exit 2
+  fi
+  if policy_values="$(read_policy_limits "$policy_file" "$login_user")"; then
+    :
+  else
+    policy_status="$?"
+    audit_log session_rejected reason=invalid_policy policy_file="$policy_file"
+    echo "Invalid sshfling policy file: $policy_file" >&2
+    if [[ "$policy_status" -eq 127 ]]; then
+      exit 127
+    fi
+    exit 2
+  fi
   max_allowed_seconds="$(printf '%s\n' "$policy_values" | sed -n '1p')"
   max_allowed_connections="$(printf '%s\n' "$policy_values" | sed -n '2p')"
 fi
@@ -140,65 +374,103 @@ else
 fi
 audit_log session_attempt max_seconds="$max_seconds" expires_at="$session_deadline" max_connections="$max_sessions" allow_detached_start="$allow_detached_start" original_command_present="$([[ -n "${SSH_ORIGINAL_COMMAND:-}" ]] && printf 1 || printf 0)"
 
-private_lock_dir() {
-  local candidate
-  local passwd_home
-  local -a candidates=()
+open_lock_fd() {
+  case "$1" in
+    10) exec 10<"$2" ;;
+    11) exec 11<"$2" ;;
+    12) exec 12<"$2" ;;
+    13) exec 13<"$2" ;;
+    14) exec 14<"$2" ;;
+    15) exec 15<"$2" ;;
+    16) exec 16<"$2" ;;
+    17) exec 17<"$2" ;;
+    18) exec 18<"$2" ;;
+    19) exec 19<"$2" ;;
+    *) return 2 ;;
+  esac
+}
 
-  if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
-    candidates+=("${XDG_RUNTIME_DIR%/}/sshfling/session-locks")
-  fi
-  candidates+=("/run/user/${uid}/sshfling/session-locks")
-  candidates+=("/run/sshfling/locks-${uid}")
-  if command -v getent >/dev/null 2>&1; then
-    passwd_home="$(getent passwd "$uid" | awk -F: 'NR == 1 {print $6}')"
-  else
-    passwd_home="${HOME:-}"
-  fi
-  if [[ -n "$passwd_home" ]]; then
-    candidates+=("${passwd_home%/}/.sshfling/session-locks")
-  fi
-
-  for candidate in "${candidates[@]}"; do
-    [[ -n "$candidate" ]] || continue
-    if [[ -L "$candidate" || ( -e "$candidate" && ! -d "$candidate" ) ]]; then
-      continue
-    fi
-    if mkdir -p "$candidate" 2>/dev/null && [[ -d "$candidate" && -O "$candidate" && ! -L "$candidate" ]] && chmod 0700 "$candidate" 2>/dev/null; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-  return 1
+close_lock_fd() {
+  case "$1" in
+    10) exec 10>&- ;;
+    11) exec 11>&- ;;
+    12) exec 12>&- ;;
+    13) exec 13>&- ;;
+    14) exec 14>&- ;;
+    15) exec 15>&- ;;
+    16) exec 16>&- ;;
+    17) exec 17>&- ;;
+    18) exec 18>&- ;;
+    19) exec 19>&- ;;
+    *) return 2 ;;
+  esac
 }
 
 if command -v flock >/dev/null 2>&1; then
-  lock_root="$(private_lock_dir)" || {
-    echo "Could not create a private sshfling lock directory." >&2
+  lock_backend=flock
+elif command -v lockf >/dev/null 2>&1; then
+  lock_backend=lockf
+else
+  echo "flock or lockf is required for sshfling connection limits." >&2
+  exit 127
+fi
+
+acquire_lock_fd() {
+  local fd="$1"
+  local lock_status
+
+  if [[ "$lock_backend" == flock ]]; then
+    flock -n "$fd" && return 0
+    lock_status="$?"
+  else
+    lockf -s -t 0 "$fd" && return 0
+    lock_status="$?"
+  fi
+  if [[ "$lock_status" -eq 1 || "$lock_status" -eq 75 ]]; then
+    return 1
+  fi
+  echo "$lock_backend could not acquire sshfling session lock FD $fd (exit $lock_status)." >&2
+  return 2
+}
+
+lock_root="${session_lock_root%/}/${uid}"
+validate_lock_path_components "$lock_root" 1 || {
+  audit_log session_rejected reason=unsafe_lock_path lock_root="$lock_root"
+  echo "Missing or unsafe root-managed sshfling session locks for uid $uid." >&2
+  exit 75
+}
+
+slot=1
+while (( slot <= max_sessions )); do
+  lock_file="${lock_root}/session-${slot}.lock"
+  if [[ ! -f "$lock_file" || -L "$lock_file" ]]; then
+    echo "Missing or unsafe sshfling session lock file: $lock_file" >&2
+    exit 75
+  fi
+  lock_owner="$(stat_number %u %u "$lock_file")" || exit 75
+  [[ "$lock_owner" == "$uid" ]] || {
+    echo "Incorrect owner for sshfling session lock file: $lock_file" >&2
     exit 75
   }
-  for slot in $(seq 1 "$max_sessions"); do
-    lock_file="${lock_root}/session-${slot}.lock"
-    exec {candidate_fd}>"$lock_file"
-    if flock -n "$candidate_fd"; then
-      slot_fd="$candidate_fd"
-      break
-    fi
-    eval "exec ${candidate_fd}>&-"
-  done
-  if [[ -z "$slot_fd" ]]; then
-    audit_log session_rejected reason=max_sessions max_connections="$max_sessions"
-    echo "Maximum active sshfling sessions reached for ${USER:-uid-$uid}." >&2
+  candidate_fd=$(( slot + 9 ))
+  open_lock_fd "$candidate_fd" "$lock_file" || {
+    echo "Could not open sshfling session lock file: $lock_file" >&2
     exit 75
+  }
+  if acquire_lock_fd "$candidate_fd"; then
+    slot_fd="$candidate_fd"
+    break
+  else
+    acquire_status="$?"
   fi
-else
-  active_sessions="$(pgrep -u "$uid" -f 'sshfling-session' 2>/dev/null | grep -cv "^$$$" || true)"
-  active_sessions="${active_sessions:-0}"
-  if (( active_sessions >= max_sessions )); then
-    audit_log session_rejected reason=max_sessions max_connections="$max_sessions"
-    echo "Maximum active sshfling sessions reached for ${USER:-uid-$uid}." >&2
-    exit 75
-  fi
+  close_lock_fd "$candidate_fd"
+  [[ "$acquire_status" -eq 1 ]] || exit 75
+  slot=$(( slot + 1 ))
+done
+if [[ -z "$slot_fd" ]]; then
+  audit_log session_rejected reason=max_sessions max_connections="$max_sessions"
+  echo "Maximum active sshfling sessions reached for ${USER:-uid-$uid}." >&2
+  exit 75
 fi
 audit_log session_start max_seconds="$max_seconds" expires_at="$session_deadline" max_connections="$max_sessions" allow_detached_start="$allow_detached_start" original_command_present="$([[ -n "${SSH_ORIGINAL_COMMAND:-}" ]] && printf 1 || printf 0)"
 
@@ -216,7 +488,19 @@ kill_tree() {
 }
 
 run_limited() {
-  "$@" &
+  (
+    exec 10>&-
+    exec 11>&-
+    exec 12>&-
+    exec 13>&-
+    exec 14>&-
+    exec 15>&-
+    exec 16>&-
+    exec 17>&-
+    exec 18>&-
+    exec 19>&-
+    exec "$@"
+  ) &
   local command_pid="$!"
   local deadline
   deadline="$session_deadline"
@@ -239,11 +523,20 @@ run_limited() {
   fi
 }
 
+session_shell="${SSHFLING_SESSION_SHELL:-${BASH:-}}"
+if [[ -z "$session_shell" || ! -x "$session_shell" ]]; then
+  session_shell="$(command -v bash || true)"
+fi
+if [[ -z "$session_shell" || ! -x "$session_shell" ]]; then
+  echo "bash is required to run the SSHFling forced session." >&2
+  exit 127
+fi
+
 if [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]]; then
-  run_limited /bin/bash -lc "$SSH_ORIGINAL_COMMAND"
+  run_limited "$session_shell" -lc "$SSH_ORIGINAL_COMMAND"
 else
   echo "Temporary SSH session ${username} is limited to ${max_seconds} seconds." >&2
-  run_limited /bin/bash -l
+  run_limited "$session_shell" -l
 fi
 
 if [[ "$timed_out" -eq 1 ]]; then

@@ -1,0 +1,8 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+
+use SSHFling;
+
+exit SSHFling::run(@ARGV);

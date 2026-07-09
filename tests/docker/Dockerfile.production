@@ -5,6 +5,7 @@ RUN apt-get update \
     bash \
     ca-certificates \
     curl \
+    jq \
     openssh-client \
     openssh-server \
     openssl \
@@ -20,6 +21,8 @@ COPY . /opt/sshfling
 
 RUN chmod 0755 \
     /opt/sshfling/bin/sshfling \
+    /opt/sshfling/native/sshfling-linux-account \
+    /opt/sshfling/native/sshfling-unix-identity \
     /opt/sshfling/production/sshfling-session \
     /opt/sshfling/tests/docker/run-production-test.sh \
   && mkdir -p /run/sshd

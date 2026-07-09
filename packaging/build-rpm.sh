@@ -40,6 +40,8 @@ assert_rpm_payload_assets() {
 644 etc/sshfling/policy.json
 640 etc/sshfling/sshflingd.env
 755 usr/bin/sshfling
+755 usr/libexec/sshfling/sshfling-linux-account
+755 usr/libexec/sshfling/sshfling-unix-identity
 644 usr/lib/systemd/system/sshfling-prune.service
 644 usr/lib/systemd/system/sshfling-prune.timer
 644 usr/lib/systemd/system/sshflingd.service
@@ -51,6 +53,8 @@ assert_rpm_payload_assets() {
 644 usr/share/sshfling/templates/README.md
 644 usr/share/sshfling/templates/compose.client.yml
 644 usr/share/sshfling/templates/compose.server.yml
+755 usr/share/sshfling/templates/native/sshfling-linux-account
+755 usr/share/sshfling/templates/native/sshfling-unix-identity
 755 usr/share/sshfling/templates/production/sshfling-session
 755 usr/share/sshfling/templates/scripts/create-network.sh
 755 usr/share/sshfling/templates/scripts/generate-ssh-key.sh
@@ -85,9 +89,11 @@ fi
 rm -rf "$topdir"
 install -d "$topdir/BUILD" "$topdir/RPMS" "$topdir/SOURCES" "$topdir/SPECS" "$topdir/SRPMS"
 install -d -m 0750 "$payload/etc/sshfling"
-install -d "$payload/usr/bin" "$payload/usr/share/sshfling/templates" "$payload/usr/share/doc/sshfling" "$payload/usr/lib/systemd/system"
+  install -d "$payload/usr/bin" "$payload/usr/libexec/sshfling" "$payload/usr/share/sshfling/templates" "$payload/usr/share/doc/sshfling" "$payload/usr/lib/systemd/system"
 
 install -m 0755 "$repo_root/bin/sshfling" "$payload/usr/bin/sshfling"
+install -m 0755 "$repo_root/native/sshfling-linux-account" "$payload/usr/libexec/sshfling/sshfling-linux-account"
+install -m 0755 "$repo_root/native/sshfling-unix-identity" "$payload/usr/libexec/sshfling/sshfling-unix-identity"
 install -m 0644 "$repo_root/packaging/policy.json" "$payload/etc/sshfling/policy.json"
 install -m 0640 "$repo_root/systemd/sshflingd.env.example" "$payload/etc/sshfling/sshflingd.env"
 
@@ -123,13 +129,16 @@ Summary: Temporary SSH access broker and CLI
 License: LicenseRef-SSHFling-Commercial
 BuildArch: noarch
 Requires: python3
+Requires: bash
 Requires: openssh-clients
+Requires: openssl
 Recommends: openssh-server
 Recommends: rsync
 Requires: shadow-utils
 Requires(pre): shadow-utils
 Requires: procps-ng
 Requires: util-linux
+Requires: jq
 Source0: sshfling-files-${version}.tar.gz
 
 %description
@@ -382,12 +391,7 @@ restore_config() {
 
   rpmsave="\$dst.rpmsave"
   if [ -f "\$rpmsave" ]; then
-    if python3 - "\$rpmsave" "\$src" <<'PY'
-from pathlib import Path
-import sys
-sys.exit(0 if Path(sys.argv[1]).read_bytes() == Path(sys.argv[2]).read_bytes() else 1)
-PY
-    then
+    if cmp -s "\$rpmsave" "\$src"; then
       rm -f "\$rpmsave"
     else
       echo "sshfling: preserving existing \$rpmsave" >&2
@@ -608,6 +612,8 @@ exit 0
 %config(missingok,noreplace) %attr(0644,root,root) /etc/sshfling/policy.json
 %config(missingok,noreplace) %attr(0640,root,sshflingd) /etc/sshfling/sshflingd.env
 %attr(0755,root,root) /usr/bin/sshfling
+%attr(0755,root,root) /usr/libexec/sshfling/sshfling-linux-account
+%attr(0755,root,root) /usr/libexec/sshfling/sshfling-unix-identity
 /usr/share/sshfling/templates
 /usr/share/doc/sshfling/README.md
 /usr/share/doc/sshfling/LICENSE

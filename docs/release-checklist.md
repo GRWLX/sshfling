@@ -79,8 +79,10 @@ make test-containers
 6. `Cross OS validation`
 
 - Confirm release assets include the expected `.deb`, `.rpm`, `.pkg`, `.msi`,
-  Windows zip, `.NET` global tool `.nupkg`, Java executable JAR/source
-  JAR/POM, source tarball, and `SHA256SUMS`.
+  Windows zip, `.NET` global-tool and library `.nupkg` files, Java executable,
+  source, and Javadocs JARs plus POM, Node.js npm `.tgz`, Python wheel, Go module zip, Rust `.crate`, PHP
+  Composer zip, Ruby `.gem`, C/C++ native source distribution, Perl source
+  distribution, main source tarball, and `SHA256SUMS`.
 - Confirm the public package site has APT/RPM metadata, repository signing files when production signing is enabled, Homebrew and macOS installer scripts, Windows installer scripts, and generated community manifests.
 - Confirm the install/uninstall runbook matches generated file names, public
   site paths, package identifiers, uninstall scope, and checksum/signing
@@ -96,6 +98,7 @@ Required platform coverage evidence:
 | --- | --- |
 | OS versions | `os-release`, platform version command, package format, install source, validation workflow run URL, and package install result. |
 | Language/runtime | `python3 --version`, OpenSSH `ssh -V` and `sshd -V` where available, shell or PowerShell version, and account-management tool availability for password grants. |
+| Native command language | Evidence that OS-facing wrappers, package maintainer scripts, and cross-OS command execution tests use POSIX sh/Bash on Unix-like hosts and PowerShell on Windows where practical, with Python reserved for the CLI/runtime and release tooling. |
 | CPU architecture | `uname -m`, package metadata architecture, or runner architecture for each support claim, including `x86_64`/`amd64`, `arm64`/`aarch64`, and any 32-bit or non-mainstream architecture. |
 | Hardware class | VM, container, desktop, server, edge appliance, IoT gateway, embedded Linux host, or customer-managed hardware evidence. |
 | ARM and IoT | Client-only, certificate-server, or password-server mode tested; required host tools present; storage, clock, and service-manager assumptions recorded. |

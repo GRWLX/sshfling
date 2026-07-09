@@ -1,0 +1,35 @@
+{
+  "name": "grwlx/sshfling",
+  "description": "Temporary SSH access using standard OpenSSH",
+  "type": "library",
+  "license": "proprietary",
+  "keywords": [
+    "ssh",
+    "openssh",
+    "temporary-access",
+    "cli"
+  ],
+  "homepage": "https://github.com/GRWLX/sshfling",
+  "support": {
+    "docs": "https://github.com/GRWLX/sshfling/tree/main/docs",
+    "source": "https://github.com/GRWLX/sshfling"
+  },
+  "require": {
+    "php": ">=8.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "GRWLX\\SSHFling\\": "src/"
+    }
+  },
+  "bin": [
+    "bin/sshfling"
+  ],
+  "archive": {
+    "name": "sshfling-php",
+    "exclude": [
+      "/composer.lock",
+      "/vendor"
+    ]
+  }
+}

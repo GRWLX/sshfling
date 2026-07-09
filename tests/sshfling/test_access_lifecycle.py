@@ -4,6 +4,7 @@ import importlib.machinery
 import importlib.util
 import io
 import json
+import shutil
 import tempfile
 import time
 import unittest
@@ -14,8 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SSHFLING_PATH = REPO_ROOT / "bin" / "sshfling"
 
 
-def load_sshfling():
-    loader = importlib.machinery.SourceFileLoader("sshfling_under_test", str(SSHFLING_PATH))
+def load_sshfling(path=SSHFLING_PATH):
+    loader = importlib.machinery.SourceFileLoader("sshfling_under_test", str(path))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
@@ -268,6 +269,142 @@ class SSHFlingAccessLifecycleTests(unittest.TestCase):
         self.assertIn("sshd", missing)
         self.assertIn("useradd", missing)
         self.assertIn("userdel", missing)
+        self.assertIn("jq", missing)
+
+    def test_password_user_create_race_is_not_claimed_without_explicit_consent(self) -> None:
+        username = "srace"
+
+        class CreatedElsewhere:
+            returncode = 0
+            stderr = ""
+            stdout = ""
+
+        records = [{"record": "result", "status": "present", "user": username, "created": "false"}]
+        identity = {"username": username, "uid": 1234, "gid": 1234, "home": f"/home/{username}"}
+        self.patch("unix_user_exists", lambda value: False)
+        self.patch("default_login_shell", lambda: "/bin/sh")
+        self.patch("run_native_linux_account", lambda *args, **kwargs: (CreatedElsewhere(), records))
+        self.patch("unix_user_identity", lambda value: identity)
+
+        with self.assertRaisesRegex(self.sshfling.SSHFlingError, "appeared during setup"):
+            self.sshfling.ensure_unix_user(username)
+
+        result = self.sshfling.ensure_unix_user(username, allow_existing=True)
+        self.assertFalse(result["created"])
+        self.assertEqual(result["identity"], identity)
+
+    def test_set_password_rejects_success_without_matching_result(self) -> None:
+        class SuccessfulBackend:
+            returncode = 0
+            stderr = ""
+            stdout = ""
+
+        self.patch("run_native_linux_account", lambda *args, **kwargs: (SuccessfulBackend(), []))
+        with self.assertRaisesRegex(self.sshfling.SSHFlingError, "0 result records"):
+            self.sshfling.set_user_password("sresult", "secret")
+
+        wrong_user = [{
+            "record": "result",
+            "status": "updated",
+            "user": "someoneelse",
+            "password_set": "true",
+        }]
+        self.patch("run_native_linux_account", lambda *args, **kwargs: (SuccessfulBackend(), wrong_user))
+        with self.assertRaisesRegex(self.sshfling.SSHFlingError, "wrong user"):
+            self.sshfling.set_user_password("sresult", "secret")
+
+    def test_host_create_user_race_does_not_write_ownership_marker(self) -> None:
+        username = "shostrace"
+
+        class CreatedElsewhere:
+            returncode = 0
+            stderr = ""
+            stdout = ""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ca_pub = root / "ca.pub"
+            ca_pub.write_text("ssh-ed25519 AAAAunit\n", encoding="utf-8")
+            args = argparse.Namespace(
+                user=username,
+                ca_pub=str(ca_pub),
+                trusted_ca=str(root / "trusted_ca.pub"),
+                principals_dir=str(root / "principals"),
+                session_wrapper=str(root / "sshfling-session"),
+                sshd_config=str(root / "sshd_config.conf"),
+                host_user_marker_dir=str(root / "host-users"),
+                principal=None,
+                max_time=None,
+                max_connections=None,
+                policy_file=str(root / "policy.json"),
+                access_level=None,
+                create_user=True,
+                dry_run=False,
+                validate=False,
+                reload=False,
+                json=True,
+            )
+            records = [{"record": "result", "status": "present", "user": username, "created": "false"}]
+            identity = {"username": username, "uid": 1234, "gid": 1234, "home": f"/home/{username}"}
+            self.patch("require_root", lambda action: None)
+            self.patch("require_native_policy_parser", lambda dry_run=False: None)
+            self.patch("unix_user_exists", lambda value: False)
+            self.patch("default_login_shell", lambda: "/bin/sh")
+            self.patch("run_native_linux_account", lambda *values, **kwargs: (CreatedElsewhere(), records))
+            self.patch("unix_user_identity", lambda value: identity)
+            self.patch("write_host_user_marker", lambda *values, **kwargs: self.fail("race-created user must not be marked as owned"))
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(self.sshfling.cmd_host_install(args), 0)
+
+            self.assertFalse((root / "host-users" / f"{username}.json").exists())
+
+    def test_unix_identity_backend_failure_is_not_treated_as_missing(self) -> None:
+        class FailedIdentity:
+            returncode = 3
+            stderr = "identity lookup failed"
+            stdout = ""
+
+        self.patch("native_unix_identity_helper", lambda required=False: Path("/native/helper"))
+        self.patch("run", lambda *args, **kwargs: FailedIdentity())
+
+        with self.assertRaisesRegex(self.sshfling.SSHFlingError, "identity lookup failed"):
+            self.sshfling.unix_user_identity("sidentity")
+
+    def test_native_unix_identity_classifies_uid_zero_alias(self) -> None:
+        self.patch("native_unix_identity_helper", lambda required=False: Path("/native/helper"))
+        self.patch(
+            "run_native_unix_identity",
+            lambda username: {
+                "record": "result",
+                "status": "present",
+                "user": username,
+                "uid": "0",
+                "gid": "0",
+                "home": "/root-alias",
+            },
+        )
+
+        self.assertTrue(self.sshfling.is_root_equivalent_user("rootalias"))
+        with self.assertRaisesRegex(self.sshfling.SSHFlingError, "root-equivalent"):
+            self.sshfling.validate_access_level_for_username("rootalias", "standard")
+
+    def test_custom_prefix_install_discovers_native_account_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            prefix = Path(tmp)
+            cli = prefix / "bin" / "sshfling"
+            helper = prefix / "libexec" / "sshfling" / "sshfling-linux-account"
+            identity_helper = prefix / "libexec" / "sshfling" / "sshfling-unix-identity"
+            cli.parent.mkdir(parents=True)
+            helper.parent.mkdir(parents=True)
+            shutil.copy2(SSHFLING_PATH, cli)
+            shutil.copy2(REPO_ROOT / "native" / "sshfling-linux-account", helper)
+            shutil.copy2(REPO_ROOT / "native" / "sshfling-unix-identity", identity_helper)
+
+            installed = load_sshfling(cli)
+
+            self.assertEqual(installed.native_linux_account_helper(), helper.resolve())
+            self.assertEqual(installed.native_unix_identity_helper(), identity_helper.resolve())
 
     def test_dependency_inventory_omits_failed_version_probe_output(self) -> None:
         class FailedProbe:

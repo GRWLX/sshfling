@@ -54,11 +54,16 @@ sha256 = hashlib.sha256(data).digest()
 alphabet = "0123456789abcdfghijklmnpqrsvwxyz"
 
 def nix_base32(raw):
-    value = int.from_bytes(raw, "big")
     length = (len(raw) * 8 + 4) // 5
     chars = []
     for index in range(length - 1, -1, -1):
-        chars.append(alphabet[(value >> (index * 5)) & 31])
+        bit = index * 5
+        byte_index = bit // 8
+        shift = bit % 8
+        value = raw[byte_index] >> shift
+        if byte_index + 1 < len(raw):
+            value |= raw[byte_index + 1] << (8 - shift)
+        chars.append(alphabet[value & 31])
     return "".join(chars)
 
 print(hashlib.blake2s(data).hexdigest())
@@ -119,7 +124,7 @@ pkgdesc="Temporary SSH access broker and CLI"
 arch=('any')
 url="${base_url}"
 license=('LicenseRef-SSHFling-Commercial')
-depends=('python' 'openssh' 'shadow' 'procps-ng' 'util-linux')
+depends=('bash' 'python' 'openssh' 'openssl' 'shadow' 'procps-ng' 'util-linux' 'jq')
 optdepends=('docker: Docker Compose test harness')
 backup=('etc/sshfling/policy.json')
 source=("\${pkgname}-\${pkgver}.tar.gz::${base_url}/downloads/${source_tar}")
@@ -128,6 +133,8 @@ sha256sums=('${source_sha}')
 package() {
   cd "\${srcdir}/\${pkgname}-\${pkgver}"
   install -Dm755 bin/sshfling "\${pkgdir}/usr/bin/sshfling"
+  install -Dm755 native/sshfling-linux-account "\${pkgdir}/usr/libexec/sshfling/sshfling-linux-account"
+  install -Dm755 native/sshfling-unix-identity "\${pkgdir}/usr/libexec/sshfling/sshfling-unix-identity"
   install -Dm755 production/sshfling-session "\${pkgdir}/usr/share/sshfling/templates/production/sshfling-session"
   install -Dm644 packaging/policy.json "\${pkgdir}/etc/sshfling/policy.json"
   install -Dm644 systemd/sshflingd.service "\${pkgdir}/usr/lib/systemd/system/sshflingd.service"
@@ -137,7 +144,7 @@ package() {
   install -Dm644 LICENSE "\${pkgdir}/usr/share/licenses/sshfling/LICENSE"
   install -Dm644 README.md "\${pkgdir}/usr/share/doc/sshfling/README.md"
   install -d "\${pkgdir}/usr/share/sshfling/templates"
-  cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml scripts secrets ssh-client ssh-server production systemd "\${pkgdir}/usr/share/sshfling/templates/"
+  cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml native scripts secrets ssh-client ssh-server production systemd "\${pkgdir}/usr/share/sshfling/templates/"
 }
 PKGBUILD
 
@@ -150,10 +157,13 @@ pkgbase = sshfling
 	arch = any
 	license = LicenseRef-SSHFling-Commercial
 	depends = python
+	depends = bash
 	depends = openssh
+	depends = openssl
 	depends = shadow
 	depends = procps-ng
 	depends = util-linux
+	depends = jq
 	optdepends = docker: Docker Compose test harness
 	backup = etc/sshfling/policy.json
 	source = sshfling-${version}.tar.gz::${base_url}/downloads/${source_tar}
@@ -172,20 +182,22 @@ pkgdesc="Temporary SSH access broker and CLI"
 url="${base_url}"
 arch="noarch"
 license="LicenseRef-SSHFling-Commercial"
-depends="python3 openssh-client shadow procps util-linux"
+depends="bash python3 openssh-client openssl shadow procps util-linux jq"
 options="!check"
 source="\$pkgname-\$pkgver.tar.gz::${base_url}/downloads/${source_tar}"
 builddir="\$srcdir/\$pkgname-\$pkgver"
 
 package() {
 	install -Dm755 "\$builddir/bin/sshfling" "\$pkgdir/usr/bin/sshfling"
+	install -Dm755 "\$builddir/native/sshfling-linux-account" "\$pkgdir/usr/libexec/sshfling/sshfling-linux-account"
+	install -Dm755 "\$builddir/native/sshfling-unix-identity" "\$pkgdir/usr/libexec/sshfling/sshfling-unix-identity"
 	install -Dm755 "\$builddir/production/sshfling-session" "\$pkgdir/usr/share/sshfling/templates/production/sshfling-session"
 	install -Dm644 "\$builddir/packaging/policy.json" "\$pkgdir/etc/sshfling/policy.json"
 	install -Dm644 "\$builddir/LICENSE" "\$pkgdir/usr/share/licenses/sshfling/LICENSE"
 	install -Dm644 "\$builddir/README.md" "\$pkgdir/usr/share/doc/sshfling/README.md"
 	mkdir -p "\$pkgdir/usr/share/sshfling/templates"
 	cp -a "\$builddir"/.env.example "\$builddir"/LICENSE "\$builddir"/README.md "\$builddir"/compose.server.yml "\$builddir"/compose.client.yml \
-		"\$builddir"/scripts "\$builddir"/secrets "\$builddir"/ssh-client "\$builddir"/ssh-server "\$builddir"/production "\$builddir"/systemd \
+		"\$builddir"/native "\$builddir"/scripts "\$builddir"/secrets "\$builddir"/ssh-client "\$builddir"/ssh-server "\$builddir"/production "\$builddir"/systemd \
 		"\$pkgdir/usr/share/sshfling/templates/"
 }
 
@@ -209,20 +221,26 @@ LICENSE_NAME=	SSHFling Commercial License
 LICENSE_FILE=	\${WRKSRC}/LICENSE
 LICENSE_PERMS=	no-dist-mirror no-dist-sell no-pkg-mirror no-pkg-sell no-auto-accept
 
-RUN_DEPENDS=	python3:lang/python3
+RUN_DEPENDS=	python3:lang/python3 bash:shells/bash jq:textproc/jq
 
 USES=		python shebangfix
 SHEBANG_FILES=	bin/sshfling
 NO_BUILD=	yes
 
+post-patch:
+	\${REINPLACE_CMD} -e 's|/etc/sshfling/policy.json|\${PREFIX}/etc/sshfling/policy.json|g' \
+		\${WRKSRC}/bin/sshfling \${WRKSRC}/production/sshfling-session
+
 do-install:
 	\${INSTALL_SCRIPT} \${WRKSRC}/bin/sshfling \${STAGEDIR}\${PREFIX}/bin/sshfling
-	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-session \${STAGEDIR}\${PREFIX}/libexec/sshfling-session
+	\${MKDIR} \${STAGEDIR}\${PREFIX}/libexec/sshfling
+	\${INSTALL_SCRIPT} \${WRKSRC}/native/sshfling-unix-identity \${STAGEDIR}\${PREFIX}/libexec/sshfling/sshfling-unix-identity
 	\${MKDIR} \${STAGEDIR}\${PREFIX}/etc/sshfling
 	\${INSTALL_DATA} \${WRKSRC}/packaging/policy.json \${STAGEDIR}\${PREFIX}/etc/sshfling/policy.json.sample
 	\${MKDIR} \${STAGEDIR}\${DOCSDIR}
 	\${INSTALL_DATA} \${WRKSRC}/README.md \${WRKSRC}/LICENSE \${STAGEDIR}\${DOCSDIR}/
 	\${MKDIR} \${STAGEDIR}\${PREFIX}/share/sshfling/templates/scripts
+	\${MKDIR} \${STAGEDIR}\${PREFIX}/share/sshfling/templates/native
 	\${MKDIR} \${STAGEDIR}\${PREFIX}/share/sshfling/templates/secrets
 	\${MKDIR} \${STAGEDIR}\${PREFIX}/share/sshfling/templates/ssh-client
 	\${MKDIR} \${STAGEDIR}\${PREFIX}/share/sshfling/templates/ssh-server
@@ -237,6 +255,8 @@ do-install:
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/uninstall-local.sh \${STAGEDIR}\${PREFIX}/share/sshfling/templates/scripts/uninstall-local.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/create-network.sh \${STAGEDIR}\${PREFIX}/share/sshfling/templates/scripts/create-network.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/generate-ssh-key.sh \${STAGEDIR}\${PREFIX}/share/sshfling/templates/scripts/generate-ssh-key.sh
+	\${INSTALL_SCRIPT} \${WRKSRC}/native/sshfling-linux-account \${STAGEDIR}\${PREFIX}/share/sshfling/templates/native/sshfling-linux-account
+	\${INSTALL_SCRIPT} \${WRKSRC}/native/sshfling-unix-identity \${STAGEDIR}\${PREFIX}/share/sshfling/templates/native/sshfling-unix-identity
 	\${INSTALL_DATA} \${WRKSRC}/secrets/.gitkeep \${STAGEDIR}\${PREFIX}/share/sshfling/templates/secrets/.gitkeep
 	\${INSTALL_DATA} \${WRKSRC}/ssh-client/Dockerfile \${STAGEDIR}\${PREFIX}/share/sshfling/templates/ssh-client/Dockerfile
 	\${INSTALL_SCRIPT} \${WRKSRC}/ssh-client/entrypoint.sh \${STAGEDIR}\${PREFIX}/share/sshfling/templates/ssh-client/entrypoint.sh
@@ -267,7 +287,7 @@ PKGDESCR
 
 cat >"$public_dir/freebsd/security/sshfling/pkg-plist" <<PLIST
 bin/sshfling
-libexec/sshfling-session
+libexec/sshfling/sshfling-unix-identity
 @sample etc/sshfling/policy.json.sample
 share/sshfling/templates/.env.example
 share/sshfling/templates/LICENSE
@@ -275,6 +295,8 @@ share/sshfling/templates/README.md
 share/sshfling/templates/compose.client.yml
 share/sshfling/templates/compose.server.yml
 share/sshfling/templates/production/sshfling-session
+share/sshfling/templates/native/sshfling-linux-account
+share/sshfling/templates/native/sshfling-unix-identity
 share/sshfling/templates/scripts/create-network.sh
 share/sshfling/templates/scripts/generate-ssh-key.sh
 share/sshfling/templates/scripts/install-local.sh
@@ -310,16 +332,19 @@ PERMIT_DISTFILES =	requires prior written permission from GRWLX
 MASTER_SITES =	${base_url}/downloads/
 
 MODULES =	lang/python
+RUN_DEPENDS =	shells/bash textproc/jq
 NO_BUILD =	Yes
 
 do-install:
 	\${INSTALL_SCRIPT} \${WRKSRC}/bin/sshfling \${PREFIX}/bin/sshfling
-	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-session \${PREFIX}/libexec/sshfling-session
+	\${INSTALL_DATA_DIR} \${PREFIX}/libexec/sshfling
+	\${INSTALL_SCRIPT} \${WRKSRC}/native/sshfling-unix-identity \${PREFIX}/libexec/sshfling/sshfling-unix-identity
 	\${INSTALL_DATA_DIR} \${PREFIX}/share/doc/sshfling
 	\${INSTALL_DATA} \${WRKSRC}/README.md \${WRKSRC}/LICENSE \${PREFIX}/share/doc/sshfling/
-	\${INSTALL_DATA_DIR} \${SYSCONFDIR}/sshfling
-	\${INSTALL_DATA} \${WRKSRC}/packaging/policy.json \${SYSCONFDIR}/sshfling/policy.json
+	\${INSTALL_DATA_DIR} \${PREFIX}/share/examples/sshfling
+	\${INSTALL_DATA} \${WRKSRC}/packaging/policy.json \${PREFIX}/share/examples/sshfling/policy.json
 	\${INSTALL_DATA_DIR} \${PREFIX}/share/sshfling/templates/scripts
+	\${INSTALL_DATA_DIR} \${PREFIX}/share/sshfling/templates/native
 	\${INSTALL_DATA_DIR} \${PREFIX}/share/sshfling/templates/secrets
 	\${INSTALL_DATA_DIR} \${PREFIX}/share/sshfling/templates/ssh-client
 	\${INSTALL_DATA_DIR} \${PREFIX}/share/sshfling/templates/ssh-server
@@ -334,6 +359,8 @@ do-install:
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/uninstall-local.sh \${PREFIX}/share/sshfling/templates/scripts/uninstall-local.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/create-network.sh \${PREFIX}/share/sshfling/templates/scripts/create-network.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/generate-ssh-key.sh \${PREFIX}/share/sshfling/templates/scripts/generate-ssh-key.sh
+	\${INSTALL_SCRIPT} \${WRKSRC}/native/sshfling-linux-account \${PREFIX}/share/sshfling/templates/native/sshfling-linux-account
+	\${INSTALL_SCRIPT} \${WRKSRC}/native/sshfling-unix-identity \${PREFIX}/share/sshfling/templates/native/sshfling-unix-identity
 	\${INSTALL_DATA} \${WRKSRC}/secrets/.gitkeep \${PREFIX}/share/sshfling/templates/secrets/.gitkeep
 	\${INSTALL_DATA} \${WRKSRC}/ssh-client/Dockerfile \${PREFIX}/share/sshfling/templates/ssh-client/Dockerfile
 	\${INSTALL_SCRIPT} \${WRKSRC}/ssh-client/entrypoint.sh \${PREFIX}/share/sshfling/templates/ssh-client/entrypoint.sh
@@ -363,7 +390,9 @@ DESCR
 
 cat >"$public_dir/openbsd/security/sshfling/pkg/PLIST" <<PLIST
 @bin bin/sshfling
-libexec/sshfling-session
+@bin libexec/sshfling/sshfling-unix-identity
+@sample \${SYSCONFDIR}/sshfling/
+share/examples/sshfling/policy.json
 @sample \${SYSCONFDIR}/sshfling/policy.json
 share/sshfling/templates/.env.example
 share/sshfling/templates/LICENSE
@@ -371,6 +400,8 @@ share/sshfling/templates/README.md
 share/sshfling/templates/compose.client.yml
 share/sshfling/templates/compose.server.yml
 share/sshfling/templates/production/sshfling-session
+share/sshfling/templates/native/sshfling-linux-account
+share/sshfling/templates/native/sshfling-unix-identity
 share/sshfling/templates/scripts/create-network.sh
 share/sshfling/templates/scripts/generate-ssh-key.sh
 share/sshfling/templates/scripts/install-local.sh
@@ -404,15 +435,24 @@ LICENSE=	sshfling-commercial-license
 
 USE_LANGUAGES=	# none
 NO_BUILD=	yes
+DEPENDS+=	jq-[0-9]*:../../devel/jq
+DEPENDS+=	bash-[0-9]*:../../shells/bash
 REPLACE_PYTHON=	bin/sshfling
-INSTALLATION_DIRS=	bin libexec share/doc/sshfling etc/sshfling share/sshfling/templates share/sshfling/templates/scripts share/sshfling/templates/secrets share/sshfling/templates/ssh-client share/sshfling/templates/ssh-server share/sshfling/templates/production share/sshfling/templates/systemd
+PKG_SYSCONFSUBDIR=	sshfling
+EGDIR=		\${PREFIX}/share/examples/sshfling
+CONF_FILES=	\${EGDIR}/policy.json \${PKG_SYSCONFDIR}/policy.json
+SUBST_CLASSES+=	sshfling-paths
+SUBST_STAGE.sshfling-paths=	pre-configure
+SUBST_FILES.sshfling-paths=	bin/sshfling production/sshfling-session
+SUBST_SED.sshfling-paths=	-e 's|/etc/sshfling/policy.json|\${PKG_SYSCONFDIR}/policy.json|g'
+INSTALLATION_DIRS=	bin libexec libexec/sshfling share/doc/sshfling share/examples/sshfling share/sshfling/templates share/sshfling/templates/native share/sshfling/templates/scripts share/sshfling/templates/secrets share/sshfling/templates/ssh-client share/sshfling/templates/ssh-server share/sshfling/templates/production share/sshfling/templates/systemd
 
 do-install:
 	\${INSTALL_SCRIPT} \${WRKSRC}/bin/sshfling \${DESTDIR}\${PREFIX}/bin/sshfling
-	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-session \${DESTDIR}\${PREFIX}/libexec/sshfling-session
+	\${INSTALL_SCRIPT} \${WRKSRC}/native/sshfling-unix-identity \${DESTDIR}\${PREFIX}/libexec/sshfling/sshfling-unix-identity
 	\${INSTALL_DATA} \${WRKSRC}/README.md \${DESTDIR}\${PREFIX}/share/doc/sshfling/README.md
 	\${INSTALL_DATA} \${WRKSRC}/LICENSE \${DESTDIR}\${PREFIX}/share/doc/sshfling/LICENSE
-	\${INSTALL_DATA} \${WRKSRC}/packaging/policy.json \${DESTDIR}\${PREFIX}/etc/sshfling/policy.json
+	\${INSTALL_DATA} \${WRKSRC}/packaging/policy.json \${DESTDIR}\${EGDIR}/policy.json
 	\${INSTALL_DATA} \${WRKSRC}/.env.example \${DESTDIR}\${PREFIX}/share/sshfling/templates/.env.example
 	\${INSTALL_DATA} \${WRKSRC}/LICENSE \${DESTDIR}\${PREFIX}/share/sshfling/templates/LICENSE
 	\${INSTALL_DATA} \${WRKSRC}/README.md \${DESTDIR}\${PREFIX}/share/sshfling/templates/README.md
@@ -422,6 +462,8 @@ do-install:
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/uninstall-local.sh \${DESTDIR}\${PREFIX}/share/sshfling/templates/scripts/uninstall-local.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/create-network.sh \${DESTDIR}\${PREFIX}/share/sshfling/templates/scripts/create-network.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/scripts/generate-ssh-key.sh \${DESTDIR}\${PREFIX}/share/sshfling/templates/scripts/generate-ssh-key.sh
+	\${INSTALL_SCRIPT} \${WRKSRC}/native/sshfling-linux-account \${DESTDIR}\${PREFIX}/share/sshfling/templates/native/sshfling-linux-account
+	\${INSTALL_SCRIPT} \${WRKSRC}/native/sshfling-unix-identity \${DESTDIR}\${PREFIX}/share/sshfling/templates/native/sshfling-unix-identity
 	\${INSTALL_DATA} \${WRKSRC}/secrets/.gitkeep \${DESTDIR}\${PREFIX}/share/sshfling/templates/secrets/.gitkeep
 	\${INSTALL_DATA} \${WRKSRC}/ssh-client/Dockerfile \${DESTDIR}\${PREFIX}/share/sshfling/templates/ssh-client/Dockerfile
 	\${INSTALL_SCRIPT} \${WRKSRC}/ssh-client/entrypoint.sh \${DESTDIR}\${PREFIX}/share/sshfling/templates/ssh-client/entrypoint.sh
@@ -448,13 +490,15 @@ DESCR
 cat >"$public_dir/pkgsrc/security/sshfling/PLIST" <<PLIST
 @comment \$NetBSD\$
 bin/sshfling
-libexec/sshfling-session
+libexec/sshfling/sshfling-unix-identity
 share/sshfling/templates/.env.example
 share/sshfling/templates/LICENSE
 share/sshfling/templates/README.md
 share/sshfling/templates/compose.client.yml
 share/sshfling/templates/compose.server.yml
 share/sshfling/templates/production/sshfling-session
+share/sshfling/templates/native/sshfling-linux-account
+share/sshfling/templates/native/sshfling-unix-identity
 share/sshfling/templates/scripts/create-network.sh
 share/sshfling/templates/scripts/generate-ssh-key.sh
 share/sshfling/templates/scripts/install-local.sh
@@ -472,7 +516,7 @@ share/sshfling/templates/systemd/sshfling-prune.timer
 share/sshfling/templates/systemd/sshflingd.service
 share/doc/sshfling/LICENSE
 share/doc/sshfling/README.md
-etc/sshfling/policy.json
+share/examples/sshfling/policy.json
 PLIST
 
 cat >"$public_dir/pkgsrc/security/sshfling/distinfo" <<DISTINFO
@@ -497,7 +541,7 @@ cat >"$public_dir/nix/flake.nix" <<NIX
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          runtimePath = [ pkgs.python3 pkgs.openssh pkgs.procps pkgs.util-linux ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.shadow ];
+          runtimePath = [ pkgs.bash pkgs.python3 pkgs.openssh pkgs.openssl pkgs.jq pkgs.procps pkgs.util-linux ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.shadow ];
         in {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "sshfling";
@@ -511,13 +555,20 @@ cat >"$public_dir/nix/flake.nix" <<NIX
             installPhase = ''
               runHook preInstall
               install -Dm755 bin/sshfling \$out/bin/sshfling
+              install -Dm755 native/sshfling-linux-account \$out/libexec/sshfling/sshfling-linux-account
+              install -Dm755 native/sshfling-unix-identity \$out/libexec/sshfling/sshfling-unix-identity
               install -Dm755 production/sshfling-session \$out/share/sshfling/templates/production/sshfling-session
               install -Dm644 LICENSE \$out/share/doc/sshfling/LICENSE
               install -Dm644 README.md \$out/share/doc/sshfling/README.md
               mkdir -p \$out/share/sshfling/templates
-              cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml scripts secrets ssh-client ssh-server production systemd \$out/share/sshfling/templates/
+              cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml native scripts secrets ssh-client ssh-server production systemd \$out/share/sshfling/templates/
               patchShebangs \$out/bin/sshfling
-              wrapProgram \$out/bin/sshfling --prefix PATH : \${pkgs.lib.makeBinPath runtimePath}
+              patchShebangs \$out/libexec/sshfling/sshfling-linux-account
+              patchShebangs \$out/libexec/sshfling/sshfling-unix-identity
+              wrapProgram \$out/bin/sshfling \
+                --prefix PATH : \${pkgs.lib.makeBinPath runtimePath} \
+                --set SSHFLING_LINUX_ACCOUNT_HELPER \$out/libexec/sshfling/sshfling-linux-account \
+                --set SSHFLING_UNIX_IDENTITY_HELPER \$out/libexec/sshfling/sshfling-unix-identity
               runHook postInstall
             '';
             meta = with pkgs.lib; {
@@ -546,9 +597,12 @@ cat >"$public_dir/guix/sshfling.scm" <<GUIX
   #:use-module (guix build-system copy)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (gnu packages admin)
+  #:use-module (gnu packages bash)
   #:use-module (gnu packages linux)
   #:use-module (gnu packages python)
-  #:use-module (gnu packages ssh))
+  #:use-module (gnu packages ssh)
+  #:use-module (gnu packages tls)
+  #:use-module (gnu packages web))
 
 (define-public sshfling
   (package
@@ -563,6 +617,9 @@ cat >"$public_dir/guix/sshfling.scm" <<GUIX
     (arguments
      '(#:install-plan
        '(("bin/sshfling" "bin/sshfling")
+         ("native/sshfling-linux-account" "libexec/sshfling/sshfling-linux-account")
+         ("native/sshfling-unix-identity" "libexec/sshfling/sshfling-unix-identity")
+         ("native" "share/sshfling/templates/native")
          ("README.md" "share/doc/sshfling/README.md")
          ("LICENSE" "share/doc/sshfling/LICENSE")
          ("packaging/policy.json" "etc/sshfling/policy.json")
@@ -577,12 +634,14 @@ cat >"$public_dir/guix/sshfling.scm" <<GUIX
          ("ssh-server" "share/sshfling/templates/ssh-server")
          ("production" "share/sshfling/templates/production")
          ("systemd" "share/sshfling/templates/systemd"))))
-    (inputs (list python openssh shadow procps util-linux))
+    (propagated-inputs (list bash-minimal python openssh openssl shadow procps util-linux jq))
     (home-page "${base_url}")
     (synopsis "Temporary SSH access broker and CLI")
     (description
      "SSHFling grants short-lived SSH access with default password grants, optional OpenSSH user certificates, and a forced session wrapper so temporary SSH sessions are capped by a server-side wall-clock timeout.")
     (license #f)))
+
+sshfling
 GUIX
 
 cat >"$public_dir/void/template" <<VOID
@@ -590,7 +649,7 @@ cat >"$public_dir/void/template" <<VOID
 pkgname=sshfling
 version=${version}
 revision=1
-depends="python3 openssh shadow procps-ng util-linux"
+depends="bash python3 openssh openssl shadow procps-ng util-linux jq"
 short_desc="Temporary SSH access broker and CLI"
 maintainer="${maintainer}"
 license="LicenseRef-SSHFling-Commercial"
@@ -600,12 +659,14 @@ checksum=${source_sha}
 
 do_install() {
 	vbin bin/sshfling
+	vinstall native/sshfling-linux-account 755 usr/libexec/sshfling
+	vinstall native/sshfling-unix-identity 755 usr/libexec/sshfling
 	vinstall production/sshfling-session 755 usr/share/sshfling/templates/production
 	vinstall packaging/policy.json 644 etc/sshfling
 	vlicense LICENSE
 	vdoc README.md
 	vmkdir usr/share/sshfling/templates
-	for path in .env.example LICENSE README.md compose.server.yml compose.client.yml scripts secrets ssh-client ssh-server production systemd; do
+	for path in .env.example LICENSE README.md compose.server.yml compose.client.yml native scripts secrets ssh-client ssh-server production systemd; do
 		vcopy "\$path" usr/share/sshfling/templates
 	done
 }
@@ -613,6 +674,8 @@ VOID
 
 cat >"$public_dir/gentoo/app-admin/sshfling/sshfling-${version}.ebuild" <<GENTOO
 EAPI=8
+
+PYTHON_COMPAT=( python3_{10..14} )
 
 inherit python-r1 systemd
 
@@ -625,6 +688,9 @@ SLOT="0"
 KEYWORDS="~amd64 ~arm64"
 REQUIRED_USE="\${PYTHON_REQUIRED_USE}"
 RDEPEND="\${PYTHON_DEPS}
+	app-misc/jq
+	app-shells/bash
+	dev-libs/openssl
 	virtual/ssh
 	sys-apps/shadow
 	sys-process/procps
@@ -633,6 +699,9 @@ RDEPEND="\${PYTHON_DEPS}
 src_install() {
 	python_fix_shebang bin/sshfling
 	dobin bin/sshfling
+	exeinto /usr/libexec/sshfling
+	doexe native/sshfling-linux-account
+	doexe native/sshfling-unix-identity
 	exeinto /usr/share/sshfling/templates/production
 	doexe production/sshfling-session
 	insinto /etc/sshfling
@@ -642,7 +711,18 @@ src_install() {
 	newdoc LICENSE LICENSE
 	insinto /usr/share/sshfling/templates
 	doins .env.example LICENSE README.md compose.server.yml compose.client.yml
-	doins -r scripts secrets ssh-client ssh-server production systemd
+	doins -r native scripts secrets ssh-client ssh-server production systemd
+	fperms 0755 \
+		/usr/share/sshfling/templates/native/sshfling-linux-account \
+		/usr/share/sshfling/templates/native/sshfling-unix-identity \
+		/usr/share/sshfling/templates/scripts/install-local.sh \
+		/usr/share/sshfling/templates/scripts/uninstall-local.sh \
+		/usr/share/sshfling/templates/scripts/create-network.sh \
+		/usr/share/sshfling/templates/scripts/generate-ssh-key.sh \
+		/usr/share/sshfling/templates/ssh-client/entrypoint.sh \
+		/usr/share/sshfling/templates/ssh-server/entrypoint.sh \
+		/usr/share/sshfling/templates/ssh-server/limited-session.sh \
+		/usr/share/sshfling/templates/production/sshfling-session
 }
 GENTOO
 
@@ -666,12 +746,14 @@ tar xvf "$CWD/$PRGNAM-$VERSION.tar.gz" -C "$TMP"
 cd "$TMP/$PRGNAM-$VERSION"
 
 install -Dm755 bin/sshfling "$PKG/usr/bin/sshfling"
+install -Dm755 native/sshfling-linux-account "$PKG/usr/libexec/sshfling/sshfling-linux-account"
+install -Dm755 native/sshfling-unix-identity "$PKG/usr/libexec/sshfling/sshfling-unix-identity"
 install -Dm755 production/sshfling-session "$PKG/usr/share/sshfling/templates/production/sshfling-session"
 install -Dm644 packaging/policy.json "$PKG/etc/sshfling/policy.json"
 install -Dm644 LICENSE "$PKG/usr/doc/$PRGNAM-$VERSION/LICENSE"
 install -Dm644 README.md "$PKG/usr/doc/$PRGNAM-$VERSION/README.md"
 mkdir -p "$PKG/usr/share/sshfling/templates"
-cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml scripts secrets ssh-client ssh-server production systemd "$PKG/usr/share/sshfling/templates/"
+cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml native scripts secrets ssh-client ssh-server production systemd "$PKG/usr/share/sshfling/templates/"
 mkdir -p "$PKG/install"
 cat "$CWD/slack-desc" > "$PKG/install/slack-desc"
 
@@ -695,6 +777,17 @@ sshfling:
 sshfling:
 SLACKDESC
 
+cat >"$public_dir/slackware/slack-required" <<'SLACKREQUIRED'
+bash
+jq
+openssh
+openssl
+procps-ng
+python3
+shadow
+util-linux
+SLACKREQUIRED
+
 cat >"$public_dir/opensuse/sshfling.spec" <<SPEC
 Name:           sshfling
 Version:        ${version}
@@ -705,10 +798,13 @@ URL:            ${base_url}
 Source0:        ${base_url}/downloads/${source_tar}
 BuildArch:      noarch
 Requires:       python3
+Requires:       bash
 Requires:       openssh
+Requires:       openssl
 Requires:       shadow
 Requires:       procps
 Requires:       util-linux
+Requires:       jq
 
 %description
 SSHFling grants short-lived SSH access with default password grants, optional
@@ -722,15 +818,19 @@ sessions are capped by a server-side wall-clock timeout.
 
 %install
 install -Dm755 bin/sshfling %{buildroot}%{_bindir}/sshfling
+install -Dm755 native/sshfling-linux-account %{buildroot}%{_libexecdir}/sshfling/sshfling-linux-account
+install -Dm755 native/sshfling-unix-identity %{buildroot}%{_libexecdir}/sshfling/sshfling-unix-identity
 install -Dm755 production/sshfling-session %{buildroot}%{_datadir}/sshfling/templates/production/sshfling-session
 install -Dm644 packaging/policy.json %{buildroot}%{_sysconfdir}/sshfling/policy.json
 install -Dm644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 install -Dm644 README.md %{buildroot}%{_docdir}/%{name}/README.md
 mkdir -p %{buildroot}%{_datadir}/sshfling/templates
-cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml scripts secrets ssh-client ssh-server production systemd %{buildroot}%{_datadir}/sshfling/templates/
+cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml native scripts secrets ssh-client ssh-server production systemd %{buildroot}%{_datadir}/sshfling/templates/
 
 %files
 %{_bindir}/sshfling
+%{_libexecdir}/sshfling/sshfling-linux-account
+%{_libexecdir}/sshfling/sshfling-unix-identity
 %config(missingok,noreplace) %{_sysconfdir}/sshfling/policy.json
 %{_datadir}/sshfling/templates
 %license %{_licensedir}/%{name}/LICENSE
@@ -759,6 +859,8 @@ apps:
     command: bin/sshfling
     environment:
       SSHFLING_TEMPLATE_DIR: \$SNAP/share/sshfling/templates
+      SSHFLING_LINUX_ACCOUNT_HELPER: \$SNAP/share/sshfling/templates/native/sshfling-linux-account
+      SSHFLING_UNIX_IDENTITY_HELPER: \$SNAP/share/sshfling/templates/native/sshfling-unix-identity
 
 parts:
   sshfling:
@@ -766,6 +868,7 @@ parts:
     source: ${base_url}/downloads/${source_tar}
     organize:
       bin/sshfling: bin/sshfling
+      native: share/sshfling/templates/native
       .env.example: share/sshfling/templates/.env.example
       LICENSE: share/sshfling/templates/LICENSE
       README.md: share/sshfling/templates/README.md
@@ -778,6 +881,9 @@ parts:
       production: share/sshfling/templates/production
       systemd: share/sshfling/templates/systemd
     stage-packages:
+      - bash
+      - jq
+      - openssl
       - python3
       - openssh-client
       - passwd
@@ -793,7 +899,7 @@ TERMUX_PKG_MAINTAINER="${maintainer}"
 TERMUX_PKG_VERSION=${version}
 TERMUX_PKG_SRCURL=${base_url}/downloads/${source_tar}
 TERMUX_PKG_SHA256=${source_sha}
-TERMUX_PKG_DEPENDS="python, openssh, procps, util-linux"
+TERMUX_PKG_DEPENDS="python, openssh, jq, procps, util-linux"
 TERMUX_PKG_PLATFORM_INDEPENDENT=true
 
 termux_step_make_install() {
@@ -803,17 +909,19 @@ termux_step_make_install() {
 	install -Dm644 README.md "\$TERMUX_PREFIX/share/doc/sshfling/README.md"
 	install -Dm644 packaging/policy.json "\$TERMUX_PREFIX/etc/sshfling/policy.json"
 	mkdir -p "\$TERMUX_PREFIX/share/sshfling/templates"
-	cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml scripts secrets ssh-client ssh-server production systemd "\$TERMUX_PREFIX/share/sshfling/templates/"
+	cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml native scripts secrets ssh-client ssh-server production systemd "\$TERMUX_PREFIX/share/sshfling/templates/"
 }
 TERMUX
 
 cat >"$public_dir/appimage/AppImageBuilder.yml" <<APPIMAGE
 version: 1
 script:
-  - mkdir -p AppDir/usr/bin AppDir/usr/share/sshfling/templates
+  - mkdir -p AppDir/usr/bin AppDir/usr/libexec/sshfling AppDir/usr/share/sshfling/templates
   - cp bin/sshfling AppDir/usr/bin/sshfling
-  - cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml scripts secrets ssh-client ssh-server production systemd AppDir/usr/share/sshfling/templates/
-  - chmod 0755 AppDir/usr/bin/sshfling
+  - cp native/sshfling-linux-account AppDir/usr/libexec/sshfling/sshfling-linux-account
+  - cp native/sshfling-unix-identity AppDir/usr/libexec/sshfling/sshfling-unix-identity
+  - cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml native scripts secrets ssh-client ssh-server production systemd AppDir/usr/share/sshfling/templates/
+  - chmod 0755 AppDir/usr/bin/sshfling AppDir/usr/libexec/sshfling/sshfling-linux-account AppDir/usr/libexec/sshfling/sshfling-unix-identity
   - install -Dm755 AppDir/usr/bin/sshfling AppDir/AppRun
 AppDir:
   path: ./AppDir
@@ -829,6 +937,9 @@ AppDir:
     sources:
       - sourceline: deb https://archive.ubuntu.com/ubuntu/ noble main universe
     include:
+      - bash
+      - jq
+      - openssl
       - python3
       - openssh-client
       - passwd
@@ -837,9 +948,13 @@ AppDir:
   files:
     include:
       - /usr/bin/python3*
+      - /usr/bin/jq
+      - /usr/bin/openssl
       - /usr/bin/ssh*
+      - /usr/bin/getent
       - /usr/sbin/chpasswd
       - /usr/sbin/useradd
+      - /usr/sbin/userdel
       - /usr/sbin/usermod
       - /usr/sbin/chage
       - /usr/bin/ps
@@ -1023,7 +1138,7 @@ cat >"$public_dir/community.html" <<HTML
     <li>Guix: <a href="guix/sshfling.scm">sshfling.scm</a></li>
     <li>Void Linux: <a href="void/template">xbps-src template</a></li>
     <li>Gentoo: <a href="gentoo/app-admin/sshfling/sshfling-${version}.ebuild">ebuild</a></li>
-    <li>Slackware: <a href="slackware/sshfling.SlackBuild">SlackBuild</a>, <a href="slackware/slack-desc">slack-desc</a></li>
+    <li>Slackware: <a href="slackware/sshfling.SlackBuild">SlackBuild</a>, <a href="slackware/slack-desc">slack-desc</a>, <a href="slackware/slack-required">slack-required</a></li>
     <li>openSUSE OBS: <a href="opensuse/sshfling.spec">spec file</a></li>
     <li>Snapcraft: <a href="snap/snapcraft.yaml">snapcraft.yaml</a></li>
     <li>Termux: <a href="termux/packages/sshfling/build.sh">package build.sh</a></li>

@@ -1,0 +1,201 @@
+#!/bin/sh
+set -eu
+
+LC_ALL=C
+export LC_ALL
+
+die() {
+  message=$1
+  code=${2:-1}
+  printf 'sshfling-unix-identity: %s\n' "$message" >&2
+  exit "$code"
+}
+
+validate_username() {
+  username=$1
+  case "$username" in
+    ''|[0-9-]*|*[!a-z0-9_-]*)
+      die "invalid Unix username: $username" 2
+      ;;
+  esac
+  [ "${#username}" -le 32 ] || die "invalid Unix username: $username" 2
+}
+
+require_tool() {
+  command -v "$1" >/dev/null 2>&1 || die "missing command: $1" 127
+}
+
+emit_missing() {
+  printf 'result\tstatus=missing\tuser=%s\n' "$1"
+}
+
+emit_present() {
+  username=$1
+  fields=$2
+  printf 'result\tstatus=present\tuser=%s\t%s\n' "$username" "$fields"
+}
+
+parse_passwd_entry() {
+  username=$1
+  entry=$2
+  printf '%s\n' "$entry" | awk -F: -v expected="$username" '
+    NF != 7 || $1 != expected || $3 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/ ||
+        $6 == "" || index($6, "\t") || index($6, "\r") {
+      exit 1
+    }
+    { printf "uid=%s\tgid=%s\thome=%s\n", $3, $4, $6 }
+  '
+}
+
+parse_directory_record() {
+  username=$1
+  name_key=$2
+  uid_key=$3
+  gid_key=$4
+  home_key=$5
+  record=$6
+  printf '%s\n' "$record" | awk \
+    -v expected="$username" \
+    -v name_key="$name_key" \
+    -v uid_key="$uid_key" \
+    -v gid_key="$gid_key" \
+    -v home_key="$home_key" '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    {
+      separator = index($0, ":")
+      if (!separator) next
+      raw_key = substr($0, 1, separator - 1)
+      raw_value = substr($0, separator + 1)
+      key = trim(raw_key)
+      value = trim(raw_value)
+      if ((key == name_key || key == uid_key || key == gid_key || key == home_key) &&
+          (index(raw_key, "\t") || index(raw_key, "\r") ||
+           index(raw_value, "\t") || index(raw_value, "\r"))) {
+        invalid = 1
+      }
+      if (key == name_key) { name = value; name_count++ }
+      if (key == uid_key) { uid = value; uid_count++ }
+      if (key == gid_key) { gid = value; gid_count++ }
+      if (key == home_key) { home = value; home_count++ }
+    }
+    END {
+      if (name_count != 1 || uid_count != 1 || gid_count != 1 || home_count != 1 ||
+          invalid || name != expected || uid !~ /^[0-9]+$/ || gid !~ /^[0-9]+$/ || home == "" ||
+          index(home, "\t") || index(home, "\r")) {
+        exit 1
+      }
+      printf "uid=%s\tgid=%s\thome=%s\n", uid, gid, home
+    }
+  '
+}
+
+lookup_getent() {
+  username=$1
+  require_tool getent
+
+  if entry=$(getent passwd "$username" 2>/dev/null); then
+    [ -n "$entry" ] || die "getent returned an empty passwd record for $username"
+  else
+    status=$?
+    if [ "$status" -eq 2 ]; then
+      emit_missing "$username"
+      return 0
+    fi
+    die "getent passwd lookup failed for $username (exit $status)"
+  fi
+
+  case "$entry" in
+    *'
+'*) die "getent returned multiple passwd records for $username" ;;
+  esac
+  if ! fields=$(parse_passwd_entry "$username" "$entry"); then
+    die "getent returned a malformed passwd record for $username"
+  fi
+  emit_present "$username" "$fields"
+}
+
+lookup_dscacheutil() {
+  username=$1
+  if record=$(dscacheutil -q user -a name "$username" 2>/dev/null); then
+    if [ -z "$record" ]; then
+      emit_missing "$username"
+      return 0
+    fi
+  else
+    status=$?
+    die "dscacheutil lookup failed for $username (exit $status)"
+  fi
+
+  if ! fields=$(parse_directory_record \
+    "$username" name uid gid dir "$record"); then
+    die "dscacheutil returned a malformed user record for $username"
+  fi
+  emit_present "$username" "$fields"
+}
+
+lookup_dscl() {
+  username=$1
+  if users=$(dscl . -list /Users 2>/dev/null); then
+    :
+  else
+    status=$?
+    die "dscl user listing failed (exit $status)"
+  fi
+
+  if ! printf '%s\n' "$users" | awk -v expected="$username" \
+    '$0 == expected { found = 1 } END { exit(found ? 0 : 1) }'; then
+    emit_missing "$username"
+    return 0
+  fi
+
+  if record=$(dscl . -read "/Users/$username" \
+    RecordName UniqueID PrimaryGroupID NFSHomeDirectory 2>/dev/null); then
+    :
+  else
+    status=$?
+    die "dscl user lookup failed for $username (exit $status)"
+  fi
+  [ -n "$record" ] || die "dscl returned an empty user record for $username"
+
+  if ! fields=$(parse_directory_record \
+    "$username" RecordName UniqueID PrimaryGroupID NFSHomeDirectory "$record"); then
+    die "dscl returned a malformed user record for $username"
+  fi
+  emit_present "$username" "$fields"
+}
+
+lookup_darwin() {
+  username=$1
+  if command -v dscacheutil >/dev/null 2>&1; then
+    lookup_dscacheutil "$username"
+  elif command -v dscl >/dev/null 2>&1; then
+    lookup_dscl "$username"
+  else
+    die "missing command: dscacheutil or dscl" 127
+  fi
+}
+
+if [ "$#" -ne 2 ] || [ "$1" != identity ]; then
+  die "usage: identity USER" 2
+fi
+validate_username "$2"
+require_tool awk
+require_tool uname
+
+operating_system=$(uname -s 2>/dev/null) \
+  || die "could not identify the operating system"
+case "$operating_system" in
+  Linux|FreeBSD|OpenBSD|NetBSD|DragonFly|SunOS)
+    lookup_getent "$2"
+    ;;
+  Darwin)
+    lookup_darwin "$2"
+    ;;
+  *)
+    die "unsupported operating system: $operating_system"
+    ;;
+esac

@@ -372,18 +372,23 @@ Uninstall:
 
 ```bash
 sudo rm -f /usr/local/bin/sshfling
+sudo rm -f /usr/local/libexec/sshfling/sshfling-unix-identity
+sudo rmdir /usr/local/libexec/sshfling 2>/dev/null || true
 sudo rm -rf /usr/local/share/sshfling
 sudo pkgutil --forget io.sshfling.cli >/dev/null 2>&1 || true
 ```
 
-The pkg installs `/usr/local/bin/sshfling`, `/usr/local/share/sshfling`, and a
+The pkg installs `/usr/local/bin/sshfling`, the native identity helper under
+`/usr/local/libexec/sshfling`, `/usr/local/share/sshfling`, and a
 packaged default policy at
 `/usr/local/share/sshfling/defaults/policy.json`. Its postinstall script creates
 `/etc/sshfling/policy.json` only when that file is absent; install and upgrade
 do not overwrite an existing operator-managed policy file. Uninstall
 intentionally preserves `/etc/sshfling` for policy, CA material, and
 operator-managed configuration, then forgets the package receipt. The pkg does
-not keep separate original-state records and does not bundle Python or OpenSSH.
+not keep separate original-state records and does not bundle Python, OpenSSH,
+or `jq`. Client commands need Python and OpenSSH; server-host setup also needs
+`jq` for native forced-session policy parsing.
 
 ## .NET Global Tool
 
@@ -419,11 +424,33 @@ Global tool uninstall removes the .NET tool shim and package from the user's
 SSH configuration, CA material, temporary grant state, Python, OpenSSH, Docker,
 or any shared host dependencies.
 
+## .NET NuGet Library
+
+The separate `SSHFling` package exposes `SSHFlingRunner.Run` and
+`SSHFlingRunner.RunAsync` to .NET applications. Clean C#, Visual Basic, and F#
+consumers are validated against this same package. Download and checksum
+`SSHFling.VERSION.nupkg` as above, then add it from the verified directory:
+
+```bash
+dotnet add package SSHFling --source "$tmp" --version "$VERSION"
+```
+
+Remove the application dependency with:
+
+```bash
+dotnet remove package SSHFling
+```
+
+Package removal does not remove application-created SSHFling projects or shared
+Python/OpenSSH dependencies. See [libraries.md](libraries.md) for the API.
+
 ## Java Executable JAR
 
 The Java package coordinates are `io.sshfling:sshfling-cli`. The direct
 download artifact is `sshfling-cli-VERSION.jar`; the package also publishes
-`sshfling-cli-VERSION-sources.jar` and `sshfling-cli-VERSION.pom`.
+`sshfling-cli-VERSION-sources.jar`, `sshfling-cli-VERSION-javadoc.jar`, and
+`sshfling-cli-VERSION.pom`. Clean Maven and Gradle consumers are validated
+against the same coordinate.
 
 Install from a downloaded release package after verifying the published
 checksum:
@@ -433,19 +460,244 @@ BASE_URL="https://OWNER.github.io/REPO"
 VERSION="0.1.14"
 tmp="$(mktemp -d)"
 curl -fsSL "${BASE_URL}/downloads/sshfling-cli-${VERSION}.jar" -o "$tmp/sshfling-cli-${VERSION}.jar"
+curl -fsSL "${BASE_URL}/downloads/sshfling-cli-${VERSION}-javadoc.jar" -o "$tmp/sshfling-cli-${VERSION}-javadoc.jar"
 curl -fsSL "${BASE_URL}/downloads/sshfling-cli-${VERSION}.pom" -o "$tmp/sshfling-cli-${VERSION}.pom"
 curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
 grep "  sshfling-cli-${VERSION}.jar$" "$tmp/SHA256SUMS" > "$tmp/sshfling-cli.jar.SHA256SUMS"
+grep "  sshfling-cli-${VERSION}-javadoc.jar$" "$tmp/SHA256SUMS" > "$tmp/sshfling-cli.javadoc.SHA256SUMS"
 grep "  sshfling-cli-${VERSION}.pom$" "$tmp/SHA256SUMS" > "$tmp/sshfling-cli.pom.SHA256SUMS"
-(cd "$tmp" && sha256sum -c sshfling-cli.jar.SHA256SUMS && sha256sum -c sshfling-cli.pom.SHA256SUMS)
+(cd "$tmp" && sha256sum -c sshfling-cli.jar.SHA256SUMS && sha256sum -c sshfling-cli.javadoc.SHA256SUMS && sha256sum -c sshfling-cli.pom.SHA256SUMS)
 java -jar "$tmp/sshfling-cli-${VERSION}.jar" --version
 ```
 
-Uninstall direct-download Java usage by deleting the downloaded JAR/POM and
-removing any shell alias or wrapper your deployment created. Maven cache cleanup
-is consumer-owned; package removal does not remove SSHFling project
+Maven uses `io.sshfling:sshfling-cli:VERSION`; Gradle uses
+`implementation("io.sshfling:sshfling-cli:VERSION")`. Both call the public
+`io.sshfling.cli.SSHFling.run` API. See [libraries.md](libraries.md).
+
+Uninstall direct-download Java usage by deleting the downloaded JAR/POM/source/
+Javadocs files and removing any shell alias or wrapper your deployment created.
+Maven/Gradle cache cleanup is consumer-owned; package removal does not remove SSHFling project
 directories, host SSH configuration, CA material, temporary grant state, Python,
-OpenSSH, Docker, Java, Maven, or any shared host dependencies.
+OpenSSH, Docker, Java, Maven, Gradle, or any shared host dependencies.
+
+## Node.js npm Package
+
+The npm package name is `sshfling` and the installed command is `sshfling`.
+This package is a Node.js wrapper around the bundled Python CLI and templates;
+it does not bundle Python, OpenSSH, Docker, host account-management tools, or
+host SSH configuration.
+
+Install from a downloaded release package after verifying the published
+checksum:
+
+```bash
+BASE_URL="https://OWNER.github.io/REPO"
+VERSION="0.1.14"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL "${BASE_URL}/downloads/sshfling-${VERSION}.tgz" -o "$tmp/sshfling-${VERSION}.tgz"
+curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
+grep "  sshfling-${VERSION}.tgz$" "$tmp/SHA256SUMS" > "$tmp/sshfling-npm.SHA256SUMS"
+(cd "$tmp" && sha256sum -c sshfling-npm.SHA256SUMS)
+npm install -g "$tmp/sshfling-${VERSION}.tgz"
+sshfling --version
+```
+
+Uninstall:
+
+```bash
+npm uninstall -g sshfling
+```
+
+Global npm uninstall removes the npm package and global command shim from the
+selected npm prefix. It does not remove SSHFling project directories, host SSH
+configuration, CA material, temporary grant state, Python, OpenSSH, Docker,
+Node.js, npm, or any shared host dependencies.
+
+## Python Wheel
+
+The universal wheel is `sshfling-VERSION-py3-none-any.whl`. It installs the
+primary Python implementation, bundled templates, importable `sshfling` module,
+and `sshfling` console command. Python 3.10 or newer is required.
+
+```bash
+BASE_URL="https://OWNER.github.io/REPO"
+VERSION="0.1.14"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+wheel="sshfling-${VERSION}-py3-none-any.whl"
+curl -fsSL "${BASE_URL}/downloads/${wheel}" -o "$tmp/$wheel"
+curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
+grep "  ${wheel}$" "$tmp/SHA256SUMS" > "$tmp/sshfling-python.SHA256SUMS"
+(cd "$tmp" && sha256sum -c sshfling-python.SHA256SUMS)
+pipx install "$tmp/$wheel"
+sshfling --version
+```
+
+Uninstall with `pipx uninstall sshfling`. This removes the pipx environment and
+command shim only; it preserves generated projects, host state, Python, pipx,
+and OpenSSH.
+
+## Go Module
+
+The `sshfling-go-VERSION.zip` artifact contains an importable Go module and
+`cmd/sshfling`. The compiled launcher embeds the canonical Python runtime and
+templates. Go 1.22 or newer is required to build it; Python 3 and OpenSSH remain
+run-time dependencies.
+
+```bash
+BASE_URL="https://OWNER.github.io/REPO"
+VERSION="0.1.14"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+archive="sshfling-go-${VERSION}.zip"
+curl -fsSL "${BASE_URL}/downloads/${archive}" -o "$tmp/$archive"
+curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
+grep "  ${archive}$" "$tmp/SHA256SUMS" > "$tmp/sshfling-go.SHA256SUMS"
+(cd "$tmp" && sha256sum -c sshfling-go.SHA256SUMS)
+unzip -q "$tmp/$archive" -d "$tmp/source"
+(cd "$tmp/source/sshfling-go-${VERSION}" && GOBIN="$HOME/.local/bin" go install ./cmd/sshfling)
+sshfling --version
+```
+
+Uninstall by removing the `sshfling` binary from the `GOBIN` used above after
+confirming that path belongs to this installation. Removing it does not remove
+the Go build cache, Python, OpenSSH, or generated SSHFling state.
+
+## Rust Crate
+
+The `sshfling-cli-VERSION.crate` artifact contains the `sshfling` Rust library
+and binary with embedded runtime resources. Rust 1.70 or newer is required to
+build it; Python 3 and OpenSSH remain run-time dependencies.
+
+```bash
+BASE_URL="https://OWNER.github.io/REPO"
+VERSION="0.1.14"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+crate="sshfling-cli-${VERSION}.crate"
+curl -fsSL "${BASE_URL}/downloads/${crate}" -o "$tmp/$crate"
+curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
+grep "  ${crate}$" "$tmp/SHA256SUMS" > "$tmp/sshfling-rust.SHA256SUMS"
+(cd "$tmp" && sha256sum -c sshfling-rust.SHA256SUMS)
+tar -xzf "$tmp/$crate" -C "$tmp"
+cargo install --path "$tmp/sshfling-cli-${VERSION}" --locked
+sshfling --version
+```
+
+Uninstall with `cargo uninstall sshfling-cli`. Cargo removes its binary and
+registration but preserves generated projects, Cargo caches, Rust, Python,
+OpenSSH, and host state.
+
+## PHP Composer Package
+
+The Composer package is `sshfling-php-VERSION.zip` with package name
+`grwlx/sshfling`. It provides a PSR-4 API and Composer binary. PHP 8.1 or newer,
+Composer, Python 3, and OpenSSH are required.
+
+```bash
+BASE_URL="https://OWNER.github.io/REPO"
+VERSION="0.1.14"
+tmp="$(mktemp -d)"
+app="$HOME/.local/share/sshfling-composer"
+archive="sshfling-php-${VERSION}.zip"
+mkdir -p "$app"
+curl -fsSL "${BASE_URL}/downloads/${archive}" -o "$tmp/$archive"
+curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
+grep "  ${archive}$" "$tmp/SHA256SUMS" > "$tmp/sshfling-php.SHA256SUMS"
+(cd "$tmp" && sha256sum -c sshfling-php.SHA256SUMS)
+composer config --working-dir "$app" repositories.sshfling artifact "$tmp"
+composer require --working-dir "$app" "grwlx/sshfling:${VERSION}"
+"$app/vendor/bin/sshfling" --version
+```
+
+Uninstall with `composer remove --working-dir "$app" grwlx/sshfling`, then
+remove the app directory only if it contains no other packages. Composer does
+not remove PHP, Python, OpenSSH, generated projects, or host state.
+
+## Ruby Gem
+
+The RubyGem is `sshfling-VERSION.gem`. It provides the `SSHFling` Ruby module
+and `sshfling` executable. Ruby 3.0 or newer, Python 3, and OpenSSH are required.
+
+```bash
+BASE_URL="https://OWNER.github.io/REPO"
+VERSION="0.1.14"
+tmp="$(mktemp -d)"
+gem_home="$HOME/.local/share/sshfling-gems"
+package="sshfling-${VERSION}.gem"
+curl -fsSL "${BASE_URL}/downloads/${package}" -o "$tmp/$package"
+curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
+grep "  ${package}$" "$tmp/SHA256SUMS" > "$tmp/sshfling-ruby.SHA256SUMS"
+(cd "$tmp" && sha256sum -c sshfling-ruby.SHA256SUMS)
+GEM_HOME="$gem_home" GEM_PATH="$gem_home" gem install --local --bindir "$HOME/.local/bin" --no-document "$tmp/$package"
+sshfling --version
+```
+
+Uninstall:
+
+```bash
+GEM_HOME="$gem_home" GEM_PATH="$gem_home" gem uninstall --all --executables --bindir "$HOME/.local/bin" sshfling
+```
+
+This removes gem-owned files and the executable while preserving Ruby, Python,
+OpenSSH, generated projects, and host state.
+
+## C And C++ Native Libraries
+
+The `sshfling-native-VERSION.tar.gz` source distribution builds POSIX C11
+shared/static libraries, a C++17 header wrapper, CMake package exports,
+pkg-config metadata, and `sshfling-c`. Building requires CMake 3.20 or newer
+and C/C++ compilers; running still requires Python 3 and OpenSSH.
+
+```bash
+BASE_URL="https://OWNER.github.io/REPO"
+VERSION="0.1.14"
+tmp="$(mktemp -d)"
+prefix="$HOME/.local/share/sshfling-native"
+archive="sshfling-native-${VERSION}.tar.gz"
+curl -fsSL "${BASE_URL}/downloads/${archive}" -o "$tmp/$archive"
+curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
+grep "  ${archive}$" "$tmp/SHA256SUMS" > "$tmp/sshfling-native.SHA256SUMS"
+(cd "$tmp" && sha256sum -c sshfling-native.SHA256SUMS)
+tar -xzf "$tmp/$archive" -C "$tmp"
+cmake -S "$tmp/sshfling-native-${VERSION}" -B "$tmp/build" \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$prefix"
+cmake --build "$tmp/build" --parallel
+ctest --test-dir "$tmp/build" --output-on-failure
+cmake --install "$tmp/build"
+"$prefix/bin/sshfling-c" --version
+```
+
+Consumers can set `CMAKE_PREFIX_PATH=$prefix` and link `SSHFling::shared` or
+`SSHFling::static`, or set `PKG_CONFIG_PATH=$prefix/lib/pkgconfig`. Remove the
+isolated installation with `rm -rf "$prefix"`. This preserves compilers,
+CMake, Python, OpenSSH, generated projects, and host state.
+
+## Perl Source Distribution
+
+The `sshfling-perl-VERSION.tar.gz` CPAN-style source distribution provides the
+`SSHFling` module and executable. Perl 5.26 or newer, MakeMaker, make, Python 3,
+and OpenSSH are required.
+
+```bash
+BASE_URL="https://OWNER.github.io/REPO"
+VERSION="0.1.14"
+tmp="$(mktemp -d)"
+prefix="$HOME/.local/share/sshfling-perl"
+archive="sshfling-perl-${VERSION}.tar.gz"
+curl -fsSL "${BASE_URL}/downloads/${archive}" -o "$tmp/$archive"
+curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
+grep "  ${archive}$" "$tmp/SHA256SUMS" > "$tmp/sshfling-perl.SHA256SUMS"
+(cd "$tmp" && sha256sum -c sshfling-perl.SHA256SUMS)
+tar -xzf "$tmp/$archive" -C "$tmp"
+(cd "$tmp/SSHFling-${VERSION}" && \
+  perl Makefile.PL INSTALL_BASE="$prefix" && make test && make install)
+PERL5LIB="$prefix/lib/perl5" "$prefix/bin/sshfling" --version
+```
+
+Remove the isolated module and command with `rm -rf "$prefix"`. This preserves
+Perl, MakeMaker, make, Python, OpenSSH, generated projects, and host state.
 
 ## Windows MSI
 
@@ -706,8 +958,9 @@ Remove a local source checkout install, if used:
 
 If `scripts/install-local.sh` was run with a custom `PREFIX`, run uninstall with
 the same `PREFIX`. The local helper removes the fixed local-install file paths it
-created under that prefix; it does not record or restore preexisting files that a
-local install may have overwritten.
+created under that prefix, including the native account and identity backends in
+`$PREFIX/libexec/sshfling`; it does not record or restore preexisting files that
+a local install may have overwritten.
 
 Published container images, when enabled, use GitHub Container Registry names:
 

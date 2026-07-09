@@ -22,8 +22,16 @@ These artifacts are built directly by GitHub Actions on every version tag.
 | Fedora | `.rpm` plus RPM repo metadata | `dnf install sshfling` |
 | Rocky Linux | `.rpm` plus RPM repo metadata | `dnf install sshfling` |
 | AlmaLinux | `.rpm` plus RPM repo metadata | `dnf install sshfling` |
-| Cross-platform .NET | `SSHFling.Tool.VERSION.nupkg` | `dotnet tool install --global SSHFling.Tool` from a verified local package source |
-| Cross-platform Java | `sshfling-cli-VERSION.jar`, `sshfling-cli-VERSION-sources.jar`, `sshfling-cli-VERSION.pom` | `java -jar sshfling-cli-VERSION.jar` after checksum verification, or Maven from GitHub Packages |
+| Cross-platform .NET | `SSHFling.Tool.VERSION.nupkg`, `SSHFling.VERSION.nupkg` | Install the global tool or reference the `SSHFling` NuGet library from a verified package source |
+| Cross-platform Java | `sshfling-cli-VERSION.jar`, sources/Javadocs JARs, `sshfling-cli-VERSION.pom` | Run the JAR or consume `io.sshfling:sshfling-cli:VERSION` with Maven or Gradle |
+| Cross-platform Node.js/npm | `sshfling-VERSION.tgz` | `npm install -g sshfling-VERSION.tgz` after checksum verification |
+| Cross-platform Python | `sshfling-VERSION-py3-none-any.whl` | `pipx install sshfling-VERSION-py3-none-any.whl` after checksum verification |
+| Cross-platform Go | `sshfling-go-VERSION.zip` | Extract, then `go install ./cmd/sshfling` |
+| Cross-platform Rust | `sshfling-cli-VERSION.crate` | Extract, then `cargo install --path sshfling-cli-VERSION` |
+| Cross-platform PHP | `sshfling-php-VERSION.zip` | Composer artifact repository install as `grwlx/sshfling` |
+| Cross-platform Ruby | `sshfling-VERSION.gem` | `gem install --local sshfling-VERSION.gem` |
+| POSIX C/C++ | `sshfling-native-VERSION.tar.gz` | Build and install shared/static libraries, CMake exports, pkg-config metadata, and `sshfling-c` |
+| Perl 5.26+ | `sshfling-perl-VERSION.tar.gz` | Build/test/install the `SSHFling` module and executable with ExtUtils::MakeMaker |
 | macOS | `.pkg` and Homebrew formula | `brew install` or `installer -pkg` |
 | Windows | `.msi` and portable zip | MSI installer, winget, Scoop, or Chocolatey |
 
@@ -45,7 +53,7 @@ These files are generated into the public package site. Some can be used directl
 | Guix | `guix/sshfling.scm` |
 | Void Linux | `void/template` |
 | Gentoo | `gentoo/app-admin/sshfling` |
-| Slackware | `slackware/sshfling.SlackBuild`, `slackware/slack-desc` |
+| Slackware | `slackware/sshfling.SlackBuild`, `slackware/slack-desc`, `slackware/slack-required` |
 | openSUSE / OBS | `opensuse/sshfling.spec` |
 | Snapcraft | `snap/snapcraft.yaml` |
 | Termux / Android | `termux/packages/sshfling/build.sh` |
@@ -59,7 +67,9 @@ These files are generated into the public package site. Some can be used directl
 The tables above describe artifacts and generated packaging metadata, not a
 blanket support claim for every OS, language runtime, CPU architecture, hardware
 class, or embedded target that can consume those files. Language/runtime claim
-rules are tracked in [language-support.md](language-support.md).
+rules are tracked in [language-support.md](language-support.md); implemented
+package, deployment, and library checks are tracked in
+[language-deployment-support.md](language-deployment-support.md).
 
 Each enterprise release must keep a compact platform coverage declaration in
 the release evidence packet. Do not commit large generated OS-by-architecture
@@ -73,6 +83,7 @@ Minimum platform coverage evidence:
 | --- | --- |
 | OS and distribution versions | Exact OS name, version, package format, install path, validation workflow run, and exception record for any advertised-but-untested version. |
 | Language and runtime dependencies | Python implementation/version, shell or PowerShell version where relevant, OpenSSH client/server versions, and account-management tool availability for password grants. |
+| OS-native command execution | Forced-session policy parsing uses Bash plus `jq`; Unix identity lookup uses POSIX shell with `getent` or macOS directory-service commands; Linux account mutation uses Bash with shadow tools; Windows package/install behavior uses PowerShell. Python remains the shared CLI/runtime and release-tooling language, not the privileged OS-operation backend. |
 | CPU architecture | Architecture reported by the validation host or package metadata, with explicit status for `x86_64`/`amd64`, `arm64`/`aarch64`, and any 32-bit, `s390x`, `ppc64le`, or `riscv64` claims. |
 | Hardware class | Evidence that the release was validated on the claimed class, such as server VM, desktop workstation, container image, edge appliance, IoT gateway, or customer-managed embedded Linux host. |
 | ARM and IoT targets | For ARM, Raspberry Pi OS, OpenWrt, Yocto, Buildroot, or similar edge systems, record whether SSHFling was tested as client-only, certificate server, or password-grant server and which required host tools were present. |
@@ -125,7 +136,19 @@ workflow that installs or builds the published package outputs on:
   [firewall-os-versions.md](firewall-os-versions.md).
 - macOS from the published `.pkg` and generated Homebrew formula.
 - Windows from the published MSI and portable zip.
-- .NET global tool from the published `SSHFling.Tool.VERSION.nupkg` package.
+- .NET global tool and NuGet library from the published `SSHFling.Tool.VERSION.nupkg` and `SSHFling.VERSION.nupkg` packages.
+- Java executable and library consumers through direct JAR, Maven, and Gradle paths, including sources and Javadocs.
+- Node.js/npm package from the published `sshfling-VERSION.tgz` package.
+- Python 3.10 through current supported CPython releases from the universal wheel.
+- Go module source archive through `go test`, `go vet`, and clean `go install`.
+- Rust crate through Cargo test, Clippy, package verification, install, and uninstall.
+- PHP Composer archive through strict metadata, PSR-4 autoload, install, and removal.
+- Ruby gem through RubyGems and Bundler install paths.
+- POSIX C/C++ source distribution through warning-clean Ninja/Release and
+  Make/Debug CMake/CTest builds, ASan/UBSan tests, shared and static external
+  consumers, pkg-config, CLI, and removal checks.
+- Perl source distribution through MakeMaker tests, isolated module/CLI
+  installation, runtime initialization, and prefix removal.
 
 Client mode only needs Python and OpenSSH client tools. Server-side certificate
 grants need OpenSSH server tooling on the target host. Server-side password

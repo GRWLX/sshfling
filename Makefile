@@ -12,11 +12,13 @@ RELEASE_SCANNER_BIN_DIR ?= $(if $(RUNNER_TEMP),$(RUNNER_TEMP),$(CURDIR)/build)/r
 ENTERPRISE_RELEASE_OUTPUT_DIR ?= docs/release
 ENTERPRISE_RELEASE_EVIDENCE_DIR ?= docs/release/enterprise-release-evidence
 
-.PHONY: install-local uninstall-local test test-containers test-release-security-scan release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-readiness-artifacts release-readiness-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet package-java clean
+.PHONY: install-local uninstall-local test test-containers test-release-security-scan language-deployment-matrix release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-readiness-artifacts release-readiness-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet package-java package-node package-python package-go package-rust package-php package-ruby package-native-libraries package-perl clean
 
 install-local:
-	install -d "$(PREFIX)/bin" "$(TEMPLATE_DIR)/scripts" "$(TEMPLATE_DIR)/secrets" "$(TEMPLATE_DIR)/ssh-client" "$(TEMPLATE_DIR)/ssh-server" "$(TEMPLATE_DIR)/production" "$(TEMPLATE_DIR)/systemd"
+	install -d "$(PREFIX)/bin" "$(PREFIX)/libexec/sshfling" "$(TEMPLATE_DIR)/native" "$(TEMPLATE_DIR)/scripts" "$(TEMPLATE_DIR)/secrets" "$(TEMPLATE_DIR)/ssh-client" "$(TEMPLATE_DIR)/ssh-server" "$(TEMPLATE_DIR)/production" "$(TEMPLATE_DIR)/systemd"
 	install -m 0755 bin/sshfling "$(PREFIX)/bin/sshfling"
+	install -m 0755 native/sshfling-linux-account native/sshfling-unix-identity "$(PREFIX)/libexec/sshfling/"
+	install -m 0755 native/sshfling-linux-account native/sshfling-unix-identity "$(TEMPLATE_DIR)/native/"
 	install -m 0644 .env.example LICENSE README.md compose.server.yml compose.client.yml "$(TEMPLATE_DIR)/"
 	install -m 0755 scripts/install-local.sh scripts/uninstall-local.sh scripts/create-network.sh scripts/generate-ssh-key.sh "$(TEMPLATE_DIR)/scripts/"
 	install -m 0644 secrets/.gitkeep "$(TEMPLATE_DIR)/secrets/.gitkeep"
@@ -31,12 +33,25 @@ uninstall-local:
 	PREFIX="$(PREFIX)" bash scripts/uninstall-local.sh
 
 test:
-	python3 -m py_compile bin/sshfling tools/release_matrix_validate.py tools/generate_release_evidence.py tools/generate_enterprise_release_readiness.py tools/release_security_scan.py tools/workflow_static_check.py
+	python3 -m py_compile bin/sshfling packaging/python/src/sshfling/__init__.py tools/release_matrix_validate.py tools/generate_release_evidence.py tools/generate_enterprise_release_readiness.py tools/generate_language_deployment_matrix.py tools/generate_language_support_matrix.py tools/release_security_scan.py tools/workflow_static_check.py
+	python3 tools/generate_language_support_matrix.py --check
+	python3 tools/generate_language_deployment_matrix.py --check
 	python3 -m unittest discover -s tests/release -p 'test_*.py'
 	python3 -m unittest discover -s tests/sshfling -p 'test_*.py'
+	@if command -v node >/dev/null 2>&1; then node --check packaging/node/index.js && node --check packaging/node/bin/sshfling.js; fi
+	@if command -v gofmt >/dev/null 2>&1; then test -z "$$(find packaging/go -type f -name '*.go' -print0 | xargs -0 gofmt -l)"; fi
+	@if command -v cargo >/dev/null 2>&1 && cargo fmt --version >/dev/null 2>&1; then cargo fmt --check --manifest-path packaging/rust/Cargo.toml; fi
+	@if command -v php >/dev/null 2>&1; then php -l packaging/php/src/SSHFling.php >/dev/null && php -l packaging/php/bin/sshfling >/dev/null; fi
+	@if command -v ruby >/dev/null 2>&1; then ruby -c packaging/ruby/lib/sshfling.rb >/dev/null && ruby -c packaging/ruby/bin/sshfling >/dev/null; fi
+	@if command -v perl >/dev/null 2>&1; then perl -c packaging/perl/Makefile.PL >/dev/null && perl -c packaging/perl/lib/SSHFling.pm >/dev/null && perl -Ipackaging/perl/lib -c packaging/perl/bin/sshfling >/dev/null; fi
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
-	bash -n scripts/install-local.sh scripts/uninstall-local.sh scripts/create-network.sh scripts/generate-ssh-key.sh ssh-client/entrypoint.sh ssh-server/entrypoint.sh ssh-server/limited-session.sh production/sshfling-session packaging/*.sh tools/provision-release-scanners.sh tests/release/*.sh
+	bash -n native/sshfling-linux-account scripts/install-local.sh scripts/uninstall-local.sh scripts/create-network.sh scripts/generate-ssh-key.sh ssh-client/entrypoint.sh ssh-server/entrypoint.sh ssh-server/limited-session.sh production/sshfling-session packaging/*.sh tools/provision-release-scanners.sh tests/cross-os/validate-local-install.sh tests/cross-os/validate-native-linux-account.sh tests/cross-os/validate-native-session-policy.sh tests/cross-os/validate-native-unix-identity.sh tests/release/*.sh
+	sh -n native/sshfling-unix-identity
 	python3 tools/workflow_static_check.py --strict-timeouts
+	bash tests/cross-os/validate-native-linux-account.sh
+	bash tests/cross-os/validate-native-unix-identity.sh
+	bash tests/cross-os/validate-local-install.sh
+	bash tests/cross-os/validate-native-session-policy.sh
 	sh tests/cross-os/validate-cli.sh ./bin/sshfling "$(VERSION)"
 	bash tests/release/validate-release-matrix.sh
 	docker compose -f compose.server.yml config >/dev/null
@@ -47,6 +62,9 @@ test-containers:
 
 test-release-security-scan:
 	python3 -m unittest discover -s tests/release -p 'test_*.py'
+
+language-deployment-matrix:
+	python3 tools/generate_language_deployment_matrix.py --write --update-todo
 
 release-package-rehearsal:
 	VERSION="$(VERSION)" bash tests/release/validate-package-publishing-rehearsal.sh
@@ -84,7 +102,7 @@ release-matrix-validate:
 check-package-version:
 	@bash -c 'source packaging/version.sh; assert_sshfling_version_matches_source "$$1" "$$2" >/dev/null' _ "$(VERSION)" "$(CURDIR)"
 
-package: package-deb package-rpm package-msi package-pkg package-dotnet package-java
+package: package-deb package-rpm package-msi package-pkg package-dotnet package-java package-node package-python package-go package-rust package-php package-ruby package-native-libraries package-perl
 
 package-deb: check-package-version
 	SSHFLING_VERSION="$(VERSION)" bash packaging/build-deb.sh
@@ -103,6 +121,30 @@ package-dotnet: check-package-version
 
 package-java: check-package-version
 	SSHFLING_VERSION="$(VERSION)" bash packaging/build-java.sh
+
+package-node: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-node.sh
+
+package-python: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-python.sh
+
+package-go: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-go.sh
+
+package-rust: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-rust.sh
+
+package-php: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-php.sh
+
+package-ruby: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-ruby.sh
+
+package-native-libraries: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-native-libraries.sh
+
+package-perl: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-perl.sh
 
 clean:
 	rm -rf build dist

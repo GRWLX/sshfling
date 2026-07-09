@@ -12,32 +12,29 @@ validate_sshfling_version() {
 
 sshfling_source_version() {
   local repo_root="${1:-$(pwd)}"
-  local python_bin=""
   local version
+  local version_line
 
-  if command -v python3 >/dev/null 2>&1; then
-    python_bin="python3"
-  elif command -v python >/dev/null 2>&1; then
-    python_bin="python"
-  else
-    echo "python3 or python is required to read bin/sshfling VERSION." >&2
-    return 127
+  if [[ ! -r "$repo_root/bin/sshfling" ]]; then
+    echo "Could not read bin/sshfling." >&2
+    return 2
   fi
 
-  version="$("$python_bin" - "$repo_root/bin/sshfling" <<'PY'
-import ast
-import pathlib
-import sys
+  version_line="$(grep -E '^VERSION[[:space:]]*=' "$repo_root/bin/sshfling" | sed -n '1p')"
+  if [[ -z "$version_line" ]]; then
+    echo "VERSION constant was not found in bin/sshfling." >&2
+    return 2
+  fi
 
-source = pathlib.Path(sys.argv[1])
-for line in source.read_text(encoding="utf-8").splitlines():
-    if line.startswith("VERSION = "):
-        print(ast.literal_eval(line.split("=", 1)[1].strip()))
-        break
-else:
-    raise SystemExit("VERSION constant was not found in bin/sshfling")
-PY
-)"
+  version="${version_line#*=}"
+  version="${version#"${version%%[![:space:]]*}"}"
+  version="${version%%#*}"
+  version="${version%"${version##*[![:space:]]}"}"
+  if [[ "$version" == \"*\" && "$version" == *\" ]]; then
+    version="${version:1:${#version}-2}"
+  elif [[ "$version" == \'*\' && "$version" == *\' ]]; then
+    version="${version:1:${#version}-2}"
+  fi
   validate_sshfling_version "$version"
 }
 

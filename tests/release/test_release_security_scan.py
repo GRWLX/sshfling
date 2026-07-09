@@ -195,6 +195,83 @@ class ReleaseSecurityScanTests(unittest.TestCase):
                 )
             )
 
+    def test_dependency_inventory_reads_npm_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            package_json = write_file(
+                repo_root / "packaging" / "node" / "package.json",
+                json.dumps(
+                    {
+                        "name": "sshfling",
+                        "version": "1.2.3",
+                        "dependencies": {"left-pad": "1.3.0"},
+                        "devDependencies": {"typescript": "5.9.0"},
+                    }
+                ),
+            )
+
+            report = release_security_scan.collect_dependencies([package_json], repo_root)
+
+            self.assertEqual(report["status"], "pass")
+            self.assertIn("Dependency manifests found: packaging/node/package.json", report["notes"][0])
+            self.assertTrue(
+                any(
+                    item["ecosystem"] == "npm"
+                    and item["kind"] == "npm-dependencies"
+                    and item["name"] == "left-pad"
+                    and item["version"] == "1.3.0"
+                    for item in report["dependencies"]
+                )
+            )
+            self.assertTrue(
+                any(
+                    item["ecosystem"] == "npm"
+                    and item["kind"] == "npm-devDependencies"
+                    and item["name"] == "typescript"
+                    and item["scope"] == "development"
+                    for item in report["dependencies"]
+                )
+            )
+
+    def test_dependency_inventory_reads_language_package_manifests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            manifests = [
+                write_file(
+                    repo_root / "packaging/python/pyproject.toml",
+                    '[build-system]\nrequires = ["setuptools>=68", "wheel"]\n[project]\nname = "sshfling"\nversion = "1.2.3"\n',
+                ),
+                write_file(
+                    repo_root / "packaging/go/go.mod",
+                    "module example.test/sshfling\n\ngo 1.22\n\nrequire example.test/helper v1.2.3\n",
+                ),
+                write_file(
+                    repo_root / "packaging/rust/Cargo.toml",
+                    '[package]\nname = "sshfling-cli"\nversion = "1.2.3"\n[dependencies]\nserde = "1"\n',
+                ),
+                write_file(
+                    repo_root / "packaging/php/composer.json",
+                    json.dumps({"name": "grwlx/sshfling", "require": {"php": ">=8.1"}}),
+                ),
+                write_file(
+                    repo_root / "packaging/ruby/sshfling.gemspec",
+                    'spec.add_runtime_dependency "rake", ">= 13"\n',
+                ),
+            ]
+
+            report = release_security_scan.collect_dependencies(manifests, repo_root)
+
+            for manifest in (
+                "packaging/python/pyproject.toml",
+                "packaging/go/go.mod",
+                "packaging/rust/Cargo.toml",
+                "packaging/php/composer.json",
+                "packaging/ruby/sshfling.gemspec",
+            ):
+                self.assertIn(manifest, report["notes"][0])
+            ecosystems = {item["ecosystem"] for item in report["dependencies"]}
+            self.assertTrue({"pypi", "golang", "cargo", "composer", "rubygems"}.issubset(ecosystems))
+
     def test_optional_tools_are_skipped_by_default_and_include_osv_sca_hook(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
@@ -224,6 +301,8 @@ class ReleaseSecurityScanTests(unittest.TestCase):
             self.assertEqual(by_name["osv-scanner"]["exit_code"], "not_run")
             self.assertIn("./packaging/dotnet/SSHFling.Tool/bin", by_name["syft"]["command"])
             self.assertIn("./packaging/dotnet/SSHFling.Tool/obj", by_name["syft"]["command"])
+            self.assertIn("./packaging/dotnet/SSHFling/bin", by_name["syft"]["command"])
+            self.assertIn("./packaging/dotnet/SSHFling.Consumer/obj", by_name["syft"]["command"])
             self.assertIn("./packaging/java/target", by_name["syft"]["command"])
             self.assertIn("packaging/dotnet/SSHFling.Tool/bin", by_name["trivy-fs"]["command"])
             self.assertIn("packaging/dotnet/SSHFling.Tool/obj", by_name["trivy-fs"]["command"])

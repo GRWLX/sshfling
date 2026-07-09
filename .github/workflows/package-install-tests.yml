@@ -274,8 +274,10 @@ jobs:
             tar -xzf sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
             src="$tmp/sshfling-${{ needs.validate-version.outputs.version }}"
             install -m 0755 "$src/bin/sshfling" /usr/local/bin/sshfling
-            mkdir -p /usr/local/share/sshfling/templates
-            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
+            mkdir -p /usr/local/libexec/sshfling /usr/local/share/sshfling/templates
+            install -m 0755 "$src/native/sshfling-unix-identity" /usr/local/libexec/sshfling/sshfling-unix-identity
+            /usr/local/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/native "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
             "$workspace/tests/cross-os/validate-cli.sh" /usr/local/bin/sshfling "${{ needs.validate-version.outputs.version }}"
 
   openbsd-source-smoke:
@@ -306,8 +308,10 @@ jobs:
             tar -xzf sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
             src="$tmp/sshfling-${{ needs.validate-version.outputs.version }}"
             install -m 0755 "$src/bin/sshfling" /usr/local/bin/sshfling
-            mkdir -p /usr/local/share/sshfling/templates
-            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
+            mkdir -p /usr/local/libexec/sshfling /usr/local/share/sshfling/templates
+            install -m 0755 "$src/native/sshfling-unix-identity" /usr/local/libexec/sshfling/sshfling-unix-identity
+            /usr/local/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/native "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
             "$workspace/tests/cross-os/validate-cli.sh" /usr/local/bin/sshfling "${{ needs.validate-version.outputs.version }}"
 
   netbsd-source-smoke:
@@ -344,8 +348,10 @@ jobs:
             tar -xzf sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
             src="$tmp/sshfling-${{ needs.validate-version.outputs.version }}"
             install -m 0755 "$src/bin/sshfling" /usr/pkg/bin/sshfling
-            mkdir -p /usr/pkg/share/sshfling/templates
-            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/pkg/share/sshfling/templates/
+            mkdir -p /usr/pkg/libexec/sshfling /usr/pkg/share/sshfling/templates
+            install -m 0755 "$src/native/sshfling-unix-identity" /usr/pkg/libexec/sshfling/sshfling-unix-identity
+            /usr/pkg/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/native "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/pkg/share/sshfling/templates/
             "$workspace/tests/cross-os/validate-cli.sh" /usr/pkg/bin/sshfling "${{ needs.validate-version.outputs.version }}"
 
   macos-pkg:
@@ -370,6 +376,7 @@ jobs:
           spctl -a -vv -t install "$pkg"
           sudo installer -pkg "$pkg" -target /
           tests/cross-os/validate-cli.sh /usr/local/bin/sshfling "$version"
+          /usr/local/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
 
   macos-homebrew:
     name: Homebrew formula install
@@ -389,6 +396,7 @@ jobs:
           cp /tmp/sshfling.rb "$tap_dir/Formula/sshfling.rb"
           brew install grwlx/sshfling-test/sshfling
           tests/cross-os/validate-cli.sh sshfling "${{ needs.validate-version.outputs.version }}"
+          "$(brew --prefix grwlx/sshfling-test/sshfling)/libexec/sshfling/sshfling-unix-identity" identity root | grep -Fq 'uid=0'
 
   windows-msi:
     name: Windows MSI install
@@ -512,9 +520,11 @@ jobs:
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           curl -fsSL "https://grwlx.github.io/sshfling/downloads/SSHFling.Tool.${version}.nupkg?run=${{ github.run_id }}" -o "$tmp/SSHFling.Tool.${version}.nupkg"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SSHFling.${version}.nupkg?run=${{ github.run_id }}" -o "$tmp/SSHFling.${version}.nupkg"
           curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
           grep "  SSHFling.Tool.${version}.nupkg$" "$tmp/SHA256SUMS" >"$tmp/SSHFling.Tool.SHA256SUMS"
-          (cd "$tmp" && sha256sum -c SSHFling.Tool.SHA256SUMS)
+          grep "  SSHFling.${version}.nupkg$" "$tmp/SHA256SUMS" >"$tmp/SSHFling.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c SSHFling.Tool.SHA256SUMS && sha256sum -c SSHFling.SHA256SUMS)
           dotnet tool install SSHFling.Tool \
             --tool-path "$tmp/tool" \
             --add-source "$tmp" \
@@ -527,6 +537,47 @@ jobs:
           test -x "$tmp/project/scripts/uninstall-local.sh"
           test -x "$tmp/project/production/sshfling-session"
           test -f "$tmp/project/secrets/.gitkeep"
+
+          cp -R packaging/dotnet/SSHFling.Consumer "$tmp/library-consumer"
+          dotnet restore "$tmp/library-consumer/SSHFling.Consumer.csproj" \
+            --source "$tmp" \
+            -p:SSHFlingVersion="$version"
+          dotnet run \
+            --project "$tmp/library-consumer/SSHFling.Consumer.csproj" \
+            --configuration Release \
+            --no-restore \
+            -p:SSHFlingVersion="$version" \
+            -- "$version" --version | grep -Fx "sshfling $version"
+          dotnet remove "$tmp/library-consumer/SSHFling.Consumer.csproj" package SSHFling
+
+          for consumer in visual-basic fsharp; do
+            case "$consumer" in
+              visual-basic)
+                source_dir="packaging/dotnet/SSHFling.Consumer.VB"
+                project="SSHFling.Consumer.VB.vbproj"
+                ;;
+              fsharp)
+                source_dir="packaging/dotnet/SSHFling.Consumer.FSharp"
+                project="SSHFling.Consumer.FSharp.fsproj"
+                ;;
+            esac
+            consumer_dir="$tmp/library-consumer-$consumer"
+            cp -R "$source_dir" "$consumer_dir"
+            dotnet restore "$consumer_dir/$project" \
+              --source "$tmp" \
+              -p:SSHFlingVersion="$version"
+            dotnet run \
+              --project "$consumer_dir/$project" \
+              --configuration Release \
+              --no-restore \
+              -p:SSHFlingVersion="$version" \
+              -- "$version" --version | grep -Fx "sshfling $version"
+            dotnet remove "$consumer_dir/$project" package SSHFling
+            if grep -Fq 'PackageReference Include="SSHFling"' "$consumer_dir/$project"; then
+              echo "$consumer PackageReference remained after dotnet remove." >&2
+              exit 1
+            fi
+          done
 
   java-jar:
     name: Java executable JAR run
@@ -549,11 +600,15 @@ jobs:
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           curl -fsSL "https://grwlx.github.io/sshfling/downloads/sshfling-cli-${version}.jar?run=${{ github.run_id }}" -o "$tmp/sshfling-cli-${version}.jar"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/sshfling-cli-${version}-sources.jar?run=${{ github.run_id }}" -o "$tmp/sshfling-cli-${version}-sources.jar"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/sshfling-cli-${version}-javadoc.jar?run=${{ github.run_id }}" -o "$tmp/sshfling-cli-${version}-javadoc.jar"
           curl -fsSL "https://grwlx.github.io/sshfling/downloads/sshfling-cli-${version}.pom?run=${{ github.run_id }}" -o "$tmp/sshfling-cli-${version}.pom"
           curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
           grep "  sshfling-cli-${version}.jar$" "$tmp/SHA256SUMS" >"$tmp/sshfling-cli.jar.SHA256SUMS"
+          grep "  sshfling-cli-${version}-sources.jar$" "$tmp/SHA256SUMS" >"$tmp/sshfling-cli.sources.SHA256SUMS"
+          grep "  sshfling-cli-${version}-javadoc.jar$" "$tmp/SHA256SUMS" >"$tmp/sshfling-cli.javadoc.SHA256SUMS"
           grep "  sshfling-cli-${version}.pom$" "$tmp/SHA256SUMS" >"$tmp/sshfling-cli.pom.SHA256SUMS"
-          (cd "$tmp" && sha256sum -c sshfling-cli.jar.SHA256SUMS && sha256sum -c sshfling-cli.pom.SHA256SUMS)
+          (cd "$tmp" && sha256sum -c sshfling-cli.jar.SHA256SUMS && sha256sum -c sshfling-cli.sources.SHA256SUMS && sha256sum -c sshfling-cli.javadoc.SHA256SUMS && sha256sum -c sshfling-cli.pom.SHA256SUMS)
           java -jar "$tmp/sshfling-cli-${version}.jar" --version | grep -Fx "sshfling $version"
           java -jar "$tmp/sshfling-cli-${version}.jar" --project-dir "$tmp/project" doctor >/dev/null
           java -jar "$tmp/sshfling-cli-${version}.jar" init "$tmp/project" --force --session-seconds 60 >/dev/null
@@ -561,3 +616,340 @@ jobs:
           test -x "$tmp/project/scripts/uninstall-local.sh"
           test -x "$tmp/project/production/sshfling-session"
           test -f "$tmp/project/secrets/.gitkeep"
+
+          mvn -B -Dmaven.repo.local="$tmp/m2" install:install-file \
+            -Dfile="$tmp/sshfling-cli-${version}.jar" \
+            -DpomFile="$tmp/sshfling-cli-${version}.pom" \
+            -Dsources="$tmp/sshfling-cli-${version}-sources.jar" \
+            -Djavadoc="$tmp/sshfling-cli-${version}-javadoc.jar"
+          cp -R packaging/java/consumers/maven "$tmp/maven-consumer"
+          mvn -B -f "$tmp/maven-consumer/pom.xml" \
+            -Dmaven.repo.local="$tmp/m2" \
+            -Dsshfling.version="$version" package
+          java -cp "$tmp/maven-consumer/target/classes:$tmp/sshfling-cli-${version}.jar" \
+            io.sshfling.validation.MavenConsumer --version | grep -Fx "sshfling $version"
+
+          cp -R packaging/java/consumers/gradle "$tmp/gradle-consumer"
+          packaging/java/gradlew --no-daemon --console=plain \
+            -p "$tmp/gradle-consumer" \
+            -PsshflingVersion="$version" \
+            -PsshflingRepository="$tmp/m2" \
+            run --args=--version | grep -Fx "sshfling $version"
+
+  node-npm:
+    name: Node.js npm package run
+    runs-on: ubuntu-latest
+    needs: validate-version
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Download and validate published npm package
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-version.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/sshfling-${version}.tgz?run=${{ github.run_id }}" -o "$tmp/sshfling-${version}.tgz"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
+          grep "  sshfling-${version}.tgz$" "$tmp/SHA256SUMS" >"$tmp/sshfling-npm.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c sshfling-npm.SHA256SUMS)
+          npm install --prefix "$tmp/app" "$tmp/sshfling-${version}.tgz" >/dev/null
+          "$tmp/app/node_modules/.bin/sshfling" --version | grep -Fx "sshfling $version"
+          "$tmp/app/node_modules/.bin/sshfling" --project-dir "$tmp/project" doctor >/dev/null
+          "$tmp/app/node_modules/.bin/sshfling" init "$tmp/project" --force --session-seconds 60 >/dev/null
+          test -x "$tmp/project/scripts/install-local.sh"
+          test -x "$tmp/project/scripts/uninstall-local.sh"
+          test -x "$tmp/project/production/sshfling-session"
+          test -f "$tmp/project/secrets/.gitkeep"
+          (
+            cd "$tmp/app"
+            node -e 'const api = require("sshfling"); if (typeof api.run !== "function") throw new Error("CommonJS import failed");'
+            node --input-type=module -e 'const mod = await import("sshfling"); const api = mod.default || mod; if (typeof api.run !== "function") throw new Error("ESM import failed");'
+          )
+          npm uninstall --prefix "$tmp/app" sshfling >/dev/null
+          test ! -e "$tmp/app/node_modules/.bin/sshfling"
+
+  python-wheel:
+    name: Python ${{ matrix.python }} wheel run
+    runs-on: ubuntu-latest
+    needs: validate-version
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Download and validate published Python wheel
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-version.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          wheel="sshfling-${version}-py3-none-any.whl"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/${wheel}?run=${{ github.run_id }}" -o "$tmp/$wheel"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
+          grep "  ${wheel}$" "$tmp/SHA256SUMS" >"$tmp/sshfling-python.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c sshfling-python.SHA256SUMS)
+          python -m venv "$tmp/venv"
+          "$tmp/venv/bin/python" -m pip install --no-deps --no-index "$tmp/$wheel" >/dev/null
+          "$tmp/venv/bin/python" -c 'import sshfling; assert sshfling.__version__'
+          "$tmp/venv/bin/sshfling" --version | grep -Fx "sshfling $version"
+          "$tmp/venv/bin/sshfling" init "$tmp/project" --force --session-seconds 60 >/dev/null
+          test -x "$tmp/project/scripts/install-local.sh"
+          test -f "$tmp/project/secrets/.gitkeep"
+          "$tmp/venv/bin/python" -m pip uninstall --yes sshfling >/dev/null
+          test ! -e "$tmp/venv/bin/sshfling"
+
+  go-module:
+    name: Go module run
+    runs-on: ubuntu-latest
+    needs: validate-version
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.22.x"
+
+      - name: Download and validate published Go module
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-version.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          archive="sshfling-go-${version}.zip"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/${archive}?run=${{ github.run_id }}" -o "$tmp/$archive"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
+          grep "  ${archive}$" "$tmp/SHA256SUMS" >"$tmp/sshfling-go.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c sshfling-go.SHA256SUMS)
+          unzip -q "$tmp/$archive" -d "$tmp/source"
+          (cd "$tmp/source/sshfling-go-${version}" && GOBIN="$tmp/bin" go install ./cmd/sshfling)
+          "$tmp/bin/sshfling" --version | grep -Fx "sshfling $version"
+          "$tmp/bin/sshfling" init "$tmp/project" --force --session-seconds 60 >/dev/null
+          test -x "$tmp/project/scripts/install-local.sh"
+          test -f "$tmp/project/secrets/.gitkeep"
+          rm -f "$tmp/bin/sshfling"
+          test ! -e "$tmp/bin/sshfling"
+
+  rust-crate:
+    name: Rust crate run
+    runs-on: ubuntu-latest
+    needs: validate-version
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cargo rustc
+
+      - name: Download and validate published Rust crate
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-version.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          crate="sshfling-cli-${version}.crate"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/${crate}?run=${{ github.run_id }}" -o "$tmp/$crate"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
+          grep "  ${crate}$" "$tmp/SHA256SUMS" >"$tmp/sshfling-rust.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c sshfling-rust.SHA256SUMS)
+          mkdir "$tmp/source"
+          tar -xzf "$tmp/$crate" -C "$tmp/source"
+          cargo install --path "$tmp/source/sshfling-cli-${version}" --root "$tmp/install" --offline --locked
+          "$tmp/install/bin/sshfling" --version | grep -Fx "sshfling $version"
+          "$tmp/install/bin/sshfling" init "$tmp/project" --force --session-seconds 60 >/dev/null
+          test -x "$tmp/project/scripts/install-local.sh"
+          test -f "$tmp/project/secrets/.gitkeep"
+          cargo uninstall --root "$tmp/install" sshfling-cli
+          test ! -e "$tmp/install/bin/sshfling"
+
+  php-composer:
+    name: PHP Composer package run
+    runs-on: ubuntu-latest
+    needs: validate-version
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install PHP and Composer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends composer php-cli php-zip
+
+      - name: Download and validate published Composer package
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-version.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          archive="sshfling-php-${version}.zip"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/${archive}?run=${{ github.run_id }}" -o "$tmp/$archive"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
+          grep "  ${archive}$" "$tmp/SHA256SUMS" >"$tmp/sshfling-php.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c sshfling-php.SHA256SUMS)
+          mkdir -p "$tmp/artifacts" "$tmp/app"
+          cp "$tmp/$archive" "$tmp/artifacts/"
+          php -r '$m=["repositories"=>[["type"=>"artifact","url"=>$argv[2]]],"require"=>["grwlx/sshfling"=>$argv[3]],"config"=>["allow-plugins"=>false]]; file_put_contents($argv[1], json_encode($m, JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES).PHP_EOL);' "$tmp/app/composer.json" "$tmp/artifacts" "$version"
+          COMPOSER_ALLOW_SUPERUSER=1 composer install --working-dir "$tmp/app" --no-dev --no-plugins --no-scripts --prefer-dist >/dev/null
+          "$tmp/app/vendor/bin/sshfling" --version | grep -Fx "sshfling $version"
+          "$tmp/app/vendor/bin/sshfling" init "$tmp/project" --force --session-seconds 60 >/dev/null
+          test -x "$tmp/project/scripts/install-local.sh"
+          test -f "$tmp/project/secrets/.gitkeep"
+          COMPOSER_ALLOW_SUPERUSER=1 composer remove --working-dir "$tmp/app" --no-plugins --no-scripts grwlx/sshfling >/dev/null
+          test ! -e "$tmp/app/vendor/bin/sshfling"
+
+  ruby-gem:
+    name: Ruby gem run
+    runs-on: ubuntu-latest
+    needs: validate-version
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Ruby
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ruby
+
+      - name: Download and validate published Ruby gem
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-version.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          package="sshfling-${version}.gem"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/${package}?run=${{ github.run_id }}" -o "$tmp/$package"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
+          grep "  ${package}$" "$tmp/SHA256SUMS" >"$tmp/sshfling-ruby.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c sshfling-ruby.SHA256SUMS)
+          mkdir -p "$tmp/gem-home" "$tmp/bin"
+          GEM_HOME="$tmp/gem-home" GEM_PATH="$tmp/gem-home" gem install --local --install-dir "$tmp/gem-home" --bindir "$tmp/bin" --no-document "$tmp/$package" >/dev/null
+          GEM_HOME="$tmp/gem-home" GEM_PATH="$tmp/gem-home" "$tmp/bin/sshfling" --version | grep -Fx "sshfling $version"
+          GEM_HOME="$tmp/gem-home" GEM_PATH="$tmp/gem-home" "$tmp/bin/sshfling" init "$tmp/project" --force --session-seconds 60 >/dev/null
+          test -x "$tmp/project/scripts/install-local.sh"
+          test -f "$tmp/project/secrets/.gitkeep"
+          GEM_HOME="$tmp/gem-home" GEM_PATH="$tmp/gem-home" gem uninstall --all --executables --ignore-dependencies --bindir "$tmp/bin" sshfling >/dev/null
+          test ! -e "$tmp/bin/sshfling"
+
+  native-libraries:
+    name: C and C++ native library run
+    runs-on: ubuntu-latest
+    needs: validate-version
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake g++ make ninja-build pkg-config
+
+      - name: Download and validate published native libraries
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-version.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          archive="sshfling-native-${version}.tar.gz"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/${archive}?run=${{ github.run_id }}" -o "$tmp/$archive"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
+          grep "  ${archive}$" "$tmp/SHA256SUMS" >"$tmp/sshfling-native.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c sshfling-native.SHA256SUMS)
+          tar -xzf "$tmp/$archive" -C "$tmp"
+          source_dir="$tmp/sshfling-native-${version}"
+          prefix="$tmp/install"
+
+          cmake -S "$source_dir" -B "$tmp/build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$prefix" \
+            -DCMAKE_INSTALL_LIBDIR=lib
+          cmake --build "$tmp/build" --parallel
+          SSHFLING_C_RUNTIME_DIR="$source_dir/runtime" \
+            ctest --test-dir "$tmp/build" --output-on-failure
+          cmake --install "$tmp/build"
+          "$prefix/bin/sshfling-c" --version | grep -Fx "sshfling $version"
+
+          cmake -S "$source_dir/consumers/c" -B "$tmp/c-shared" -G Ninja \
+            -DCMAKE_PREFIX_PATH="$prefix"
+          cmake --build "$tmp/c-shared"
+          "$tmp/c-shared/sshfling-c-consumer" "$version" | grep -Fx "sshfling $version"
+
+          cmake -S "$source_dir/consumers/c-static" -B "$tmp/c-static" -G Ninja \
+            -DCMAKE_PREFIX_PATH="$prefix"
+          cmake --build "$tmp/c-static"
+          "$tmp/c-static/sshfling-c-static-consumer" "$version" | grep -Fx "sshfling $version"
+
+          cmake -S "$source_dir/consumers/cpp" -B "$tmp/cpp-static" -G Ninja \
+            -DCMAKE_PREFIX_PATH="$prefix"
+          cmake --build "$tmp/cpp-static"
+          "$tmp/cpp-static/sshfling-cpp-consumer" "$version" | grep -Fx "sshfling $version"
+
+          PKG_CONFIG_PATH="$prefix/lib/pkgconfig" \
+            cc "$source_dir/consumers/c/main.c" \
+              $(PKG_CONFIG_PATH="$prefix/lib/pkgconfig" pkg-config --cflags --libs sshfling) \
+              -o "$tmp/pkg-config-consumer"
+          LD_LIBRARY_PATH="$prefix/lib" \
+            "$tmp/pkg-config-consumer" "$version" | grep -Fx "sshfling $version"
+
+          rm -rf "$prefix"
+          test ! -e "$prefix/bin/sshfling-c"
+
+  perl-module:
+    name: Perl module and executable run
+    runs-on: ubuntu-latest
+    needs: validate-version
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Perl build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends make perl
+
+      - name: Download and validate published Perl distribution
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-version.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          archive="sshfling-perl-${version}.tar.gz"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/${archive}?run=${{ github.run_id }}" -o "$tmp/$archive"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
+          grep "  ${archive}$" "$tmp/SHA256SUMS" >"$tmp/sshfling-perl.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c sshfling-perl.SHA256SUMS)
+          tar -xzf "$tmp/$archive" -C "$tmp"
+
+          source_dir="$tmp/SSHFling-${version}"
+          prefix="$tmp/install"
+          (cd "$source_dir" && perl Makefile.PL INSTALL_BASE="$prefix" && make test && make pure_install)
+          PERL5LIB="$prefix/lib/perl5" perl -MSSHFling -e \
+            'exit SSHFling::version() eq $ARGV[0] && SSHFling::run("--version") == 0 ? 0 : 1' \
+            "$version"
+          PERL5LIB="$prefix/lib/perl5" "$prefix/bin/sshfling" --version | grep -Fx "sshfling $version"
+          PERL5LIB="$prefix/lib/perl5" "$prefix/bin/sshfling" init "$tmp/project" --force --session-seconds 60 >/dev/null
+          test -x "$tmp/project/native/sshfling-linux-account"
+          test -x "$tmp/project/native/sshfling-unix-identity"
+
+          rm -rf "$prefix"
+          if PERL5LIB="$prefix/lib/perl5" perl -MSSHFling -e 1 >/dev/null 2>&1; then
+            echo "Perl distribution remained importable after isolated prefix removal." >&2
+            exit 1
+          fi

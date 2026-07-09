@@ -96,6 +96,8 @@ $templateEntries = @(
   "README.md",
   "compose.server.yml",
   "compose.client.yml",
+  "native\sshfling-linux-account",
+  "native\sshfling-unix-identity",
   "scripts\install-local.sh",
   "scripts\uninstall-local.sh",
   "scripts\create-network.sh",

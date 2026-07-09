@@ -19,17 +19,29 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/** Java library and command-line entry point for the bundled SSHFling runtime. */
 public final class SSHFling {
     private static final String RESOURCE_ROOT = "sshfling/";
 
     private SSHFling() {
     }
 
+    /**
+     * Runs SSHFling as a command-line process and exits with its status code.
+     *
+     * @param args SSHFling command-line arguments
+     */
     public static void main(String[] args) {
         System.exit(run(args));
     }
 
-    static int run(String[] args) {
+    /**
+     * Runs SSHFling through its public library API.
+     *
+     * @param args SSHFling command-line arguments
+     * @return the SSHFling process exit status
+     */
+    public static int run(String[] args) {
         Path runtimeDir = null;
         try {
             runtimeDir = Files.createTempDirectory("sshfling-java-");

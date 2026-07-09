@@ -48,6 +48,7 @@ start_container() {
 copy_validate() {
   local name="$1"
   docker cp tests/cross-os/validate-cli.sh "$name:/tmp/validate-cli.sh"
+  docker cp tests/cross-os/validate-native-session-policy.sh "$name:/tmp/validate-native-session-policy.sh"
 }
 
 make_source_tar() {
@@ -200,7 +201,7 @@ test_deb_image() {
       chown sshflingd:sshflingd /var/lib/sshflingd/preexisting
     }
     assert_deb_dependencies_present() {
-      for pkg in python3 openssh-client passwd procps util-linux; do
+      for pkg in bash python3 openssh-client openssl passwd procps util-linux jq; do
         dpkg-query -W -f='\${Status}' \"\$pkg\" | grep -Fx 'install ok installed' >/dev/null
       done
     }
@@ -208,6 +209,11 @@ test_deb_image() {
     apt-get update >/dev/null
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confold /tmp/sshfling.deb >/dev/null
     assert_deb_dependencies_present
+    test -x /usr/libexec/sshfling/sshfling-linux-account
+    test -x /usr/libexec/sshfling/sshfling-unix-identity
+    /usr/libexec/sshfling/sshfling-linux-account identity root | grep -Fq 'status=present'
+    /usr/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+    bash /tmp/validate-native-session-policy.sh /usr/share/sshfling/templates/production/sshfling-session >/dev/null
     sshfling --version | grep -Fx 'sshfling $version'
     assert_sshflingd_account_present
     test -d /var/lib/sshflingd
@@ -303,7 +309,7 @@ test_rpm_image() {
       chown sshflingd:sshflingd /var/lib/sshflingd/preexisting
     }
     assert_rpm_dependencies_present() {
-      rpm -q python3 openssh-clients shadow-utils procps-ng util-linux >/dev/null
+      rpm -q bash python3 openssh-clients openssl shadow-utils procps-ng util-linux jq >/dev/null
     }
     test ! -d /run/systemd/system
     if command -v dnf >/dev/null 2>&1; then
@@ -313,6 +319,11 @@ test_rpm_image() {
     fi
     \$package_install >/dev/null
     assert_rpm_dependencies_present
+    test -x /usr/libexec/sshfling/sshfling-linux-account
+    test -x /usr/libexec/sshfling/sshfling-unix-identity
+    /usr/libexec/sshfling/sshfling-linux-account identity root | grep -Fq 'status=present'
+    /usr/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+    bash /tmp/validate-native-session-policy.sh /usr/share/sshfling/templates/production/sshfling-session >/dev/null
     sshfling --version | grep -Fx 'sshfling $version'
     assert_sshflingd_account_present
     test -d /var/lib/sshflingd

@@ -35,13 +35,24 @@ own that package.
 
 Server-side certificate grants need OpenSSH server tooling on the target host.
 The CLI validates managed sshd configuration with `sshd -t` and can inspect
-effective configuration with `sshd -T`.
+effective configuration with `sshd -T`. The native forced-session wrapper uses
+`jq` to parse policy JSON strictly and fail closed without invoking Python.
 
 Server-side password grants are Linux-oriented. They require OpenSSH server
 tooling, including `sshd`, plus local account management tools such as
 `useradd` and `chpasswd`; `usermod` and `chage` are used when present to
-unlock, lock, or expire temporary users. Session enforcement uses the packaged
-`sshfling-session` wrapper and standard process utilities.
+unlock, lock, or expire temporary users. Mutations run through the packaged
+`sshfling-linux-account` Bash backend. UID/GID/home inspection is separated
+into the read-only `sshfling-unix-identity` POSIX shell backend, which uses
+`getent` on Linux/BSD and macOS directory-service commands on Darwin. Session
+enforcement uses the packaged `sshfling-session` wrapper, `jq`, and standard
+process utilities. None of these OS-sensitive paths invokes Python.
+
+The main SSHFling command and its cross-platform orchestration remain Python.
+This native boundary is deliberate: policy enforcement and privileged OS
+account operations use the target OS command environment, while argument
+parsing, certificate orchestration, metadata, and API/web features remain in
+the shared CLI runtime.
 
 Docker Compose files and container images are a test harness. They are not the
 normal production grant path.
@@ -53,8 +64,8 @@ modes are:
 | Mode | What it checks |
 | --- | --- |
 | `client` | OpenSSH client tools (`ssh`, `ssh-keygen`, `ssh-keyscan`) plus optional `scp` and `rsync`. |
-| `password-server` | Linux password-grant prerequisites such as `sshd`, `useradd`, `chpasswd`, `id`, and optional lock/expiry/process tools. |
-| `certificate-host` | Certificate-host prerequisites such as `sshd`, `ssh-keygen`, account tools used by `--create-user`, and process tools. |
+| `password-server` | Linux password-grant prerequisites such as `sshd`, native policy/identity/account backends, `jq`, `useradd`, `chpasswd`, and optional lock/expiry/process tools. |
+| `certificate-host` | Certificate-host prerequisites such as `sshd`, the native identity backend, `jq`, `ssh-keygen`, optional Linux account tools and OpenSSL used by `--create-user`, and process tools. |
 | `all` | Every dependency mode above. |
 
 The dependency inventory is evidence only. It reports whether tools are present
@@ -84,15 +95,14 @@ The platform owns OpenSSH and other shared runtime packages:
 
 | Platform or ecosystem | Declared dependency behavior |
 | --- | --- |
-| Debian / Ubuntu APT | `.deb` depends on `python3`, `openssh-client`, `passwd`, `procps`, and `util-linux`; it suggests `openssh-server`, `rsync`, and Docker-compatible packages. |
-| RHEL / Fedora / Rocky / Alma RPM | `.rpm` requires `python3`, `openssh-clients`, `shadow-utils`, `procps-ng`, and `util-linux`; it recommends `openssh-server` for server-side grant paths and `rsync` for rsync transfers. |
-| Arch / AUR | Generated `PKGBUILD` depends on `python`, `openssh`, `shadow`, `procps-ng`, and `util-linux`. |
-| Alpine | Generated `APKBUILD` depends on `python3`, `openssh-client`, `shadow`, `procps`, and `util-linux`. |
-| openSUSE / OBS | Generated spec requires `python3`, `openssh`, `shadow`, `procps`, and `util-linux`. |
-| Void, Gentoo, Guix, Nix, Snap, Termux, AppImage | Generated manifests include the closest ecosystem packages for Python, OpenSSH, account/process tools, and util-linux where that ecosystem supports them. Versions come from the ecosystem input channel or build environment. |
-| FreeBSD Ports, OpenBSD Ports, pkgsrc | Generated BSD manifests declare Python integration or dependencies. They do not claim ownership of the host's OpenSSH service configuration or exact OpenSSH package version. |
-| macOS pkg | The pkg installs SSHFling files and `/etc/sshfling/policy.json`; it does not bundle Python or OpenSSH. |
-| Homebrew | Generated formula depends on `python@3`; OpenSSH client/server availability remains host or fleet policy. |
+| Debian / Ubuntu APT | `.deb` depends on `bash`, `python3`, `openssh-client`, `openssl`, `passwd`, `procps`, `util-linux`, and `jq`; it installs both native backends and suggests `openssh-server`, `rsync`, and Docker-compatible packages. |
+| RHEL / Fedora / Rocky / Alma RPM | `.rpm` requires `bash`, `python3`, `openssh-clients`, `openssl`, `shadow-utils`, `procps-ng`, `util-linux`, and `jq`; it installs both native backends and recommends `openssh-server` and `rsync`. |
+| Arch / AUR, Alpine, openSUSE / OBS | Generated manifests declare Bash, Python, OpenSSH, OpenSSL, account/process tools, `jq`, and both native backends. |
+| Void, Gentoo, Guix, Nix, Slackware, Snap, AppImage | Generated manifests install both native backends and declare the closest ecosystem packages for Bash, Python, OpenSSH, OpenSSL, `jq`, account tools, and process tools. Versions come from the ecosystem input channel or build environment. |
+| FreeBSD Ports, OpenBSD Ports, pkgsrc | Generated BSD manifests install the portable native identity backend and declare Bash, Python, and `jq`; they do not install the Linux mutation backend as an executable host tool or claim ownership of the host's OpenSSH service configuration. |
+| Termux | The generated manifest declares Python, OpenSSH, `jq`, and process tools. Android does not expose the Linux shadow-account model required by password grants. |
+| macOS pkg | The pkg installs SSHFling, the native identity backend, and `/etc/sshfling/policy.json`; it does not bundle Python, OpenSSH, or `jq`. Client use needs Python/OpenSSH; native server-host policy enforcement additionally needs fleet-provided `jq`. |
+| Homebrew | Generated formula depends on `python@3` and `jq` and installs the native identity backend; OpenSSH client/server availability remains host or fleet policy. |
 | Windows MSI | MSI installs under `Program Files\SSHFling`, adds that directory to machine `PATH`, and records dependency scope in `HKLM\Software\SSHFling`; it does not bundle Python, OpenSSH, or Windows OpenSSH Server. |
 | Windows portable zip, Scoop, winget, Chocolatey | Portable zip and generated Windows manifests use the packaged zip or MSI. They do not add independent Python or OpenSSH ownership. |
 | Containers | Test images install their own OpenSSH packages inside the image. The host's OpenSSH install is unaffected. |
@@ -136,6 +146,18 @@ restore host OpenSSH or Python to an earlier state.
 The .NET global tool package removes the user-level `SSHFling.Tool`
 registration only. It does not uninstall Python, OpenSSH, Docker, host
 account-management tools, host SSH configuration, or SSHFling project state.
+
+The npm package removes the global or prefix-local `sshfling` npm package
+registration and command shim only. It does not uninstall Python, OpenSSH,
+Docker, Node.js, npm, host account-management tools, host SSH configuration, or
+SSHFling project state.
+
+The Python wheel, Go module, Rust crate, Composer package, Ruby gem, native
+C/C++ package, and Perl distribution remove only files and command shims owned
+by their selected package-manager or isolated installation prefix. Their
+uninstall paths do not remove Python, OpenSSH, Docker, language toolchains,
+host account-management tools, host SSH configuration, CA material, temporary
+grant state, policy, or SSHFling project directories.
 
 The macOS pkg uninstall helper removes `/usr/local/bin/sshfling` and
 `/usr/local/share/sshfling`, then forgets the pkg receipt. It intentionally

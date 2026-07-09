@@ -274,8 +274,10 @@ jobs:
             tar -xzf sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
             src="$tmp/sshfling-${{ needs.validate-version.outputs.version }}"
             install -m 0755 "$src/bin/sshfling" /usr/local/bin/sshfling
-            mkdir -p /usr/local/share/sshfling/templates
-            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
+            mkdir -p /usr/local/libexec/sshfling /usr/local/share/sshfling/templates
+            install -m 0755 "$src/native/sshfling-unix-identity" /usr/local/libexec/sshfling/sshfling-unix-identity
+            /usr/local/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/native "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
             "$workspace/tests/cross-os/validate-cli.sh" /usr/local/bin/sshfling "${{ needs.validate-version.outputs.version }}"
 
   openbsd-source-layout:
@@ -306,8 +308,10 @@ jobs:
             tar -xzf sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
             src="$tmp/sshfling-${{ needs.validate-version.outputs.version }}"
             install -m 0755 "$src/bin/sshfling" /usr/local/bin/sshfling
-            mkdir -p /usr/local/share/sshfling/templates
-            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
+            mkdir -p /usr/local/libexec/sshfling /usr/local/share/sshfling/templates
+            install -m 0755 "$src/native/sshfling-unix-identity" /usr/local/libexec/sshfling/sshfling-unix-identity
+            /usr/local/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/native "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
             "$workspace/tests/cross-os/validate-cli.sh" /usr/local/bin/sshfling "${{ needs.validate-version.outputs.version }}"
 
   netbsd-source-layout:
@@ -344,8 +348,10 @@ jobs:
             tar -xzf sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
             src="$tmp/sshfling-${{ needs.validate-version.outputs.version }}"
             install -m 0755 "$src/bin/sshfling" /usr/pkg/bin/sshfling
-            mkdir -p /usr/pkg/share/sshfling/templates
-            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/pkg/share/sshfling/templates/
+            mkdir -p /usr/pkg/libexec/sshfling /usr/pkg/share/sshfling/templates
+            install -m 0755 "$src/native/sshfling-unix-identity" /usr/pkg/libexec/sshfling/sshfling-unix-identity
+            /usr/pkg/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/native "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/pkg/share/sshfling/templates/
             "$workspace/tests/cross-os/validate-cli.sh" /usr/pkg/bin/sshfling "${{ needs.validate-version.outputs.version }}"
 
   firewall-freebsd-family:
@@ -412,8 +418,10 @@ jobs:
             tar -xzf sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
             src="$tmp/sshfling-${{ needs.validate-version.outputs.version }}"
             install -m 0755 "$src/bin/sshfling" /usr/local/bin/sshfling
-            mkdir -p /usr/local/share/sshfling/templates
-            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
+            mkdir -p /usr/local/libexec/sshfling /usr/local/share/sshfling/templates
+            install -m 0755 "$src/native/sshfling-unix-identity" /usr/local/libexec/sshfling/sshfling-unix-identity
+            /usr/local/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+            cp -Rp "$src"/.env.example "$src"/LICENSE "$src"/README.md "$src"/compose.server.yml "$src"/compose.client.yml "$src"/native "$src"/scripts "$src"/secrets "$src"/ssh-client "$src"/ssh-server "$src"/production "$src"/systemd /usr/local/share/sshfling/templates/
             "$workspace/tests/firewall-os/validate-freebsd-firewall.sh" /usr/local/bin/sshfling "${{ needs.validate-version.outputs.version }}" "${{ matrix.name }}"
 
   macos-pkg:
@@ -438,6 +446,9 @@ jobs:
           spctl -a -vv -t install "$pkg"
           sudo installer -pkg "$pkg" -target /
           tests/cross-os/validate-cli.sh /usr/local/bin/sshfling "$version"
+          /usr/local/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+          brew install jq
+          tests/cross-os/validate-native-session-policy.sh /usr/local/share/sshfling/templates/production/sshfling-session
 
   macos-homebrew:
     name: Homebrew formula runtime
@@ -457,6 +468,8 @@ jobs:
           cp /tmp/sshfling.rb "$tap_dir/Formula/sshfling.rb"
           brew install grwlx/sshfling-cross-test/sshfling
           tests/cross-os/validate-cli.sh sshfling "${{ needs.validate-version.outputs.version }}"
+          "$(brew --prefix grwlx/sshfling-cross-test/sshfling)/libexec/sshfling/sshfling-unix-identity" identity root | grep -Fq 'uid=0'
+          tests/cross-os/validate-native-session-policy.sh "$(brew --prefix)/share/sshfling/templates/production/sshfling-session"
 
   windows-msi:
     name: Windows MSI runtime
@@ -585,12 +598,35 @@ jobs:
             -czf "public/downloads/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz" \
             .
           bash packaging/build-community-manifests.sh package-dist public https://grwlx.github.io/sshfling "${{ needs.validate-version.outputs.version }}" GRWLX/sshfling
+          grep -Fq "'jq'" public/arch/PKGBUILD
+          grep -Fq "usr/libexec/sshfling/sshfling-linux-account" public/arch/PKGBUILD
+          grep -Fq "usr/libexec/sshfling/sshfling-unix-identity" public/alpine/APKBUILD
+          grep -Fq "jq:textproc/jq" public/freebsd/security/sshfling/Makefile
+          grep -Fq 'REINPLACE_CMD' public/freebsd/security/sshfling/Makefile
+          grep -Fq "libexec/sshfling/sshfling-unix-identity" public/openbsd/security/sshfling/pkg/PLIST
+          grep -Fxq '@sample ${SYSCONFDIR}/sshfling/' public/openbsd/security/sshfling/pkg/PLIST
+          grep -A1 -Fx 'share/examples/sshfling/policy.json' public/openbsd/security/sshfling/pkg/PLIST | tail -n 1 | grep -Fxq '@sample ${SYSCONFDIR}/sshfling/policy.json'
+          grep -Fq "../../devel/jq" public/pkgsrc/security/sshfling/Makefile
+          grep -Fq 'SUBST_CLASSES' public/pkgsrc/security/sshfling/Makefile
+          grep -Fq 'CONF_FILES=' public/pkgsrc/security/sshfling/Makefile
+          grep -Fxq 'share/examples/sshfling/policy.json' public/pkgsrc/security/sshfling/PLIST
+          grep -Fq "SSHFLING_UNIX_IDENTITY_HELPER" public/nix/flake.nix
+          grep -Fq 'native/sshfling-unix-identity' public/guix/sshfling.scm
+          grep -Fq 'propagated-inputs' public/guix/sshfling.scm
+          tail -n 1 public/guix/sshfling.scm | grep -Fxq 'sshfling'
+          grep -Fxq "jq" public/slackware/slack-required
+          if grep -Fxq 'libexec/sshfling-session' public/freebsd/security/sshfling/pkg-plist; then exit 1; fi
+          if grep -Fxq 'libexec/sshfling-session' public/openbsd/security/sshfling/pkg/PLIST; then exit 1; fi
+          if grep -Fxq 'libexec/sshfling-session' public/pkgsrc/security/sshfling/PLIST; then exit 1; fi
           grep -Fq "share/sshfling/templates/compose.server.yml" public/freebsd/security/sshfling/pkg-plist
           grep -Fq "share/sshfling/templates/compose.server.yml" public/openbsd/security/sshfling/pkg/PLIST
           grep -Fq "share/sshfling/templates/compose.server.yml" public/pkgsrc/security/sshfling/PLIST
           grep -Fq '("compose.server.yml" "share/sshfling/templates/compose.server.yml")' public/guix/sshfling.scm
-          grep -Fq "cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml scripts secrets ssh-client ssh-server production systemd" public/opensuse/sshfling.spec
+          grep -Fq "cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml native scripts secrets ssh-client ssh-server production systemd" public/opensuse/sshfling.spec
+          grep -Fq "sshfling-unix-identity" public/opensuse/sshfling.spec
           grep -Fq "SSHFLING_TEMPLATE_DIR" public/snap/snapcraft.yaml
           grep -Fq "share/sshfling/templates" public/termux/packages/sshfling/build.sh
           grep -Fq "usr/share/sshfling/templates" public/appimage/AppImageBuilder.yml
-          grep -Fq "doins -r scripts secrets ssh-client ssh-server production systemd" public/gentoo/app-admin/sshfling/sshfling-${{ needs.validate-version.outputs.version }}.ebuild
+          grep -Fq "doins -r native scripts secrets ssh-client ssh-server production systemd" public/gentoo/app-admin/sshfling/sshfling-${{ needs.validate-version.outputs.version }}.ebuild
+          grep -Fq 'PYTHON_COMPAT=( python3_{10..14} )' public/gentoo/app-admin/sshfling/sshfling-${{ needs.validate-version.outputs.version }}.ebuild
+          grep -Fq "fperms 0755" public/gentoo/app-admin/sshfling/sshfling-${{ needs.validate-version.outputs.version }}.ebuild

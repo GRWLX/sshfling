@@ -45,6 +45,8 @@ assert_deb_payload_assets() {
 644 lib/systemd/system/sshfling-prune.timer
 644 lib/systemd/system/sshflingd.service
 755 usr/bin/sshfling
+755 usr/libexec/sshfling/sshfling-linux-account
+755 usr/libexec/sshfling/sshfling-unix-identity
 644 usr/share/doc/sshfling/LICENSE
 644 usr/share/doc/sshfling/README.md
 644 usr/share/doc/sshfling/sshflingd.env.example
@@ -53,6 +55,8 @@ assert_deb_payload_assets() {
 644 usr/share/sshfling/templates/README.md
 644 usr/share/sshfling/templates/compose.client.yml
 644 usr/share/sshfling/templates/compose.server.yml
+755 usr/share/sshfling/templates/native/sshfling-linux-account
+755 usr/share/sshfling/templates/native/sshfling-unix-identity
 755 usr/share/sshfling/templates/production/sshfling-session
 755 usr/share/sshfling/templates/scripts/create-network.sh
 755 usr/share/sshfling/templates/scripts/generate-ssh-key.sh
@@ -80,10 +84,12 @@ ASSETS
 }
 
 rm -rf "$stage"
-install -d "$stage/DEBIAN" "$stage/usr/bin" "$stage/usr/share/sshfling/templates" "$stage/usr/share/doc/sshfling" "$stage/lib/systemd/system"
+install -d "$stage/DEBIAN" "$stage/usr/bin" "$stage/usr/libexec/sshfling" "$stage/usr/share/sshfling/templates" "$stage/usr/share/doc/sshfling" "$stage/lib/systemd/system"
 install -d -m 0750 "$stage/etc/sshfling"
 
 install -m 0755 "$repo_root/bin/sshfling" "$stage/usr/bin/sshfling"
+install -m 0755 "$repo_root/native/sshfling-linux-account" "$stage/usr/libexec/sshfling/sshfling-linux-account"
+install -m 0755 "$repo_root/native/sshfling-unix-identity" "$stage/usr/libexec/sshfling/sshfling-unix-identity"
 install -m 0644 "$repo_root/packaging/policy.json" "$stage/etc/sshfling/policy.json"
 install -m 0640 "$repo_root/systemd/sshflingd.env.example" "$stage/etc/sshfling/sshflingd.env"
 
@@ -106,7 +112,7 @@ Version: $version
 Section: utils
 Priority: optional
 Architecture: all
-Depends: python3, openssh-client, passwd, procps, util-linux
+Depends: bash, python3, openssh-client, openssl, passwd, procps, util-linux, jq
 Suggests: openssh-server, rsync, docker.io | docker-ce | podman-docker
 Maintainer: SSHFling Maintainers <root@localhost>
 Description: Temporary SSH access broker and CLI

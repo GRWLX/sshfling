@@ -1,0 +1,29 @@
+[package]
+name = "sshfling-cli"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Temporary SSH access using standard OpenSSH"
+license-file = "LICENSE"
+readme = "README.md"
+repository = "https://github.com/GRWLX/sshfling"
+homepage = "https://github.com/GRWLX/sshfling"
+keywords = ["ssh", "openssh", "temporary-access", "cli"]
+categories = ["command-line-utilities", "network-programming"]
+include = [
+  "src/**",
+  "build.rs",
+  "runtime/**",
+  "runtime/templates/.env.example",
+  "runtime/templates/secrets/.gitkeep",
+  "LICENSE",
+  "README.md",
+]
+
+[lib]
+name = "sshfling"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sshfling"
+path = "src/main.rs"

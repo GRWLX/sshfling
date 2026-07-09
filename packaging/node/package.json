@@ -1,0 +1,47 @@
+{
+  "name": "sshfling",
+  "version": "0.0.0",
+  "description": "Temporary SSH access broker and CLI packaged as a Node.js npm command.",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "GRWLX",
+  "homepage": "https://github.com/GRWLX/sshfling",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GRWLX/sshfling.git"
+  },
+  "bugs": {
+    "url": "https://github.com/GRWLX/sshfling/issues"
+  },
+  "type": "commonjs",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "bin": {
+    "sshfling": "./bin/sshfling.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.js",
+      "default": "./index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "bin/",
+    "index.js",
+    "index.d.ts",
+    "runtime/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ssh",
+    "openssh",
+    "temporary-access",
+    "cli",
+    "sshfling"
+  ]
+}
