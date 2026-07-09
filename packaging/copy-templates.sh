@@ -29,5 +29,7 @@ copy_sshfling_templates() {
 
   install -m 0755 "$src_root/production/sshfling-session" "$dest/production/sshfling-session"
   install -m 0644 "$src_root/systemd/sshflingd.service" "$dest/systemd/sshflingd.service"
+  install -m 0644 "$src_root/systemd/sshfling-prune.service" "$dest/systemd/sshfling-prune.service"
+  install -m 0644 "$src_root/systemd/sshfling-prune.timer" "$dest/systemd/sshfling-prune.timer"
   install -m 0644 "$src_root/systemd/sshflingd.env.example" "$dest/systemd/sshflingd.env.example"
 }

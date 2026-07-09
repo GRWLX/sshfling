@@ -3,6 +3,7 @@ set -euo pipefail
 
 install_dir="${RELEASE_SCANNER_BIN_DIR:-${RUNNER_TEMP:-$PWD/build}/release-scanners/bin}"
 mkdir -p "$install_dir"
+install_dir="$(cd "$install_dir" && pwd)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -46,6 +47,8 @@ python3 -m pip --version >/dev/null 2>&1 || {
 }
 
 venv_dir="${RELEASE_SCANNER_VENV_DIR:-$(dirname "$install_dir")/venv}"
+mkdir -p "$(dirname "$venv_dir")"
+venv_dir="$(cd "$(dirname "$venv_dir")" && pwd)/$(basename "$venv_dir")"
 
 python_externally_managed() {
   python3 - <<'PY'

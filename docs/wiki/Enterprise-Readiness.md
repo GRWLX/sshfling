@@ -44,7 +44,9 @@ A release is ready to publish when all of the following are true:
   certificate-specific options fail without `--certificate`, access levels are
   policy classifications rather than privilege assignment, `password prune`
   requires `--all` or `--username USER` and only removes expired tracked
-  password grants, and package uninstall does not promise dependency-state
+  password grants, `cert prune` removes expired SSHFling-generated certificate
+  material only from the managed session directory, and package uninstall does
+  not promise dependency-state
   rollback or original host-state restoration.
 
 Do not publish when:
@@ -130,6 +132,9 @@ Treat platform support as an evidence-backed claim:
   Windows, or community package ecosystems.
 - Runtime claims include Python, OpenSSH client/server, shell or PowerShell,
   and password-grant account-management tools where relevant.
+- Dependency evidence includes `sshfling --json doctor --dependencies --mode all`
+  output for the exact host or runner; this is read-only evidence and not a
+  promise that SSHFling owns or removes platform packages.
 - CPU architecture claims identify `x86_64`/`amd64`, `arm64`/`aarch64`, and
   any 32-bit, `s390x`, `ppc64le`, or `riscv64` status as validated,
   customer-validated, deferred, or unsupported.

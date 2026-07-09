@@ -25,7 +25,7 @@ install-local:
 	install -m 0644 ssh-server/Dockerfile ssh-server/sshd_config "$(TEMPLATE_DIR)/ssh-server/"
 	install -m 0755 ssh-server/entrypoint.sh ssh-server/limited-session.sh "$(TEMPLATE_DIR)/ssh-server/"
 	install -m 0755 production/sshfling-session "$(TEMPLATE_DIR)/production/sshfling-session"
-	install -m 0644 systemd/sshflingd.service systemd/sshflingd.env.example "$(TEMPLATE_DIR)/systemd/"
+	install -m 0644 systemd/sshflingd.service systemd/sshfling-prune.service systemd/sshfling-prune.timer systemd/sshflingd.env.example "$(TEMPLATE_DIR)/systemd/"
 
 uninstall-local:
 	PREFIX="$(PREFIX)" bash scripts/uninstall-local.sh
@@ -33,6 +33,7 @@ uninstall-local:
 test:
 	python3 -m py_compile bin/sshfling tools/release_matrix_validate.py tools/generate_release_evidence.py tools/generate_enterprise_release_readiness.py tools/release_security_scan.py tools/workflow_static_check.py
 	python3 -m unittest discover -s tests/release -p 'test_*.py'
+	python3 -m unittest discover -s tests/sshfling -p 'test_*.py'
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	bash -n scripts/install-local.sh scripts/uninstall-local.sh scripts/create-network.sh scripts/generate-ssh-key.sh ssh-client/entrypoint.sh ssh-server/entrypoint.sh ssh-server/limited-session.sh production/sshfling-session packaging/*.sh tools/provision-release-scanners.sh tests/release/*.sh
 	python3 tools/workflow_static_check.py --strict-timeouts

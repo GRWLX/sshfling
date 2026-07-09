@@ -40,6 +40,8 @@
     <Content Include="../../../ssh-server/sshd_config" Link="templates/ssh-server/sshd_config" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../production/sshfling-session" Link="templates/production/sshfling-session" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../systemd/sshflingd.service" Link="templates/systemd/sshflingd.service" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../systemd/sshfling-prune.service" Link="templates/systemd/sshfling-prune.service" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../systemd/sshfling-prune.timer" Link="templates/systemd/sshfling-prune.timer" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../systemd/sshflingd.env.example" Link="templates/systemd/sshflingd.env.example" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
   </ItemGroup>
 </Project>

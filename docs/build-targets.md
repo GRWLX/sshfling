@@ -110,7 +110,7 @@ workflow that installs or builds the published package outputs on:
 
 - Debian bookworm, Ubuntu 24.04, Fedora latest, Rocky Linux 9, AlmaLinux 9, and UBI 9 from the public APT/RPM repos.
 - Arch Linux and Alpine Linux from the generated `PKGBUILD` and `APKBUILD`.
-- openSUSE Leap 15.6 from the generated OBS spec.
+- openSUSE Tumbleweed from the generated OBS spec.
 - Nix from the generated flake.
 - Slackware 15.0 from the generated SlackBuild.
 - Void Linux from the generated `xbps-src` template.

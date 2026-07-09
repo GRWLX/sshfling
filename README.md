@@ -176,6 +176,7 @@ For production hosts, Docker is only a test harness. The normal production grant
 - `sudo sshfling -t 10m` creates a tracked temporary Unix password grant.
 - `sudo sshfling -t 10m --username ticket-1234` creates a shorter named password grant.
 - `sudo sshfling password prune --all` removes expired tracked password grants.
+- DEB/RPM package installs on systemd hosts enable `sshfling-prune.timer`, which periodically runs guarded password and certificate prune commands.
 
 OpenSSH user certificates are available explicitly:
 
@@ -183,6 +184,7 @@ OpenSSH user certificates are available explicitly:
 - `sshfling host install` configures a target host to trust the CA for one Unix user.
 - `sudo sshfling --certificate -t 10m` creates a temporary certificate grant after the CA keypair exists.
 - `sudo sshfling cert issue --certificate -t 10m` signs a user's public key for a short lifetime.
+- `sudo sshfling cert prune --all` removes expired SSHFling-generated client key/certificate material from the managed session directory.
 - `sshfling serve` runs a small authenticated certificate issuer service.
 
 Do not run `sshfling ca init --force` unless you are intentionally rotating the
@@ -343,6 +345,14 @@ Connect before the certificate expires:
 ssh -i ~/.ssh/id_ed25519 temp-remote@host.example.com
 ```
 
+If SSHFling generated the temporary client keypair, remove expired generated
+key and certificate material from the managed session directory:
+
+```bash
+sudo sshfling cert prune --all
+sudo sshfling cert prune --username ticket-1234
+```
+
 Run the issuer API service:
 
 ```bash
@@ -488,6 +498,7 @@ Clean up temporary password grants:
 sudo sshfling password prune --all
 sudo sshfling password prune --all --delete-users
 sudo sshfling password prune --username s234 --delete-users
+sudo sshfling cert prune --all
 ```
 
 Prune requires exactly one selector: `--all` to scan the tracked grant store or
@@ -499,6 +510,19 @@ users that were explicitly allowed with `--allow-existing-user` are locked and
 expired but are never deleted by `--delete-users`. Root-equivalent users are
 never deleted from password-grant metadata or host-user markers. Identity
 mismatches preserve managed config and metadata for investigation.
+
+Certificate prune removes expired key/certificate material only when SSHFling
+generated and tracked that material in the managed certificate session
+directory. It does not remove operator-supplied keys or certificates created
+outside that directory.
+
+On systemd hosts installed from DEB/RPM packages, check the automatic cleanup
+timer with:
+
+```bash
+systemctl status sshfling-prune.timer
+journalctl -u sshfling-prune.service
+```
 
 If you installed from a source checkout with `./scripts/install-local.sh`, remove that local install with:
 
@@ -641,6 +665,7 @@ that agreement. See [LICENSE](LICENSE).
 
 ```bash
 sshfling doctor
+sshfling --json doctor --dependencies --mode all
 sshfling init ./deploy --with-key
 sshfling network create
 sshfling server up --build

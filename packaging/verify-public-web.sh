@@ -15,6 +15,11 @@ pkg_identifier="${SSHFLING_PKG_IDENTIFIER:-io.sshfling.cli}"
 missing=0
 verify_gpg_home=""
 
+fail() {
+  echo "public package site verification failed: $*" >&2
+  exit 1
+}
+
 cleanup_verify() {
   if [[ -n "$verify_gpg_home" && -d "$verify_gpg_home" ]]; then
     if command -v gpgconf >/dev/null 2>&1; then

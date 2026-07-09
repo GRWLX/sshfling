@@ -46,6 +46,22 @@ unlock, lock, or expire temporary users. Session enforcement uses the packaged
 Docker Compose files and container images are a test harness. They are not the
 normal production grant path.
 
+Use `sshfling --json doctor --dependencies --mode MODE` to capture read-only
+dependency evidence before install, host setup, or release validation. Supported
+modes are:
+
+| Mode | What it checks |
+| --- | --- |
+| `client` | OpenSSH client tools (`ssh`, `ssh-keygen`, `ssh-keyscan`) plus optional `scp` and `rsync`. |
+| `password-server` | Linux password-grant prerequisites such as `sshd`, `useradd`, `chpasswd`, `id`, and optional lock/expiry/process tools. |
+| `certificate-host` | Certificate-host prerequisites such as `sshd`, `ssh-keygen`, account tools used by `--create-user`, and process tools. |
+| `all` | Every dependency mode above. |
+
+The dependency inventory is evidence only. It reports whether tools are present
+on `PATH`, their version where a stable version command exists, and whether a
+required tool is missing. It does not install, remove, pin, or mark packages for
+cleanup.
+
 ## Version Ownership
 
 SSHFling release artifacts pin the SSHFling version. They do not pin OpenSSH,
@@ -163,9 +179,23 @@ are locked and expired but not deleted. Root-equivalent users are never mutated
 from password-grant metadata or host-user markers, and password grant creation
 refuses root-equivalent Unix users.
 
+Use `sshfling cert prune --all` or `sshfling cert prune --username USER` to
+remove expired SSHFling-generated client key and certificate material from the
+managed certificate session directory. Certificate prune only removes material
+that SSHFling generated and tracked; it does not remove operator-supplied keys
+or certificates outside that directory.
+
 Package uninstall does not run those host-state cleanup commands automatically.
 That separation is intentional so package removal does not destroy CA material,
 local access policy, audit evidence, or active incident-response state.
+
+For release or incident evidence, capture dependency state and host cleanup
+state separately:
+
+```bash
+sshfling --json doctor --dependencies --mode all
+sudo sshfling --json password prune --all --delete-users
+```
 
 ## Original-State Evidence
 

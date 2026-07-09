@@ -43,24 +43,39 @@ agreement from GRWLX.
 Optional host-state cleanup before package removal:
 
 ```bash
+sshfling --json doctor --dependencies --mode all
 sudo sshfling shutdown || true
-sudo sshfling password prune --all
+sudo sshfling --json password prune --all --delete-users
+sudo sshfling --json cert prune --all
 sudo sshfling host uninstall --username temp-remote --dry-run
 sudo sshfling host uninstall --username temp-remote --reload
 sudo systemctl disable --now sshflingd 2>/dev/null || true
 ```
 
-Password prune requires exactly one selector: `--all` to scan the tracked grant
-store or `--username USER` for targeted cleanup. It only removes expired grants
-and leaves active grants in place. By default, expired SSHFling-created Unix
-users are locked and expired; `--delete-users` deletes expired SSHFling-created
-users only after managed sshd config removal is verified and SSHFling has
-recorded UID/GID/home identity evidence. If the current Unix UID/GID/home does
-not match SSHFling grant metadata, prune skips deletion and preserves the
-managed config and metadata for investigation. Existing users that were
-explicitly allowed with `--allow-existing-user` are locked and expired but are
-never deleted by `--delete-users`. Root-equivalent users are never mutated from
-password-grant metadata or host-user markers.
+`sshfling doctor --dependencies` is read-only evidence; it does not install or
+remove OpenSSH, Python, account-management tools, or process tools. Password
+prune requires exactly one selector: `--all` to scan the tracked grant store or
+`--username USER` for targeted cleanup. It only removes expired grants and
+leaves active grants in place. By default, expired SSHFling-created Unix users
+are locked and expired; `--delete-users` deletes expired SSHFling-created users
+only after managed sshd config removal is verified and SSHFling has recorded
+UID/GID/home identity evidence. If the current Unix UID/GID/home does not match
+SSHFling grant metadata, prune skips deletion and preserves the managed config
+and metadata for investigation. Existing users that were explicitly allowed
+with `--allow-existing-user` are locked and expired but are never deleted by
+`--delete-users`. Root-equivalent users are never mutated from password-grant
+metadata or host-user markers.
+
+Certificate prune removes expired SSHFling-generated client key and certificate
+material from the managed certificate session directory. It requires exactly
+one selector: `--all` to scan tracked generated certificate sessions or
+`--username USER` for targeted cleanup. It does not remove operator-supplied
+keys or certificate files outside the managed session directory.
+
+DEB/RPM installs on systemd hosts ship and enable `sshfling-prune.timer`.
+The timer runs the guarded password and certificate prune commands periodically.
+Before release, capture `systemctl status sshfling-prune.timer` and
+`journalctl -u sshfling-prune.service` evidence from an actual target host.
 
 Use `sshfling host uninstall --delete-user` only for Unix accounts created by
 `sshfling host install --create-user`. SSHFling requires its host-user marker
@@ -158,9 +173,12 @@ sudo yum remove -y sshfling
 RPM scriptlets use root-owned `/var/lib/sshfling/package-state` for install
 state and `/var/lib/sshfling/rpm-preserve-config` only as a transient erase
 scratch area. They do not read lifecycle state from the service-owned
-`/var/lib/sshflingd` tree. Normal erase cleanup removes package state; identity
-mismatch preservation can keep the package-state record with the preserved
-service account for review.
+`/var/lib/sshflingd` tree. A normal RPM erase preserves `/etc/sshfling`
+configuration and therefore leaves package-state evidence for review. Package
+state is removed only when no preserved SSHFling config/state remains and the
+package-created service account can be cleaned safely; identity mismatch
+preservation can also keep the package-state record with the preserved service
+account for review.
 
 ## Public APT Repository
 

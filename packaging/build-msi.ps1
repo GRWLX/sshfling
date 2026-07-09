@@ -109,6 +109,8 @@ $templateEntries = @(
   "ssh-server\sshd_config",
   "production\sshfling-session",
   "systemd\sshflingd.service",
+  "systemd\sshfling-prune.service",
+  "systemd\sshfling-prune.timer",
   "systemd\sshflingd.env.example"
 )
 

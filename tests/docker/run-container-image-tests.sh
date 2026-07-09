@@ -199,8 +199,15 @@ test_deb_image() {
       touch /var/lib/sshflingd/preexisting
       chown sshflingd:sshflingd /var/lib/sshflingd/preexisting
     }
+    assert_deb_dependencies_present() {
+      for pkg in python3 openssh-client passwd procps util-linux; do
+        dpkg-query -W -f='\${Status}' \"\$pkg\" | grep -Fx 'install ok installed' >/dev/null
+      done
+    }
+    test ! -d /run/systemd/system
     apt-get update >/dev/null
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Dpkg::Options::=--force-confold /tmp/sshfling.deb >/dev/null
+    assert_deb_dependencies_present
     sshfling --version | grep -Fx 'sshfling $version'
     assert_sshflingd_account_present
     test -d /var/lib/sshflingd
@@ -210,6 +217,7 @@ test_deb_image() {
     test \"\$(stat -c '%a' /var/lib/sshfling/package-state)\" = '700'
     printf '%s\n' '{\"version\":2,\"default\":{\"max_time_seconds\":123,\"max_connections\":1,\"access_level\":\"standard\"}}' >/etc/sshfling/policy.json
     DEBIAN_FRONTEND=noninteractive apt-get remove -y sshfling >/dev/null
+    assert_deb_dependencies_present
     if [ -e /usr/bin/sshfling ]; then
       echo 'sshfling command survived deb package removal' >&2
       exit 1
@@ -220,6 +228,7 @@ test_deb_image() {
     grep -Fq '\"max_time_seconds\":123' /etc/sshfling/policy.json
     sh /tmp/validate-cli.sh sshfling '$version'
     DEBIAN_FRONTEND=noninteractive apt-get purge -y sshfling >/dev/null
+    assert_deb_dependencies_present
     test ! -e /var/lib/sshfling/package-state/install-state
     test ! -e /var/lib/sshflingd/package-state/install-state
 	    test ! -e /var/lib/sshflingd
@@ -232,6 +241,7 @@ test_deb_image() {
 	    grep -Fqx 'user_home=/var/lib/sshflingd' /var/lib/sshfling/package-state/install-state
 	    sed -i 's/^user_uid=.*/user_uid=1/; s/^user_gid=.*/user_gid=1/; s#^user_home=.*#user_home=/var/lib/sshflingd-reused#' /var/lib/sshfling/package-state/install-state
 	    DEBIAN_FRONTEND=noninteractive apt-get purge -y sshfling >/dev/null
+	    assert_deb_dependencies_present
 	    assert_sshflingd_account_present
 	    test -d /var/lib/sshflingd
 	    userdel sshflingd >/dev/null 2>&1 || true
@@ -246,6 +256,7 @@ test_deb_image() {
 	    grep -Fqx 'var_dir_preexisting=yes' /var/lib/sshfling/package-state/install-state
     assert_sshflingd_account_present
     DEBIAN_FRONTEND=noninteractive apt-get purge -y sshfling >/dev/null
+    assert_deb_dependencies_present
     test ! -e /var/lib/sshfling/package-state/install-state
     test -e /var/lib/sshflingd/preexisting
     assert_sshflingd_account_present"
@@ -291,12 +302,17 @@ test_rpm_image() {
       touch /var/lib/sshflingd/preexisting
       chown sshflingd:sshflingd /var/lib/sshflingd/preexisting
     }
+    assert_rpm_dependencies_present() {
+      rpm -q python3 openssh-clients shadow-utils procps-ng util-linux >/dev/null
+    }
+    test ! -d /run/systemd/system
     if command -v dnf >/dev/null 2>&1; then
       package_install='dnf install -y /tmp/sshfling.rpm'
     else
       package_install='yum install -y /tmp/sshfling.rpm'
     fi
     \$package_install >/dev/null
+    assert_rpm_dependencies_present
     sshfling --version | grep -Fx 'sshfling $version'
     assert_sshflingd_account_present
     test -d /var/lib/sshflingd
@@ -306,6 +322,7 @@ test_rpm_image() {
     test \"\$(stat -c '%a' /var/lib/sshfling/package-state)\" = '700'
     printf '%s\n' '{\"version\":2,\"default\":{\"max_time_seconds\":123,\"max_connections\":1,\"access_level\":\"standard\"}}' >/etc/sshfling/policy.json
     rpm -e sshfling >/dev/null
+    assert_rpm_dependencies_present
     if [ -e /usr/bin/sshfling ]; then
       echo 'sshfling command survived rpm package removal' >&2
       exit 1
@@ -320,6 +337,7 @@ test_rpm_image() {
 
     rm -f /etc/sshfling/policy.json /etc/sshfling/policy.json.rpmnew /etc/sshfling/policy.json.rpmsave /etc/sshfling/sshflingd.env /etc/sshfling/sshflingd.env.rpmnew /etc/sshfling/sshflingd.env.rpmsave
     rpm -e sshfling >/dev/null
+    assert_rpm_dependencies_present
     test ! -e /var/lib/sshfling/package-state/install-state
     test ! -e /var/lib/sshfling/rpm-preserve-config
 	    test ! -e /var/lib/sshflingd
@@ -334,6 +352,7 @@ test_rpm_image() {
 	    sed -i 's/^user_uid=.*/user_uid=1/; s/^user_gid=.*/user_gid=1/; s#^user_home=.*#user_home=/var/lib/sshflingd-reused#' /var/lib/sshfling/package-state/install-state
 	    rm -f /etc/sshfling/policy.json /etc/sshfling/policy.json.rpmnew /etc/sshfling/policy.json.rpmsave /etc/sshfling/sshflingd.env /etc/sshfling/sshflingd.env.rpmnew /etc/sshfling/sshflingd.env.rpmsave
 	    rpm -e sshfling >/dev/null
+	    assert_rpm_dependencies_present
 	    assert_sshflingd_account_present
 	    test -d /var/lib/sshflingd
 	    userdel sshflingd >/dev/null 2>&1 || true
@@ -349,6 +368,7 @@ test_rpm_image() {
     assert_sshflingd_account_present
     rm -f /etc/sshfling/policy.json /etc/sshfling/policy.json.rpmnew /etc/sshfling/policy.json.rpmsave /etc/sshfling/sshflingd.env /etc/sshfling/sshflingd.env.rpmnew /etc/sshfling/sshflingd.env.rpmsave
     rpm -e sshfling >/dev/null
+    assert_rpm_dependencies_present
     test ! -e /var/lib/sshfling/package-state/install-state
     test ! -e /var/lib/sshfling/rpm-preserve-config
     test -e /var/lib/sshflingd/preexisting

@@ -41,6 +41,8 @@ assert_deb_payload_assets() {
   cat >"$expected" <<'ASSETS'
 644 etc/sshfling/policy.json
 640 etc/sshfling/sshflingd.env
+644 lib/systemd/system/sshfling-prune.service
+644 lib/systemd/system/sshfling-prune.timer
 644 lib/systemd/system/sshflingd.service
 755 usr/bin/sshfling
 644 usr/share/doc/sshfling/LICENSE
@@ -64,6 +66,8 @@ assert_deb_payload_assets() {
 755 usr/share/sshfling/templates/ssh-server/limited-session.sh
 644 usr/share/sshfling/templates/ssh-server/sshd_config
 644 usr/share/sshfling/templates/systemd/sshflingd.env.example
+644 usr/share/sshfling/templates/systemd/sshfling-prune.service
+644 usr/share/sshfling/templates/systemd/sshfling-prune.timer
 644 usr/share/sshfling/templates/systemd/sshflingd.service
 ASSETS
   sort -k2,2 "$expected" -o "$expected"
@@ -91,6 +95,8 @@ install -m 0644 "$repo_root/README.md" "$stage/usr/share/doc/sshfling/README.md"
 install -m 0644 "$repo_root/LICENSE" "$stage/usr/share/doc/sshfling/LICENSE"
 install -m 0644 "$repo_root/systemd/sshflingd.env.example" "$stage/usr/share/doc/sshfling/sshflingd.env.example"
 install -m 0644 "$repo_root/systemd/sshflingd.service" "$stage/lib/systemd/system/sshflingd.service"
+install -m 0644 "$repo_root/systemd/sshfling-prune.service" "$stage/lib/systemd/system/sshfling-prune.service"
+install -m 0644 "$repo_root/systemd/sshfling-prune.timer" "$stage/lib/systemd/system/sshfling-prune.timer"
 
 assert_deb_payload_assets
 
@@ -295,6 +301,9 @@ case "$1" in
         systemctl try-restart sshflingd.service >/dev/null 2>&1 || true
       fi
     fi
+    if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+      systemctl enable --now sshfling-prune.timer >/dev/null 2>&1 || true
+    fi
     ;;
 esac
 
@@ -308,6 +317,7 @@ set -e
 case "$1" in
   remove|deconfigure)
     if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+      systemctl disable --now sshfling-prune.timer >/dev/null 2>&1 || true
       systemctl disable --now sshflingd.service >/dev/null 2>&1 || true
     fi
     ;;

@@ -1,0 +1,13 @@
+[Unit]
+Description=SSHFling expired temporary access prune
+Documentation=file:/usr/share/doc/sshfling/README.md
+ConditionPathExists=/usr/bin/sshfling
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/sshfling password prune --all --delete-users
+ExecStart=/usr/bin/sshfling cert prune --all
+NoNewPrivileges=true
+PrivateTmp=true
+LockPersonality=true

@@ -321,8 +321,18 @@ def local_control_checks(repo_root: Path) -> list[dict[str, Any]]:
         marker_check(
             repo_root,
             "bin/sshfling",
-            ["def cmd_scp", "def cmd_rsync", "password_transfer_ssh_options", "transfer_dry_run_enabled"],
-            "native scp/rsync command implementation",
+            [
+                "def cmd_scp",
+                "def cmd_rsync",
+                "password_transfer_ssh_options",
+                "transfer_dry_run_enabled",
+                "DEPENDENCY_MODES",
+                "cleanup_password_grant_sessions",
+                "skipped-delete-prerequisite",
+                "audit_field_value",
+                "Certificate setup options require --certificate",
+            ],
+            "native transfer plus SSHFling TODO lifecycle controls",
         ),
         marker_check(
             repo_root,
@@ -339,8 +349,8 @@ def local_control_checks(repo_root: Path) -> list[dict[str, Any]]:
         marker_check(
             repo_root,
             "docs/openssh-dependencies.md",
-            ["requires `rsync`", "does not vendor"],
-            "OpenSSH and rsync dependency ownership documentation",
+            ["requires `rsync`", "does not vendor", "sshfling --json doctor --dependencies --mode MODE"],
+            "OpenSSH, rsync, and dependency inventory ownership documentation",
         ),
         marker_check(
             repo_root,
@@ -351,14 +361,47 @@ def local_control_checks(repo_root: Path) -> list[dict[str, Any]]:
         marker_check(
             repo_root,
             "tests/cross-os/validate-cli.sh",
-            ["scp dry-run", "rsync is required for sshfling rsync", "cannot safely set explicit destination modes"],
-            "POSIX transfer command construction tests",
+            [
+                "scp dry-run",
+                "rsync is required for sshfling rsync",
+                "cannot safely set explicit destination modes",
+                "doctor --dependencies --mode client",
+                "Certificate setup options require --certificate",
+            ],
+            "POSIX transfer, dependency, and certificate-gating tests",
         ),
         marker_check(
             repo_root,
             "tests/cross-os/validate-cli.ps1",
-            ["scp dry-run", "rsync is required for sshfling rsync", "cannot safely set explicit destination modes"],
-            "PowerShell transfer command construction tests",
+            [
+                "scp dry-run",
+                "rsync is required for sshfling rsync",
+                "cannot safely set explicit destination modes",
+                "doctor --dependencies --mode client",
+                "Certificate setup options require --certificate",
+            ],
+            "PowerShell transfer, dependency, and certificate-gating tests",
+        ),
+        marker_check(
+            repo_root,
+            "tests/sshfling/test_access_lifecycle.py",
+            [
+                "test_prune_targeted_delete_removes_expired_created_user_only_after_session_cleanup",
+                "test_prune_delete_users_preserves_active_grant_without_mutation",
+                "test_prune_delete_users_preflights_userdel_before_config_removal",
+                "test_audit_field_value_redacts_secret_named_fields",
+            ],
+            "unit coverage for expired-user cleanup, active-user preservation, and audit redaction",
+        ),
+        marker_check(
+            repo_root,
+            "tests/docker/run-production-test.sh",
+            [
+                "targeted deleted password user cannot authenticate with old password",
+                "expired password prune --username did not remove s239named primary group",
+                "password prune --all --delete-users removes only expired managed users",
+            ],
+            "container evidence for destructive expired-user cleanup",
         ),
         marker_check(
             repo_root,

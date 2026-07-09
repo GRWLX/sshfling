@@ -8,7 +8,7 @@ services:
     container_name: timed-ssh-server
     environment:
       SSH_SESSION_SECONDS: "${SSH_SESSION_SECONDS:-60}"
-      AUTHORIZED_KEYS_FILE: /run/secrets/ssh_authorized_keys
+      AUTHORIZED_KEYS_FILE: /run/sshfling-secrets/client_ed25519.pub
     ports:
       - "${SSH_BIND_ADDRESS:-127.0.0.1}:${SSH_PORT_ON_HOST:-2222}:22"
     security_opt:
@@ -30,10 +30,11 @@ services:
       - /home/deploy/.ssh:rw,noexec,nosuid,nodev,size=1m
       - /run:rw,noexec,nosuid,nodev,size=16m
       - /tmp:rw,noexec,nosuid,nodev,size=16m
-    secrets:
-      - source: ssh_authorized_keys
-        target: ssh_authorized_keys
-        mode: 0444
+    volumes:
+      - type: bind
+        source: ./secrets
+        target: /run/sshfling-secrets
+        read_only: true
     networks:
       timed-ssh-net:
         aliases:
@@ -44,10 +45,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-
-secrets:
-  ssh_authorized_keys:
-    file: ./secrets/client_ed25519.pub
 
 networks:
   timed-ssh-net:

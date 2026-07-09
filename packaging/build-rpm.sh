@@ -40,6 +40,8 @@ assert_rpm_payload_assets() {
 644 etc/sshfling/policy.json
 640 etc/sshfling/sshflingd.env
 755 usr/bin/sshfling
+644 usr/lib/systemd/system/sshfling-prune.service
+644 usr/lib/systemd/system/sshfling-prune.timer
 644 usr/lib/systemd/system/sshflingd.service
 644 usr/share/doc/sshfling/LICENSE
 644 usr/share/doc/sshfling/README.md
@@ -62,6 +64,8 @@ assert_rpm_payload_assets() {
 755 usr/share/sshfling/templates/ssh-server/limited-session.sh
 644 usr/share/sshfling/templates/ssh-server/sshd_config
 644 usr/share/sshfling/templates/systemd/sshflingd.env.example
+644 usr/share/sshfling/templates/systemd/sshfling-prune.service
+644 usr/share/sshfling/templates/systemd/sshfling-prune.timer
 644 usr/share/sshfling/templates/systemd/sshflingd.service
 ASSETS
   sort -k2,2 "$expected" -o "$expected"
@@ -94,6 +98,8 @@ install -m 0644 "$repo_root/README.md" "$payload/usr/share/doc/sshfling/README.m
 install -m 0644 "$repo_root/LICENSE" "$payload/usr/share/doc/sshfling/LICENSE"
 install -m 0644 "$repo_root/systemd/sshflingd.env.example" "$payload/usr/share/doc/sshfling/sshflingd.env.example"
 install -m 0644 "$repo_root/systemd/sshflingd.service" "$payload/usr/lib/systemd/system/sshflingd.service"
+install -m 0644 "$repo_root/systemd/sshfling-prune.service" "$payload/usr/lib/systemd/system/sshfling-prune.service"
+install -m 0644 "$repo_root/systemd/sshfling-prune.timer" "$payload/usr/lib/systemd/system/sshfling-prune.timer"
 
 assert_rpm_payload_assets
 normalize_tree_timestamps "$payload"
@@ -309,6 +315,7 @@ if [ -f /etc/sshfling/sshflingd.env ] && [ ! -L /etc/sshfling/sshflingd.env ]; t
 fi
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   systemctl daemon-reload >/dev/null 2>&1 || true
+  systemctl enable --now sshfling-prune.timer >/dev/null 2>&1 || true
 fi
 
 exit 0
@@ -348,6 +355,7 @@ if [ "\$1" -eq 0 ]; then
 fi
 
 if [ "\$1" -eq 0 ] && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  systemctl disable --now sshfling-prune.timer >/dev/null 2>&1 || true
   systemctl disable --now sshflingd.service >/dev/null 2>&1 || true
 fi
 
@@ -604,6 +612,8 @@ exit 0
 /usr/share/doc/sshfling/README.md
 /usr/share/doc/sshfling/LICENSE
 /usr/share/doc/sshfling/sshflingd.env.example
+/usr/lib/systemd/system/sshfling-prune.service
+/usr/lib/systemd/system/sshfling-prune.timer
 /usr/lib/systemd/system/sshflingd.service
 
 %changelog

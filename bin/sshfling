@@ -80,6 +80,18 @@ ISSUER_POST_RATE_LIMIT = 20
 WEB_LOGIN_RATE_LIMIT = 10
 RATE_LIMIT_WINDOW_SECONDS = 60
 UTC = getattr(dt, "UTC", dt.timezone.utc)
+AUDIT_REDACTED = "[REDACTED]"
+SENSITIVE_AUDIT_FIELD_MARKERS = (
+    "password",
+    "token",
+    "secret",
+    "cookie",
+    "authorization",
+    "private_key",
+    "public_key",
+    "certificate",
+    "ssh_key",
+)
 
 TEMPLATE_ENTRIES = [
     ".env.example",
@@ -100,6 +112,8 @@ TEMPLATE_ENTRIES = [
     "ssh-server/sshd_config",
     "production/sshfling-session",
     "systemd/sshflingd.service",
+    "systemd/sshfling-prune.service",
+    "systemd/sshfling-prune.timer",
     "systemd/sshflingd.env.example",
 ]
 
@@ -208,6 +222,12 @@ def remote_addr(handler):
         return "unknown"
 
 
+def audit_field_value(key, value):
+    if any(marker in str(key).lower() for marker in SENSITIVE_AUDIT_FIELD_MARKERS):
+        return AUDIT_REDACTED
+    return value
+
+
 def audit_log(event, **fields):
     record = {
         "event": event,
@@ -223,6 +243,7 @@ def audit_log(event, **fields):
     for key, value in fields.items():
         if value is None:
             continue
+        value = audit_field_value(key, value)
         if isinstance(value, Path):
             value = str(value)
         elif isinstance(value, (list, tuple, set)):
@@ -606,7 +627,123 @@ def compose_command(project_dir, kind):
     return ["docker", "compose", "-f", str(docker_compose_file(project_dir, kind))]
 
 
+DEPENDENCY_MODES = {
+    "client": [
+        {"name": "ssh", "required": True, "kind": "openssh-client"},
+        {"name": "ssh-keygen", "required": True, "kind": "openssh-client"},
+        {"name": "ssh-keyscan", "required": True, "kind": "openssh-client"},
+        {"name": "scp", "required": False, "kind": "openssh-client"},
+        {"name": "rsync", "required": False, "kind": "file-transfer"},
+    ],
+    "password-server": [
+        {"name": "sshd", "required": True, "kind": "openssh-server"},
+        {"name": "useradd", "required": True, "kind": "account-tools"},
+        {"name": "userdel", "required": True, "kind": "account-tools"},
+        {"name": "chpasswd", "required": True, "kind": "account-tools"},
+        {"name": "usermod", "required": False, "kind": "account-tools"},
+        {"name": "passwd", "required": False, "kind": "account-tools"},
+        {"name": "chage", "required": False, "kind": "account-tools"},
+        {"name": "id", "required": True, "kind": "account-tools"},
+        {"name": "ps", "required": False, "kind": "process-tools"},
+    ],
+    "certificate-host": [
+        {"name": "sshd", "required": True, "kind": "openssh-server"},
+        {"name": "ssh-keygen", "required": True, "kind": "openssh-client"},
+        {"name": "useradd", "required": False, "kind": "account-tools"},
+        {"name": "usermod", "required": False, "kind": "account-tools"},
+        {"name": "openssl", "required": False, "kind": "password-hash"},
+        {"name": "id", "required": True, "kind": "account-tools"},
+        {"name": "ps", "required": False, "kind": "process-tools"},
+    ],
+}
+
+
+def command_version(name, path=None):
+    program = path or name
+    commands = {
+        "ssh": [program, "-V"],
+        "sshd": [program, "-V"],
+        "rsync": [program, "--version"],
+        "openssl": [program, "version"],
+    }
+    command = commands.get(name)
+    if not command:
+        return None
+    proc = run(command, capture=True, check=False, timeout=3)
+    if proc.returncode != 0:
+        return None
+    output = (proc.stdout or proc.stderr or "").splitlines()
+    return output[0].strip() if output else None
+
+
+def dependency_inventory(mode="all"):
+    if mode == "all":
+        modes = list(DEPENDENCY_MODES)
+    elif mode in DEPENDENCY_MODES:
+        modes = [mode]
+    else:
+        allowed = ", ".join(["all", *DEPENDENCY_MODES])
+        raise SSHFlingError(f"Unknown dependency mode {mode!r}. Use one of: {allowed}.", 2)
+
+    results = []
+    seen = set()
+    for mode_name in modes:
+        for item in DEPENDENCY_MODES[mode_name]:
+            key = (mode_name, item["name"])
+            if key in seen:
+                continue
+            seen.add(key)
+            path = command_path(item["name"])
+            result = {
+                "mode": mode_name,
+                "name": item["name"],
+                "kind": item["kind"],
+                "required": bool(item["required"]),
+                "present": path is not None,
+                "path": path,
+            }
+            if path:
+                version = command_version(item["name"], path)
+                if version:
+                    result["version"] = version
+            results.append(result)
+
+    required_missing = [
+        item for item in results if item["required"] and not item["present"]
+    ]
+    return {
+        "ok": not required_missing,
+        "mode": mode,
+        "dependency_ownership": "platform-managed",
+        "dependency_cleanup": "sshfling does not remove or autoremove OpenSSH or account-tool packages",
+        "dependencies": results,
+        "missing_required": required_missing,
+    }
+
+
+def print_dependency_inventory(payload):
+    print("dependency ownership: platform-managed")
+    print("dependency cleanup: sshfling does not remove or autoremove OpenSSH or account-tool packages")
+    for item in payload["dependencies"]:
+        marker = "ok" if item["present"] else ("missing" if item["required"] else "optional-missing")
+        suffix = ""
+        if item.get("path"):
+            suffix = f" ({item['path']})"
+        if item.get("version"):
+            suffix += f" {item['version']}"
+        required = "required" if item["required"] else "optional"
+        print(f"{marker:16} {item['mode']} {item['name']} [{required}]{suffix}")
+
+
 def cmd_doctor(args):
+    if getattr(args, "dependencies", False):
+        payload = dependency_inventory(getattr(args, "dependency_mode", "all"))
+        if args.json:
+            emit_json(payload)
+        else:
+            print_dependency_inventory(payload)
+        return 0 if payload["ok"] else 1
+
     project_dir = project_dir_from(args)
     checks = []
 
@@ -1350,6 +1487,137 @@ def create_temp_client_key(username, session_dir):
     return {"private_key": str(key_path), "public_key": str(key_path) + ".pub", "generated_key": True}
 
 
+def path_within(path, root):
+    path = Path(path).expanduser().resolve()
+    root = Path(root).expanduser().resolve()
+    return path == root or root in path.parents
+
+
+def certificate_metadata_path(material_dir):
+    return Path(material_dir).expanduser().resolve() / "sshfling-cert.json"
+
+
+def write_certificate_session_metadata(material_dir, metadata, dry_run=False):
+    path = certificate_metadata_path(material_dir)
+    reject_symlink_component(path, "write certificate session metadata")
+    if dry_run:
+        return {"path": str(path), "dry_run": True}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
+    write_json_atomic(path, metadata)
+    return {"path": str(path), "metadata": "written"}
+
+
+def safe_certificate_material_path(metadata, key, material_dir):
+    value = metadata.get(key)
+    if not value:
+        return None
+    path = Path(value).expanduser().resolve()
+    root = Path(material_dir).expanduser().resolve()
+    if not path_within(path, root):
+        raise SSHFlingError(f"Refusing to prune certificate material outside managed directory: {path}", 2)
+    return path
+
+
+def remove_certificate_material_file(path, dry_run=False):
+    if path is None:
+        return {"status": "not-tracked"}
+    if not path.exists():
+        return {"path": str(path), "status": "missing"}
+    if path.is_dir():
+        raise SSHFlingError(f"Refusing to remove directory as certificate material: {path}", 2)
+    if dry_run:
+        return {"path": str(path), "would_remove": True, "dry_run": True}
+    path.unlink()
+    return {"path": str(path), "removed": True}
+
+
+def prune_certificate_sessions(session_dir, username=None, all_sessions=False, dry_run=False):
+    if bool(username) == bool(all_sessions):
+        raise SSHFlingError("Use exactly one of --username or --all for cert prune.", 2)
+    if username:
+        username = validate_certificate_principal(username)
+    now = int(time.time())
+    root = Path(session_dir).expanduser().resolve()
+    if not root.exists():
+        return []
+
+    paths = sorted(root.glob("*/sshfling-cert.json"))
+    results = []
+    for path in paths:
+        try:
+            metadata = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            results.append({"metadata_path": str(path), "status": "skipped-invalid-metadata"})
+            continue
+        material_dir = path.parent
+        session_username = metadata.get("username") or material_dir.name.split("-", 1)[0]
+        try:
+            session_username = validate_certificate_principal(session_username)
+        except SSHFlingError:
+            results.append({"metadata_path": str(path), "username": str(session_username), "status": "skipped-invalid-principal"})
+            continue
+        if username and session_username != username:
+            continue
+        if metadata.get("managed_by") != "sshfling" or metadata.get("auth") != "certificate":
+            results.append({"metadata_path": str(path), "username": session_username, "status": "skipped-unmanaged"})
+            continue
+        try:
+            expires_at = int(metadata["expires_at"])
+        except (KeyError, TypeError, ValueError):
+            results.append({"metadata_path": str(path), "username": session_username, "status": "skipped-invalid-metadata"})
+            continue
+        if expires_at > now:
+            results.append({"metadata_path": str(path), "username": session_username, "status": "active", "expires_at": expires_at})
+            continue
+
+        item = {"metadata_path": str(path), "username": session_username, "expires_at": expires_at, "status": "pruned"}
+        item["private_key"] = remove_certificate_material_file(safe_certificate_material_path(metadata, "private_key", material_dir), dry_run)
+        item["public_key"] = remove_certificate_material_file(safe_certificate_material_path(metadata, "public_key", material_dir), dry_run)
+        item["certificate"] = remove_certificate_material_file(safe_certificate_material_path(metadata, "certificate", material_dir), dry_run)
+        if dry_run:
+            item["metadata"] = {"path": str(path), "would_remove": True, "dry_run": True}
+            item["directory"] = {"path": str(material_dir), "would_remove_if_empty": True, "dry_run": True}
+        else:
+            path.unlink(missing_ok=True)
+            item["metadata"] = {"path": str(path), "removed": True}
+            try:
+                material_dir.rmdir()
+                item["directory"] = {"path": str(material_dir), "removed": True}
+            except OSError:
+                item["directory"] = {"path": str(material_dir), "status": "not-empty"}
+        results.append(item)
+
+    if username and not results:
+        results.append({"username": username, "status": "missing", "session_dir": str(root)})
+    return results
+
+
+def cmd_cert_prune(args):
+    results = prune_certificate_sessions(
+        args.session_dir,
+        username=args.username,
+        all_sessions=args.all,
+        dry_run=args.dry_run,
+    )
+    payload = {"ok": True, "results": results, "count": len(results)}
+    audit_log(
+        "certificate_sessions_pruned",
+        username=args.username,
+        all_sessions=args.all,
+        dry_run=args.dry_run,
+        count=len(results),
+    )
+    if args.json:
+        emit_json(payload)
+    else:
+        if not results:
+            print("no certificate sessions to prune")
+        for item in results:
+            print(json.dumps(item, sort_keys=True))
+    return 0
+
+
 def random_username(prefix=DEFAULT_TEMP_USERNAME_PREFIX):
     return f"{prefix}{secrets.randbelow(1000000):06d}"
 
@@ -1649,6 +1917,15 @@ def require_password_host_tools():
         )
 
 
+def require_sshd_for_validation(validate=True, dry_run=False):
+    if validate and not dry_run and not command_path("sshd"):
+        raise SSHFlingError(
+            "sshd is required to validate SSH host configuration. Install OpenSSH server tooling or pass --no-validate for a staged install.",
+            127,
+            missing=["sshd"],
+        )
+
+
 def unix_user_exists(username):
     return run(["id", "-u", username], capture=True, check=False).returncode == 0
 
@@ -1897,6 +2174,8 @@ def cmd_setup(args):
     if getattr(args, "password", False) and getattr(args, "certificate", False):
         raise SSHFlingError("Choose either password mode or --certificate, not both.", 2)
     if getattr(args, "certificate", False):
+        if getattr(args, "time", None) is None and getattr(args, "seconds", None) is None:
+            raise SSHFlingError("Temporary access requires an explicit -t/--time lifetime.", 2)
         return cmd_setup_certificate(args)
 
     cert_options = certificate_setup_options(args)
@@ -1907,6 +2186,8 @@ def cmd_setup(args):
             options=cert_options,
         )
 
+    if getattr(args, "time", None) is None and getattr(args, "seconds", None) is None:
+        raise SSHFlingError("Temporary access requires an explicit -t/--time lifetime.", 2)
     return cmd_setup_password(args)
 
 
@@ -1932,6 +2213,7 @@ def cmd_setup_certificate(args):
     public_key_text = read_text_source(args.public_key, public_key_file, "public-key")
     out_file = args.out if args.out else default_cert_out(public_key_file)
     seconds = lifetime_seconds(args)
+    expires_at = int(time.time()) + seconds
     login_user = args.login_user or args.username
 
     result = sign_user_certificate(
@@ -1950,6 +2232,29 @@ def cmd_setup_certificate(args):
     )
     result["ca"] = ca_result
     result.update(key_material)
+    if key_material.get("generated_key") and key_material.get("private_key"):
+        material_dir = Path(key_material["private_key"]).expanduser().resolve().parent
+        metadata = {
+            "version": 1,
+            "managed_by": "sshfling",
+            "auth": "certificate",
+            "username": result["username"],
+            "principal": result["principal"],
+            "login_user": login_user,
+            "created_at": expires_at - seconds,
+            "created_at_utc": utc_iso(expires_at - seconds),
+            "seconds": seconds,
+            "expires_at": expires_at,
+            "expires_at_utc": utc_iso(expires_at),
+            "valid_before": result["valid_before"],
+            "private_key": key_material["private_key"],
+            "public_key": key_material["public_key"],
+            "certificate": result["out"],
+            "key_id": result["key_id"],
+            "serial": result["serial"],
+            "access_level": result["access_level"],
+        }
+        result["metadata"] = write_certificate_session_metadata(material_dir, metadata)
 
     key_hint = key_material["private_key"] or private_key_hint(public_key_file)
     server_host = detect_server_host()
@@ -3167,6 +3472,22 @@ def delete_password_user(username, dry_run=False, expected_identity=None):
     return {"user": username, "deleted": True}
 
 
+def cleanup_password_grant_sessions(username, dry_run=False):
+    if not command_path("ps"):
+        return {"username": username, "status": "unsupported", "reason": "ps is required to inspect active sessions"}
+    if dry_run:
+        sessions = find_sshfling_sessions(session_username=username)
+        return {
+            "username": username,
+            "would_kill": len(sessions),
+            "pids": [session["pid"] for session in sessions],
+            "dry_run": True,
+        }
+    result = kill_sshfling_sessions(session_username=username)
+    result["username"] = username
+    return result
+
+
 def prune_password_grants(grant_dir, username=None, all_grants=False, delete_users=False, dry_run=False):
     if bool(username) == bool(all_grants):
         raise SSHFlingError("Use exactly one of --username or --all for password prune.", 2)
@@ -3249,6 +3570,18 @@ def prune_password_grants(grant_dir, username=None, all_grants=False, delete_use
                 item["reason"] = "current Unix account identity does not match SSHFling grant metadata"
                 results.append(item)
                 continue
+        if (
+            delete_users
+            and metadata.get("created_user") is True
+            and expected_identity
+            and current_identity
+            and not dry_run
+            and not command_path("userdel")
+        ):
+            item["status"] = "skipped-delete-prerequisite"
+            item["reason"] = "userdel is required before removing managed sshd config for --delete-users"
+            results.append(item)
+            continue
         config_path = metadata.get("config_path")
         config_verified_for_removal = False
         if config_path:
@@ -3259,6 +3592,7 @@ def prune_password_grants(grant_dir, username=None, all_grants=False, delete_use
                 or item["config"].get("status") == "missing"
             )
 
+        item["sessions"] = cleanup_password_grant_sessions(grant_username, dry_run)
         if metadata.get("created_user") is True:
             if delete_users and config_verified_for_removal:
                 if expected_identity:
@@ -3362,6 +3696,7 @@ Match User {args.user}
         rollback_paths.append(marker_path)
     for managed_path in rollback_paths:
         reject_symlink_component(managed_path, "manage host install path")
+    require_sshd_for_validation(args.validate, args.dry_run)
     rollback_snapshots = [] if args.dry_run else [(path, snapshot_file(path)) for path in rollback_paths]
     created_user_for_rollback = False
 
@@ -4315,10 +4650,18 @@ def build_parser():
     subparsers = parser.add_subparsers(dest="command")
 
     doctor = subparsers.add_parser("doctor", help="Check local tooling and deployment files.")
+    doctor.add_argument("--dependencies", action="store_true", help="Report SSHFling client/server dependency state without changing packages.")
+    doctor.add_argument(
+        "--mode",
+        dest="dependency_mode",
+        choices=["all", "client", "password-server", "certificate-host"],
+        default="all",
+        help="Dependency mode to report with --dependencies.",
+    )
     doctor.set_defaults(func=cmd_doctor)
 
     setup = subparsers.add_parser("setup", help="Create a temporary SSH login. Password access is the default.")
-    setup.add_argument("-t", "--time", type=duration_seconds, required=True, help="Access lifetime, for example 30s, 5m, 1h, or 24h.")
+    setup.add_argument("-t", "--time", type=duration_seconds, help="Access lifetime, for example 30s, 5m, 1h, or 24h.")
     setup.add_argument("--username", help="Temporary SSH username. Defaults to a random name like s123456.")
     setup.add_argument("--login-user", action=StoreExplicit, help="Actual Unix login account if different from --username.")
     setup.add_argument("--access-level", "--role", dest="access_level", help=access_level_help())
@@ -4395,6 +4738,12 @@ def build_parser():
     cert_issue.add_argument("--no-pty", action="store_true", help="Do not permit interactive PTY sessions.")
     cert_issue.add_argument("--out", help="Write certificate to this path instead of stdout.")
     cert_issue.set_defaults(func=cmd_cert_issue)
+    cert_prune = cert_sub.add_parser("prune", help="Remove expired generated certificate key/cert material.")
+    cert_prune.add_argument("--username", help="Only prune generated certificate material for this temporary username.")
+    cert_prune.add_argument("--session-dir", default=DEFAULT_SESSION_DIR, help="Directory containing generated SSHFling certificate sessions.")
+    cert_prune.add_argument("--all", action="store_true", help="Scan all tracked generated certificate sessions and prune expired material.")
+    cert_prune.add_argument("--dry-run", action="store_true", help="Show certificate material that would be pruned without changing files.")
+    cert_prune.set_defaults(func=cmd_cert_prune)
 
     policy = subparsers.add_parser("policy", help="Show or install max time, connection, and access-level limits.")
     policy_sub = policy.add_subparsers(dest="policy_command")
@@ -4621,8 +4970,6 @@ def main(argv=None):
             return cmd_kill(args)
 
         if not args.command:
-            if args.time is None:
-                raise SSHFlingError("Temporary access requires an explicit -t/--time lifetime.", 2)
             return cmd_setup(args)
 
         if not hasattr(args, "func"):

@@ -131,6 +131,8 @@ package() {
   install -Dm755 production/sshfling-session "\${pkgdir}/usr/share/sshfling/templates/production/sshfling-session"
   install -Dm644 packaging/policy.json "\${pkgdir}/etc/sshfling/policy.json"
   install -Dm644 systemd/sshflingd.service "\${pkgdir}/usr/lib/systemd/system/sshflingd.service"
+  install -Dm644 systemd/sshfling-prune.service "\${pkgdir}/usr/lib/systemd/system/sshfling-prune.service"
+  install -Dm644 systemd/sshfling-prune.timer "\${pkgdir}/usr/lib/systemd/system/sshfling-prune.timer"
   install -Dm644 systemd/sshflingd.env.example "\${pkgdir}/usr/share/doc/sshfling/sshflingd.env.example"
   install -Dm644 LICENSE "\${pkgdir}/usr/share/licenses/sshfling/LICENSE"
   install -Dm644 README.md "\${pkgdir}/usr/share/doc/sshfling/README.md"
@@ -244,6 +246,8 @@ do-install:
 	\${INSTALL_DATA} \${WRKSRC}/ssh-server/sshd_config \${STAGEDIR}\${PREFIX}/share/sshfling/templates/ssh-server/sshd_config
 	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-session \${STAGEDIR}\${PREFIX}/share/sshfling/templates/production/sshfling-session
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshflingd.service \${STAGEDIR}\${PREFIX}/share/sshfling/templates/systemd/sshflingd.service
+	\${INSTALL_DATA} \${WRKSRC}/systemd/sshfling-prune.service \${STAGEDIR}\${PREFIX}/share/sshfling/templates/systemd/sshfling-prune.service
+	\${INSTALL_DATA} \${WRKSRC}/systemd/sshfling-prune.timer \${STAGEDIR}\${PREFIX}/share/sshfling/templates/systemd/sshfling-prune.timer
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshflingd.env.example \${STAGEDIR}\${PREFIX}/share/sshfling/templates/systemd/sshflingd.env.example
 
 .include <bsd.port.mk>
@@ -283,6 +287,8 @@ share/sshfling/templates/ssh-server/entrypoint.sh
 share/sshfling/templates/ssh-server/limited-session.sh
 share/sshfling/templates/ssh-server/sshd_config
 share/sshfling/templates/systemd/sshflingd.env.example
+share/sshfling/templates/systemd/sshfling-prune.service
+share/sshfling/templates/systemd/sshfling-prune.timer
 share/sshfling/templates/systemd/sshflingd.service
 %%DOCSDIR%%/LICENSE
 %%DOCSDIR%%/README.md
@@ -337,6 +343,8 @@ do-install:
 	\${INSTALL_DATA} \${WRKSRC}/ssh-server/sshd_config \${PREFIX}/share/sshfling/templates/ssh-server/sshd_config
 	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-session \${PREFIX}/share/sshfling/templates/production/sshfling-session
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshflingd.service \${PREFIX}/share/sshfling/templates/systemd/sshflingd.service
+	\${INSTALL_DATA} \${WRKSRC}/systemd/sshfling-prune.service \${PREFIX}/share/sshfling/templates/systemd/sshfling-prune.service
+	\${INSTALL_DATA} \${WRKSRC}/systemd/sshfling-prune.timer \${PREFIX}/share/sshfling/templates/systemd/sshfling-prune.timer
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshflingd.env.example \${PREFIX}/share/sshfling/templates/systemd/sshflingd.env.example
 
 .include <bsd.port.mk>
@@ -375,6 +383,8 @@ share/sshfling/templates/ssh-server/entrypoint.sh
 share/sshfling/templates/ssh-server/limited-session.sh
 share/sshfling/templates/ssh-server/sshd_config
 share/sshfling/templates/systemd/sshflingd.env.example
+share/sshfling/templates/systemd/sshfling-prune.service
+share/sshfling/templates/systemd/sshfling-prune.timer
 share/sshfling/templates/systemd/sshflingd.service
 share/doc/sshfling/LICENSE
 share/doc/sshfling/README.md
@@ -421,6 +431,8 @@ do-install:
 	\${INSTALL_DATA} \${WRKSRC}/ssh-server/sshd_config \${DESTDIR}\${PREFIX}/share/sshfling/templates/ssh-server/sshd_config
 	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-session \${DESTDIR}\${PREFIX}/share/sshfling/templates/production/sshfling-session
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshflingd.service \${DESTDIR}\${PREFIX}/share/sshfling/templates/systemd/sshflingd.service
+	\${INSTALL_DATA} \${WRKSRC}/systemd/sshfling-prune.service \${DESTDIR}\${PREFIX}/share/sshfling/templates/systemd/sshfling-prune.service
+	\${INSTALL_DATA} \${WRKSRC}/systemd/sshfling-prune.timer \${DESTDIR}\${PREFIX}/share/sshfling/templates/systemd/sshfling-prune.timer
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshflingd.env.example \${DESTDIR}\${PREFIX}/share/sshfling/templates/systemd/sshflingd.env.example
 
 .include "../../lang/python/application.mk"
@@ -455,6 +467,8 @@ share/sshfling/templates/ssh-server/entrypoint.sh
 share/sshfling/templates/ssh-server/limited-session.sh
 share/sshfling/templates/ssh-server/sshd_config
 share/sshfling/templates/systemd/sshflingd.env.example
+share/sshfling/templates/systemd/sshfling-prune.service
+share/sshfling/templates/systemd/sshfling-prune.timer
 share/sshfling/templates/systemd/sshflingd.service
 share/doc/sshfling/LICENSE
 share/doc/sshfling/README.md
@@ -623,7 +637,7 @@ src_install() {
 	doexe production/sshfling-session
 	insinto /etc/sshfling
 	doins packaging/policy.json
-	systemd_dounit systemd/sshflingd.service
+	systemd_dounit systemd/sshflingd.service systemd/sshfling-prune.service systemd/sshfling-prune.timer
 	dodoc README.md
 	newdoc LICENSE LICENSE
 	insinto /usr/share/sshfling/templates

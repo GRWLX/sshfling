@@ -51,6 +51,24 @@ if [[ ! -s "$package_path" ]]; then
   exit 1
 fi
 
+python3 - "$package_path" <<'PY'
+import sys
+import zipfile
+
+package = sys.argv[1]
+required = {
+    "tools/net10.0/any/templates/systemd/sshfling-prune.service",
+    "tools/net10.0/any/templates/systemd/sshfling-prune.timer",
+}
+with zipfile.ZipFile(package) as archive:
+    names = set(archive.namelist())
+missing = sorted(required - names)
+if missing:
+    for path in missing:
+        print(f"NuGet package is missing required template: {path}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+
 if [[ "${SSHFLING_DOTNET_SKIP_VALIDATE:-}" != "1" ]]; then
   "$dotnet_cmd" tool install SSHFling.Tool \
     --tool-path "$validation_dir/tool" \

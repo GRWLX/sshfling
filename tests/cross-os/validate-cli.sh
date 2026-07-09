@@ -9,9 +9,7 @@ fail() {
   exit 1
 }
 
-tmp="${TMPDIR:-/tmp}/sshfling-cross-$$"
-rm -rf "$tmp"
-mkdir -p "$tmp"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/sshfling-cross.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
 version_output="$("$cmd" --version)"
@@ -46,6 +44,37 @@ fi
 help_output="$("$cmd" --help)"
 printf '%s\n' "$help_output" | grep -Fq "Grant or kill temporary SSH access." || fail "help output missing expected description"
 
+"$cmd" --json doctor --dependencies --mode client >"$tmp/doctor-client-dependencies.json"
+python3 - "$tmp/doctor-client-dependencies.json" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["ok"] is True, payload
+assert payload["dependency_ownership"] == "platform-managed", payload
+required = {item["name"] for item in payload["dependencies"] if item["required"]}
+assert {"ssh", "ssh-keygen", "ssh-keyscan"}.issubset(required), payload
+assert not payload["missing_required"], payload
+PY
+
+set +e
+"$cmd" --json doctor --dependencies --mode password-server >"$tmp/doctor-password-dependencies.json" 2>"$tmp/doctor-password-dependencies.err"
+password_deps_code="$?"
+set -e
+python3 - "$tmp/doctor-password-dependencies.json" "$password_deps_code" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+code = int(sys.argv[2])
+required = {item["name"] for item in payload["dependencies"] if item["required"]}
+assert {"sshd", "useradd", "userdel", "chpasswd", "id"}.issubset(required), payload
+if payload["missing_required"]:
+    assert code != 0, payload
+else:
+    assert payload["ok"] is True and code == 0, payload
+PY
+
 set +e
 "$cmd" --json --dry-run >"$tmp/bare-setup.json" 2>"$tmp/bare-setup.err"
 bare_setup_code="$?"
@@ -54,11 +83,39 @@ test "$bare_setup_code" -ne 0 || fail "bare setup without -t unexpectedly succee
 grep -Fq "explicit -t/--time" "$tmp/bare-setup.json" || fail "bare setup error did not require explicit lifetime"
 
 set +e
+"$cmd" --json --public-key "ssh-ed25519 AAAAunit" --dry-run >"$tmp/top-cert-option-without-flag.json" 2>"$tmp/top-cert-option-without-flag.err"
+top_cert_option_code="$?"
+set -e
+test "$top_cert_option_code" -ne 0 || fail "top-level certificate option without --certificate unexpectedly succeeded"
+grep -Fq "Certificate setup options require --certificate" "$tmp/top-cert-option-without-flag.json" || fail "top-level cert option error was masked"
+
+set +e
 "$cmd" --json --certificate --dry-run >"$tmp/bare-cert-setup.json" 2>"$tmp/bare-cert-setup.err"
 bare_cert_setup_code="$?"
 set -e
 test "$bare_cert_setup_code" -ne 0 || fail "certificate setup without -t unexpectedly succeeded"
 grep -Fq "explicit -t/--time" "$tmp/bare-cert-setup.json" || fail "certificate setup error did not require explicit lifetime"
+
+set +e
+"$cmd" --json setup --certificate >"$tmp/setup-cert-missing-lifetime.json" 2>"$tmp/setup-cert-missing-lifetime.err"
+setup_cert_missing_lifetime_code="$?"
+set -e
+test "$setup_cert_missing_lifetime_code" -ne 0 || fail "setup --certificate without -t unexpectedly succeeded"
+python3 - "$tmp/setup-cert-missing-lifetime.json" <<'PY'
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["ok"] is False, payload
+assert "explicit -t/--time" in payload["error"]["message"], payload
+PY
+
+set +e
+"$cmd" --json setup --public-key "ssh-ed25519 AAAAunit" --dry-run >"$tmp/setup-cert-option-without-flag.json" 2>"$tmp/setup-cert-option-without-flag.err"
+setup_cert_option_code="$?"
+set -e
+test "$setup_cert_option_code" -ne 0 || fail "setup certificate option without --certificate unexpectedly succeeded"
+grep -Fq "Certificate setup options require --certificate" "$tmp/setup-cert-option-without-flag.json" || fail "setup cert option error was masked"
 
 SSHFLING_WEB_PASSWORD="cross-test-password" "$cmd" web-hash >"$tmp/hash.out"
 hash_output="$(cat "$tmp/hash.out")"
@@ -575,6 +632,8 @@ for rel in \
   ssh-server/sshd_config \
   production/sshfling-session \
   systemd/sshflingd.service \
+  systemd/sshfling-prune.service \
+  systemd/sshfling-prune.timer \
   systemd/sshflingd.env.example
 do
   test -e "$project/$rel" || fail "init did not create $rel"
@@ -1394,11 +1453,13 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
     originals = {
         "require_root": sshfling.require_root,
+        "command_path": sshfling.command_path,
         "resource_file": sshfling.resource_file,
         "validate_sshd_effective": sshfling.validate_sshd_effective,
     }
     try:
         sshfling.require_root = lambda action: None
+        sshfling.command_path = lambda name: "/usr/sbin/sshd" if name == "sshd" else None
         sshfling.resource_file = lambda relative: template
         def fail_validation(*args, **kwargs):
             raise sshfling.SSHFlingError("forced validation failure", 2)

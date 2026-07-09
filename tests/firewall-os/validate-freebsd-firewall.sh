@@ -13,8 +13,7 @@ fail() {
 script_dir="$(CDPATH=; cd -- "$(dirname -- "$0")/.." && pwd)"
 "$script_dir/cross-os/validate-cli.sh" "$cmd" "$version"
 
-tmp="${TMPDIR:-/tmp}/sshfling-firewall-$$"
-rm -rf "$tmp"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/sshfling-firewall.XXXXXX")"
 mkdir -p "$tmp/sshd_config.d" "$tmp/principals"
 trap 'rm -rf "$tmp"' EXIT INT TERM
 

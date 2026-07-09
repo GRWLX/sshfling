@@ -298,6 +298,45 @@ log "ssh login succeeds before expiry"
 "${ssh_base[@]}" 'whoami' >"$work/whoami.out"
 grep -q '^root$' "$work/whoami.out"
 
+log "expired certificate cannot authenticate after valid-before"
+sleep 10
+set +e
+"${ssh_base[@]}" 'whoami' >"$work/cert-expired.out" 2>"$work/cert-expired.err"
+cert_expired_code="$?"
+set -e
+if [[ "$cert_expired_code" -eq 0 ]]; then
+  fail "expired certificate authenticated after valid-before"
+fi
+if grep -q '^root$' "$work/cert-expired.out"; then
+  fail "expired certificate produced a successful whoami result"
+fi
+cert_material_dir="$(dirname "$CLIENT_KEY")"
+cert_metadata="$cert_material_dir/sshfling-cert.json"
+test -f "$cert_metadata"
+
+log "cert prune removes expired generated certificate material"
+bin/sshfling --json cert prune --username temp-remote --session-dir /var/lib/sshfling/sessions >"$work/cert-prune.json"
+python3 - "$work/cert-prune.json" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1]))
+assert payload["ok"] is True
+assert payload["count"] == 1
+result = payload["results"][0]
+assert result["username"] == "temp-remote", result
+assert result["status"] == "pruned", result
+assert result["private_key"]["removed"] is True, result
+assert result["public_key"]["removed"] is True, result
+assert result["certificate"]["removed"] is True, result
+assert result["metadata"]["removed"] is True, result
+assert result["directory"]["removed"] is True, result
+PY
+test ! -e "$CLIENT_KEY"
+test ! -e "${CLIENT_KEY}.pub"
+test ! -e "$CLIENT_CERT"
+test ! -e "$cert_metadata"
+test ! -e "$cert_material_dir"
+
 log "default password grant prints sshfling connect command and accepts password login"
 bin/sshfling --json -t 20s \
   --username s234 >"$work/password-setup.json"
@@ -313,6 +352,8 @@ assert payload["server"]
 assert payload["server"] != "SERVER_IP"
 assert payload["ssh_command"] == f"sshfling s234@{payload['server']}"
 assert payload["password"]
+for key in ["certificate", "private_key", "public_key", "ca", "generated_key", "out", "serial", "valid_before", "principal"]:
+    assert key not in payload, (key, payload)
 with open(sys.argv[2], "w") as out:
     out.write(f"SSHPASS={payload['password']}\n")
 PY
@@ -331,6 +372,72 @@ assert payload["username"] == "s235compat"
 assert payload["seconds"] == 20
 assert payload["password"]
 PY
+
+log "operator and sudo-limited access levels create classified password grants without sudo groups"
+for access_case in "operator:s241operator" "sudo-limited:s242sudo"; do
+  access_level="${access_case%%:*}"
+  access_user="${access_case##*:}"
+  bin/sshfling policy install \
+    --user "$access_user" \
+    --max-time 2m \
+    --max-connections 1 \
+    --access-level "$access_level" >"$work/$access_user-policy.out"
+  grep -q "user: $access_user" "$work/$access_user-policy.out"
+  grep -q "access-level: $access_level" "$work/$access_user-policy.out"
+
+  bin/sshfling --json -t 4s \
+    --username "$access_user" \
+    --access-level "$access_level" >"$work/$access_user-setup.json"
+  python3 - "$work/$access_user-setup.json" "$access_level" "$access_user" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1]))
+expected_level = sys.argv[2]
+expected_user = sys.argv[3]
+assert payload["ok"] is True, payload
+assert payload["auth"] == "password", payload
+assert payload["username"] == expected_user, payload
+assert payload["access_level"] == expected_level, payload
+assert payload["policy"]["access_level"] == expected_level, payload
+PY
+  python3 - "$access_level" "$access_user" <<'PY'
+import json
+import sys
+from pathlib import Path
+expected_level = sys.argv[1]
+expected_user = sys.argv[2]
+metadata = json.loads(Path(f"/var/lib/sshfling/password-grants/{expected_user}.json").read_text())
+assert metadata["username"] == expected_user, metadata
+assert metadata["access_level"] == expected_level, metadata
+assert metadata["created_user"] is True, metadata
+PY
+  id -u "$access_user" >/dev/null
+  if id -nG "$access_user" | grep -Eq '(^| )(sudo|wheel|admin)( |$)'; then
+    fail "$access_level user $access_user was unexpectedly added to a sudo/admin group"
+  fi
+done
+sleep 5
+for access_user in s241operator s242sudo; do
+  bin/sshfling --json password prune --username "$access_user" --delete-users >"$work/$access_user-prune.json"
+  python3 - "$work/$access_user-prune.json" "$access_user" <<'PY'
+import json
+import sys
+payload = json.load(open(sys.argv[1]))
+expected_user = sys.argv[2]
+assert payload["ok"] is True, payload
+assert payload["count"] == 1, payload
+result = payload["results"][0]
+assert result["username"] == expected_user, result
+assert result["status"] == "pruned", result
+assert result["config"]["removed"] is True, result
+assert result["metadata"]["removed"] is True, result
+assert result["user"]["deleted"] is True, result
+PY
+  if id -u "$access_user" >/dev/null 2>&1; then
+    fail "expired classified access user $access_user was not deleted"
+  fi
+done
+sshd -t
 
 grep -q "Match User s234" /etc/ssh/sshd_config.d/91-sshfling-password-s234.conf
 grep -q "ForceCommand /usr/local/libexec/sshfling-session --max-seconds 20 --max-connections 1 --username s234 --login-user s234 --policy-file /etc/sshfling/policy.json --expires-at" /etc/ssh/sshd_config.d/91-sshfling-password-s234.conf
@@ -442,15 +549,17 @@ useradd --create-home --shell /bin/sh s238existing
 bin/sshfling --json -t 1s \
   --username s238existing \
   --allow-existing-user >"$work/password-existing-grant.json"
-python3 - "$work/password-active.json" "$work/password-expired-grant.json" "$work/password-prune-users.env" <<'PY'
+python3 - "$work/password-active.json" "$work/password-expired-grant.json" "$work/password-named-expired-grant.json" "$work/password-prune-users.env" <<'PY'
 import json
 import sys
 
 active = json.load(open(sys.argv[1]))
 expired = json.load(open(sys.argv[2]))
-with open(sys.argv[3], "w") as out:
+named = json.load(open(sys.argv[3]))
+with open(sys.argv[4], "w") as out:
     out.write(f"SSHPASS_ACTIVE={active['password']}\n")
     out.write(f"SSHPASS_EXPIRED={expired['password']}\n")
+    out.write(f"SSHPASS_NAMED={named['password']}\n")
 PY
 # shellcheck source=/dev/null
 source "$work/password-prune-users.env"
@@ -502,9 +611,29 @@ PY
 if id -u s239named >/dev/null 2>&1; then
   fail "expired password prune --username did not delete s239named"
 fi
+if getent group s239named >/dev/null 2>&1; then
+  fail "expired password prune --username did not remove s239named primary group"
+fi
 test ! -e /etc/ssh/sshd_config.d/91-sshfling-password-s239named.conf
 test ! -e /var/lib/sshfling/password-grants/s239named.json
 sshd -t
+
+log "targeted deleted password user cannot authenticate with old password"
+set +e
+SSHPASS="$SSHPASS_NAMED" sshpass -e bin/sshfling \
+  -p 2222 \
+  -o "StrictHostKeyChecking=yes" \
+  -o "UserKnownHostsFile=$work/known_hosts" \
+  s239named@127.0.0.1 \
+  'whoami' >"$work/password-named-deleted-auth.out" 2>"$work/password-named-deleted-auth.err"
+password_named_deleted_code="$?"
+set -e
+if [[ "$password_named_deleted_code" -eq 0 ]]; then
+  fail "targeted deleted expired password user authenticated with old password"
+fi
+if grep -q '^s239named$' "$work/password-named-deleted-auth.out"; then
+  fail "targeted deleted expired password user produced a successful whoami result"
+fi
 
 log "password prune --username --delete-users refuses mismatched reused user identity"
 bin/sshfling --json -t 1s \
@@ -575,8 +704,14 @@ id -u s235active >/dev/null
 if id -u s236expired >/dev/null 2>&1; then
   fail "expired password prune did not delete s236expired"
 fi
+if getent group s236expired >/dev/null 2>&1; then
+  fail "expired password prune did not remove s236expired primary group"
+fi
 if id -u s237guard >/dev/null 2>&1; then
   fail "expired password prune with missing config did not delete s237guard"
+fi
+if getent group s237guard >/dev/null 2>&1; then
+  fail "expired password prune with missing config did not remove s237guard primary group"
 fi
 id -u s238existing >/dev/null
 test ! -e /etc/ssh/sshd_config.d/91-sshfling-password-s240reuse.conf

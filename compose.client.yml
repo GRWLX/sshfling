@@ -10,7 +10,7 @@ services:
       SSH_HOST: "${SSH_HOST:-ssh-server}"
       SSH_PORT: "${SSH_PORT:-22}"
       SSH_USER: "${SSH_USER:-deploy}"
-      SSH_PRIVATE_KEY: /run/secrets/ssh_private_key
+      SSH_PRIVATE_KEY: /run/sshfling-secrets/client_ed25519
       SSH_KNOWN_HOSTS: "${SSH_KNOWN_HOSTS:-}"
       SSH_KNOWN_HOSTS_FILE: "${SSH_KNOWN_HOSTS_FILE:-}"
       SSH_HOST_KEY_SHA256: "${SSH_HOST_KEY_SHA256:-}"
@@ -23,16 +23,13 @@ services:
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m
-    secrets:
-      - source: ssh_private_key
-        target: ssh_private_key
-        mode: 0444
+    volumes:
+      - type: bind
+        source: ./secrets
+        target: /run/sshfling-secrets
+        read_only: true
     networks:
       - timed-ssh-net
-
-secrets:
-  ssh_private_key:
-    file: ./secrets/client_ed25519
 
 networks:
   timed-ssh-net:

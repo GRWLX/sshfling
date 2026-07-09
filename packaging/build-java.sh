@@ -150,6 +150,8 @@ validate_java_package() {
   test -f "$smoke_project/secrets/.gitkeep"
   jar tf "$jar_path" | grep -Fx "sshfling/sshfling.py" >/dev/null
   jar tf "$jar_path" | grep -Fx "sshfling/resource-manifest.txt" >/dev/null
+  jar tf "$jar_path" | grep -Fx "sshfling/templates/systemd/sshfling-prune.service" >/dev/null
+  jar tf "$jar_path" | grep -Fx "sshfling/templates/systemd/sshfling-prune.timer" >/dev/null
 }
 
 rm -rf "$build_root"

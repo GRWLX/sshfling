@@ -179,6 +179,37 @@ try {
     Fail "help output missing expected description"
   }
 
+  $clientDepsJson = (& $CommandPath --json doctor --dependencies --mode client | Out-String)
+  if ($LASTEXITCODE -ne 0) {
+    Fail "client dependency inventory unexpectedly failed"
+  }
+  $clientDeps = $clientDepsJson | ConvertFrom-Json
+  if (-not $clientDeps.ok -or $clientDeps.dependency_ownership -ne "platform-managed") {
+    Fail "client dependency inventory did not report platform-managed ownership"
+  }
+  $clientRequired = @($clientDeps.dependencies | Where-Object { $_.required } | ForEach-Object { $_.name })
+  foreach ($requiredTool in @("ssh", "ssh-keygen", "ssh-keyscan")) {
+    if ($clientRequired -notcontains $requiredTool) {
+      Fail "client dependency inventory missing required tool $requiredTool"
+    }
+  }
+
+  $passwordDepsJson = (& $CommandPath --json doctor --dependencies --mode password-server 2>$null | Out-String)
+  $passwordDepsCode = $LASTEXITCODE
+  $passwordDeps = $passwordDepsJson | ConvertFrom-Json
+  $passwordRequired = @($passwordDeps.dependencies | Where-Object { $_.required } | ForEach-Object { $_.name })
+  foreach ($requiredTool in @("sshd", "useradd", "userdel", "chpasswd", "id")) {
+    if ($passwordRequired -notcontains $requiredTool) {
+      Fail "password-server dependency inventory missing required tool $requiredTool"
+    }
+  }
+  if (@($passwordDeps.missing_required).Count -gt 0 -and $passwordDepsCode -eq 0) {
+    Fail "password-server dependency inventory returned success despite missing required tools"
+  }
+  if (@($passwordDeps.missing_required).Count -eq 0 -and (-not $passwordDeps.ok -or $passwordDepsCode -ne 0)) {
+    Fail "password-server dependency inventory failed despite complete required tools"
+  }
+
   $bareSetupJson = (& $CommandPath --json --dry-run 2>$null | Out-String)
   if ($LASTEXITCODE -eq 0) {
     Fail "bare setup without -t unexpectedly succeeded"
@@ -188,6 +219,15 @@ try {
     Fail "bare setup error did not require explicit lifetime"
   }
 
+  $topCertOptionJson = (& $CommandPath --json --public-key "ssh-ed25519 AAAAunit" --dry-run 2>$null | Out-String)
+  if ($LASTEXITCODE -eq 0) {
+    Fail "top-level certificate option without --certificate unexpectedly succeeded"
+  }
+  $topCertOption = $topCertOptionJson | ConvertFrom-Json
+  if (-not $topCertOption.error.message.Contains("Certificate setup options require --certificate")) {
+    Fail "top-level cert option error was masked"
+  }
+
   $bareCertSetupJson = (& $CommandPath --json --certificate --dry-run 2>$null | Out-String)
   if ($LASTEXITCODE -eq 0) {
     Fail "certificate setup without -t unexpectedly succeeded"
@@ -195,6 +235,24 @@ try {
   $bareCertSetup = $bareCertSetupJson | ConvertFrom-Json
   if (-not $bareCertSetup.error.message.Contains("explicit -t/--time")) {
     Fail "certificate setup error did not require explicit lifetime"
+  }
+
+  $setupCertMissingLifetimeJson = (& $CommandPath --json setup --certificate 2>$null | Out-String)
+  if ($LASTEXITCODE -eq 0) {
+    Fail "setup --certificate without -t unexpectedly succeeded"
+  }
+  $setupCertMissingLifetime = $setupCertMissingLifetimeJson | ConvertFrom-Json
+  if (-not $setupCertMissingLifetime.error.message.Contains("explicit -t/--time")) {
+    Fail "setup --certificate missing lifetime did not return stable JSON"
+  }
+
+  $setupCertOptionJson = (& $CommandPath --json setup --public-key "ssh-ed25519 AAAAunit" --dry-run 2>$null | Out-String)
+  if ($LASTEXITCODE -eq 0) {
+    Fail "setup certificate option without --certificate unexpectedly succeeded"
+  }
+  $setupCertOption = $setupCertOptionJson | ConvertFrom-Json
+  if (-not $setupCertOption.error.message.Contains("Certificate setup options require --certificate")) {
+    Fail "setup cert option error was masked"
   }
 
   $env:SSHFLING_WEB_PASSWORD = "cross-test-password"
@@ -1258,6 +1316,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
       "ssh-server\sshd_config",
       "production\sshfling-session",
       "systemd\sshflingd.service",
+      "systemd\sshfling-prune.service",
+      "systemd\sshfling-prune.timer",
       "systemd\sshflingd.env.example"
     )) {
     $path = Join-Path $project $relative

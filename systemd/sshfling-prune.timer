@@ -1,0 +1,12 @@
+[Unit]
+Description=Run SSHFling expired temporary access prune
+Documentation=file:/usr/share/doc/sshfling/README.md
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+RandomizedDelaySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

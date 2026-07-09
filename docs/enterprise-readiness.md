@@ -34,6 +34,14 @@ Estimated time to audit-ready depends on external GitHub settings, signing
 certificate availability, secret-store controls, and release-operation evidence.
 The repository alone is not enough to establish an audit-ready state.
 
+Generated readiness artifacts can include `PASS` rows with platform,
+architecture, or hardware metadata for indexing. Treat those rows as passing
+only for the local control bucket named in the row and its evidence source. Do
+not treat generated `PASS` rows as proof that macOS, Windows, ARM, IoT,
+FPGA/SoC, cloud, store, signing, notarization, secret-custody, or customer
+hardware coverage is complete unless the release packet contains matching
+release-specific evidence or an approved exception.
+
 ## Scope Boundary
 
 In scope:

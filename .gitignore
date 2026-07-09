@@ -23,6 +23,7 @@ known_hosts
 htmlcov/
 .DS_Store
 *.log
+TODO.txt
 packaging/dotnet/**/bin/
 packaging/dotnet/**/obj/
 packaging/java/**/target/
