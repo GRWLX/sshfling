@@ -170,6 +170,10 @@ grep -Fq $'result\tstatus=deleted\tuser=partialdelete\tdeleted=true' "$tmp/parti
 
 printf 'root:x:0:0::/root:/bin/bash\n' >>"$passwd_db"
 if "$helper" lock root >/dev/null 2>&1; then fail "root-equivalent account mutation was accepted"; fi
+printf 'leadingzero:x:00:1200::/home/leadingzero:/bin/sh\n' >>"$passwd_db"
+if printf '%s\n' replacement | "$helper" set-password leadingzero >/dev/null 2>&1; then
+  fail "a leading-zero uid bypassed canonical identity validation"
+fi
 
 certificate_output="$("$helper" create-certificate-user certuser /bin/sh)"
 [[ "$certificate_output" == *$'status=created\tuser=certuser\tcreated=true\tunlocked=true'* ]] \
