@@ -40,17 +40,24 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends dpkg-dev file rpm
+          sudo apt-get install -y --no-install-recommends dpkg-dev file maven rpm
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
       - name: Validate sources
         run: make test
 
-      - name: Build Debian, RPM, NuGet, and source packages
+      - name: Build Debian, RPM, NuGet, Java, and source packages
         env:
           SSHFLING_VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -58,6 +65,7 @@ jobs:
           ./packaging/build-deb.sh
           ./packaging/build-rpm.sh
           ./packaging/build-dotnet.sh
+          ./packaging/build-java.sh
           git archive \
             --format=tar.gz \
             --prefix="sshfling-${SSHFLING_VERSION}/" \
@@ -72,6 +80,8 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/*.nupkg
+            dist/*.jar
+            dist/*.pom
             dist/*.tar.gz
           if-no-files-found: error
 
@@ -361,6 +371,9 @@ jobs:
             "sshfling-${version}-1.noarch.rpm"
             "sshfling-${version}.tar.gz"
             "SSHFling.Tool.${version}.nupkg"
+            "sshfling-cli-${version}.jar"
+            "sshfling-cli-${version}-sources.jar"
+            "sshfling-cli-${version}.pom"
             "sshfling-${version}.pkg"
             "sshfling-${version}.msi"
             "sshfling-${version}-windows.zip"
@@ -394,6 +407,9 @@ jobs:
             "sshfling-${VERSION}-1.noarch.rpm"
             "sshfling-${VERSION}.tar.gz"
             "SSHFling.Tool.${VERSION}.nupkg"
+            "sshfling-cli-${VERSION}.jar"
+            "sshfling-cli-${VERSION}-sources.jar"
+            "sshfling-cli-${VERSION}.pom"
             "sshfling-${VERSION}.pkg"
             "sshfling-${VERSION}.msi"
             "sshfling-${VERSION}-windows.zip"

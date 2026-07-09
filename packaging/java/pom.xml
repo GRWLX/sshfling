@@ -1,0 +1,86 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>io.sshfling</groupId>
+  <artifactId>sshfling-cli</artifactId>
+  <version>${revision}</version>
+  <packaging>jar</packaging>
+
+  <name>SSHFling CLI</name>
+  <description>Temporary SSH access broker and CLI packaged as a Java executable JAR.</description>
+  <url>https://github.com/GRWLX/sshfling</url>
+
+  <licenses>
+    <license>
+      <name>SSHFling Commercial License</name>
+      <url>https://github.com/GRWLX/sshfling/blob/main/LICENSE</url>
+      <distribution>manual</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>grwlx</id>
+      <name>GRWLX</name>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/GRWLX/sshfling.git</connection>
+    <developerConnection>scm:git:https://github.com/GRWLX/sshfling.git</developerConnection>
+    <url>https://github.com/GRWLX/sshfling</url>
+  </scm>
+
+  <distributionManagement>
+    <repository>
+      <id>github</id>
+      <name>GitHub Packages</name>
+      <url>${github.package.registry.url}</url>
+    </repository>
+  </distributionManagement>
+
+  <properties>
+    <revision>0.0.0</revision>
+    <github.package.registry.url>https://maven.pkg.github.com/GRWLX/sshfling</github.package.registry.url>
+    <maven.compiler.release>11</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>io.sshfling.cli.SSHFling</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>jar-no-fork</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

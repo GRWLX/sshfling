@@ -37,6 +37,7 @@ docs/release/enterprise-release-summary.md
 docs/release/enterprise-release-evidence
 packaging/dotnet/**/bin
 packaging/dotnet/**/obj
+packaging/java/**/target
 secrets/*
 secrets/**
 !secrets/.gitkeep

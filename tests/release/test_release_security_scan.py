@@ -159,6 +159,42 @@ class ReleaseSecurityScanTests(unittest.TestCase):
                 )
             )
 
+    def test_dependency_inventory_reads_maven_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            pom = write_file(
+                repo_root / "packaging" / "java" / "pom.xml",
+                """<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.sshfling</groupId>
+  <artifactId>sshfling-cli</artifactId>
+  <version>1.2.3</version>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+""",
+            )
+
+            report = release_security_scan.collect_dependencies([pom], repo_root)
+
+            self.assertEqual(report["status"], "pass")
+            self.assertIn("Dependency manifests found: packaging/java/pom.xml", report["notes"][0])
+            self.assertTrue(
+                any(
+                    item["ecosystem"] == "maven"
+                    and item["kind"] == "maven-plugin"
+                    and item["name"] == "org.apache.maven.plugins:maven-compiler-plugin"
+                    for item in report["dependencies"]
+                )
+            )
+
     def test_optional_tools_are_skipped_by_default_and_include_osv_sca_hook(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
@@ -188,8 +224,31 @@ class ReleaseSecurityScanTests(unittest.TestCase):
             self.assertEqual(by_name["osv-scanner"]["exit_code"], "not_run")
             self.assertIn("./packaging/dotnet/SSHFling.Tool/bin", by_name["syft"]["command"])
             self.assertIn("./packaging/dotnet/SSHFling.Tool/obj", by_name["syft"]["command"])
+            self.assertIn("./packaging/java/target", by_name["syft"]["command"])
             self.assertIn("packaging/dotnet/SSHFling.Tool/bin", by_name["trivy-fs"]["command"])
             self.assertIn("packaging/dotnet/SSHFling.Tool/obj", by_name["trivy-fs"]["command"])
+            self.assertIn("packaging/java/target", by_name["trivy-fs"]["command"])
+            self.assertIn("--skip-files", by_name["trivy-fs"]["command"])
+            self.assertIn("docs/release/enterprise-release-matrix.csv", by_name["trivy-fs"]["command"])
+            self.assertIn("--skip-git", by_name["osv-scanner"]["command"])
+
+    def test_osv_no_package_sources_is_empty_pass_not_release_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "osv.log"
+            log_path.write_text(
+                "Scanning dir .\nNo package sources found, --help for usage information.\n",
+                encoding="utf-8",
+            )
+            result = {
+                "name": "osv-scanner",
+                "status": "fail",
+                "exit_code": 128,
+            }
+
+            normalized = release_security_scan.normalize_osv_result(result, log_path)
+
+            self.assertEqual(normalized["status"], "pass")
+            self.assertIn("no package sources", normalized["reason"])
 
     def test_trivy_policy_allows_documented_root_container_exceptions_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

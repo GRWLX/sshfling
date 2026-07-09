@@ -23,6 +23,7 @@ These artifacts are built directly by GitHub Actions on every version tag.
 | Rocky Linux | `.rpm` plus RPM repo metadata | `dnf install sshfling` |
 | AlmaLinux | `.rpm` plus RPM repo metadata | `dnf install sshfling` |
 | Cross-platform .NET | `SSHFling.Tool.VERSION.nupkg` | `dotnet tool install --global SSHFling.Tool` from a verified local package source |
+| Cross-platform Java | `sshfling-cli-VERSION.jar`, `sshfling-cli-VERSION-sources.jar`, `sshfling-cli-VERSION.pom` | `java -jar sshfling-cli-VERSION.jar` after checksum verification, or Maven from GitHub Packages |
 | macOS | `.pkg` and Homebrew formula | `brew install` or `installer -pkg` |
 | Windows | `.msi` and portable zip | MSI installer, winget, Scoop, or Chocolatey |
 

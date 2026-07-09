@@ -12,8 +12,9 @@ site that includes:
 - Debian and Ubuntu `.deb` packages with APT metadata.
 - RHEL, Fedora, Rocky Linux, AlmaLinux, and UBI `.rpm` packages with RPM repo
   metadata.
-- A Homebrew formula, .NET global tool `.nupkg`, macOS `.pkg`, Windows MSI,
-  Windows portable zip, source tarball, and checksums.
+- A Homebrew formula, .NET global tool `.nupkg`, Java executable JAR/POM,
+  macOS `.pkg`, Windows MSI, Windows portable zip, source tarball, and
+  checksums.
 - Community package manifests for Arch/AUR, Alpine, FreeBSD Ports, OpenBSD
   Ports, pkgsrc, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft,
   Termux, AppImage, Scoop, winget, and Chocolatey.

@@ -122,6 +122,7 @@ PACKAGE_CHANNELS = [
     "msi",
     "portable-zip",
     "dotnet-nupkg",
+    "java-jar",
     "container-image",
     "community-repo",
     "source-runtime",

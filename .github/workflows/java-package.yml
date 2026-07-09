@@ -1,0 +1,102 @@
+name: Java package
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Java package version. Defaults to the tag name or bin/sshfling VERSION."
+        required: false
+        type: string
+      publish:
+        description: "Deploy the Java Maven package to GitHub Packages."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: java-package-${{ github.ref }}-${{ inputs.version || 'source' }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test Java package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version || '' }}
+        run: |
+          set -euo pipefail
+          version="$(bash packaging/resolve-version.sh "$INPUT_VERSION")"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build and validate executable JAR
+        env:
+          SSHFLING_VERSION: ${{ steps.version.outputs.version }}
+        run: make package-java VERSION="${SSHFLING_VERSION}"
+
+      - name: Upload Java package artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: java-package
+          path: |
+            dist/sshfling-cli-${{ steps.version.outputs.version }}.jar
+            dist/sshfling-cli-${{ steps.version.outputs.version }}-sources.jar
+            dist/sshfling-cli-${{ steps.version.outputs.version }}.pom
+          if-no-files-found: error
+
+  publish:
+    name: Deploy Java package to GitHub Packages
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-packages
+    permissions:
+      contents: read
+      packages: write
+    needs:
+      - build
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Deploy Maven package
+        env:
+          SSHFLING_VERSION: ${{ needs.build.outputs.version }}
+          SSHFLING_JAVA_DEPLOY: "1"
+          SSHFLING_JAVA_REGISTRY_URL: https://maven.pkg.github.com/${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./packaging/build-java.sh

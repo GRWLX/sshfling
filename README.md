@@ -537,6 +537,7 @@ Build packages from this source checkout:
 ./packaging/build-deb.sh
 ./packaging/build-rpm.sh
 ./packaging/build-dotnet.sh
+./packaging/build-java.sh
 powershell -NoProfile -File packaging/build-msi.ps1
 ./packaging/build-pkg.sh
 ```
@@ -547,6 +548,9 @@ Package outputs go to `dist/`.
 - `.rpm` needs `rpmbuild`.
 - `.nupkg` needs the .NET 10 SDK to build. The installed .NET global tool
   still requires Python 3 and OpenSSH tools on the target host.
+- `sshfling-cli-VERSION.jar` needs Maven and JDK 11 or newer to build. The
+  Java executable JAR still requires Python 3 and OpenSSH tools on the target
+  host.
 - `.msi` needs Windows PowerShell and WiX Toolset v3.
 - `.pkg` needs macOS `pkgbuild` and `productbuild`.
 
@@ -565,7 +569,7 @@ GitHub Actions workflows are included for public distribution:
 
 - `Container image tests` builds packages into Docker-based install targets and runs the SSHFling server/client image smoke tests through `make test-containers`.
 - `Release packages without web` builds release artifacts only.
-- `Release packages with public web` verifies a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, .NET global tool, macOS `.pkg`, Windows MSI installs, and community package manifests for BSDs, Arch/AUR, Alpine, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey. Manual runs are dry-run verification unless `publish=true`; tag runs publish only when stable repository signing secrets are present and the configured Pages environment permits deployment.
+- `Release packages with public web` verifies a GitHub Pages package site for commands such as `sudo apt install -y sshfling`, `sudo dnf install -y sshfling`, Homebrew, .NET global tool, Java executable JAR, macOS `.pkg`, Windows MSI installs, and community package manifests for BSDs, Arch/AUR, Alpine, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey. Manual runs are dry-run verification unless `publish=true`; tag runs publish only when stable repository signing secrets are present and the configured Pages environment permits deployment.
 - `Package install tests` installs from the published package site and verifies the requested `sshfling` version across Linux package repos and community package manifests.
 - `Cross OS validation` installs or builds those outputs across Linux, BSD,
   macOS, and Windows and checks the explicit grant lifetime requirement,

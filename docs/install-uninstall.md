@@ -401,6 +401,34 @@ Global tool uninstall removes the .NET tool shim and package from the user's
 SSH configuration, CA material, temporary grant state, Python, OpenSSH, Docker,
 or any shared host dependencies.
 
+## Java Executable JAR
+
+The Java package coordinates are `io.sshfling:sshfling-cli`. The direct
+download artifact is `sshfling-cli-VERSION.jar`; the package also publishes
+`sshfling-cli-VERSION-sources.jar` and `sshfling-cli-VERSION.pom`.
+
+Install from a downloaded release package after verifying the published
+checksum:
+
+```bash
+BASE_URL="https://OWNER.github.io/REPO"
+VERSION="0.1.14"
+tmp="$(mktemp -d)"
+curl -fsSL "${BASE_URL}/downloads/sshfling-cli-${VERSION}.jar" -o "$tmp/sshfling-cli-${VERSION}.jar"
+curl -fsSL "${BASE_URL}/downloads/sshfling-cli-${VERSION}.pom" -o "$tmp/sshfling-cli-${VERSION}.pom"
+curl -fsSL "${BASE_URL}/downloads/SHA256SUMS" -o "$tmp/SHA256SUMS"
+grep "  sshfling-cli-${VERSION}.jar$" "$tmp/SHA256SUMS" > "$tmp/sshfling-cli.jar.SHA256SUMS"
+grep "  sshfling-cli-${VERSION}.pom$" "$tmp/SHA256SUMS" > "$tmp/sshfling-cli.pom.SHA256SUMS"
+(cd "$tmp" && sha256sum -c sshfling-cli.jar.SHA256SUMS && sha256sum -c sshfling-cli.pom.SHA256SUMS)
+java -jar "$tmp/sshfling-cli-${VERSION}.jar" --version
+```
+
+Uninstall direct-download Java usage by deleting the downloaded JAR/POM and
+removing any shell alias or wrapper your deployment created. Maven cache cleanup
+is consumer-owned; package removal does not remove SSHFling project
+directories, host SSH configuration, CA material, temporary grant state, Python,
+OpenSSH, Docker, Java, Maven, or any shared host dependencies.
+
 ## Windows MSI
 
 Install with the generated checksum and Authenticode-verifying helper from an

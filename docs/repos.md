@@ -273,6 +273,26 @@ Uninstall removes the .NET tool registration only:
 dotnet tool uninstall --global SSHFling.Tool
 ```
 
+## Public Java Package
+
+The public package site publishes `downloads/sshfling-cli-VERSION.jar`,
+`downloads/sshfling-cli-VERSION-sources.jar`, and
+`downloads/sshfling-cli-VERSION.pom` for direct download. Download them, verify
+`downloads/SHA256SUMS`, and run the executable JAR:
+
+```bash
+java -jar "$verified_download_dir/sshfling-cli-$VERSION.jar" --version
+```
+
+The Maven coordinates are `io.sshfling:sshfling-cli:$VERSION`. GitHub Packages
+deployment is handled by the `Java package` workflow when a version tag is
+pushed or a manual workflow dispatch explicitly sets `publish=true`.
+
+The Java package does not bundle Python, OpenSSH, Docker, host
+account-management tools, host SSH configuration, Java, or Maven. Uninstall
+direct-download usage by deleting the downloaded files and removing any wrapper
+script or shell alias your deployment created.
+
 ## Public Community Manifests
 
 The Pages workflow also generates ready-to-use or ready-to-submit package definitions at `${BASE_URL}/community.html`:

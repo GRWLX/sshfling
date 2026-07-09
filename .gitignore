@@ -25,6 +25,7 @@ htmlcov/
 *.log
 packaging/dotnet/**/bin/
 packaging/dotnet/**/obj/
+packaging/java/**/target/
 secrets/*
 !secrets/.gitkeep
 build/

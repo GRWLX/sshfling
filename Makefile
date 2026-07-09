@@ -12,7 +12,7 @@ RELEASE_SCANNER_BIN_DIR ?= $(if $(RUNNER_TEMP),$(RUNNER_TEMP),$(CURDIR)/build)/r
 ENTERPRISE_RELEASE_OUTPUT_DIR ?= docs/release
 ENTERPRISE_RELEASE_EVIDENCE_DIR ?= docs/release/enterprise-release-evidence
 
-.PHONY: install-local uninstall-local test test-containers test-release-security-scan release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-readiness-artifacts release-readiness-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet clean
+.PHONY: install-local uninstall-local test test-containers test-release-security-scan release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-readiness-artifacts release-readiness-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet package-java clean
 
 install-local:
 	install -d "$(PREFIX)/bin" "$(TEMPLATE_DIR)/scripts" "$(TEMPLATE_DIR)/secrets" "$(TEMPLATE_DIR)/ssh-client" "$(TEMPLATE_DIR)/ssh-server" "$(TEMPLATE_DIR)/production" "$(TEMPLATE_DIR)/systemd"
@@ -83,7 +83,7 @@ release-matrix-validate:
 check-package-version:
 	@bash -c 'source packaging/version.sh; assert_sshfling_version_matches_source "$$1" "$$2" >/dev/null' _ "$(VERSION)" "$(CURDIR)"
 
-package: package-deb package-rpm package-msi package-pkg package-dotnet
+package: package-deb package-rpm package-msi package-pkg package-dotnet package-java
 
 package-deb: check-package-version
 	SSHFLING_VERSION="$(VERSION)" bash packaging/build-deb.sh
@@ -99,6 +99,9 @@ package-pkg: check-package-version
 
 package-dotnet: check-package-version
 	SSHFLING_VERSION="$(VERSION)" bash packaging/build-dotnet.sh
+
+package-java: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-java.sh
 
 clean:
 	rm -rf build dist

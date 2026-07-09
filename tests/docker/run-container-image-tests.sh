@@ -69,6 +69,7 @@ make_source_tar() {
     --exclude=docs/release/enterprise-release-evidence \
     --exclude='packaging/dotnet/**/bin' \
     --exclude='packaging/dotnet/**/obj' \
+    --exclude='packaging/java/**/target' \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
     --exclude='secrets/client_ed25519' \

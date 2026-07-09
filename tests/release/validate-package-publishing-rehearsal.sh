@@ -190,6 +190,9 @@ SPEC
 
 build_direct_downloads() {
   printf 'NuGet global tool placeholder for release rehearsal\n' >"$package_dist/SSHFling.Tool.$version.nupkg"
+  printf 'Java executable JAR placeholder for release rehearsal\n' >"$package_dist/sshfling-cli-$version.jar"
+  printf 'Java sources JAR placeholder for release rehearsal\n' >"$package_dist/sshfling-cli-$version-sources.jar"
+  printf 'Java Maven POM placeholder for release rehearsal\n' >"$package_dist/sshfling-cli-$version.pom"
   printf 'macOS pkg placeholder for release rehearsal\n' >"$package_dist/sshfling-$version.pkg"
   printf 'Windows MSI placeholder for release rehearsal\n' >"$package_dist/sshfling-$version.msi"
   printf 'Windows zip placeholder for release rehearsal\n' >"$package_dist/sshfling-$version-windows.zip"

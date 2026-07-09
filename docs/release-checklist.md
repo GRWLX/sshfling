@@ -78,7 +78,8 @@ make test-containers
 6. `Cross OS validation`
 
 - Confirm release assets include the expected `.deb`, `.rpm`, `.pkg`, `.msi`,
-  Windows zip, `.NET` global tool `.nupkg`, source tarball, and `SHA256SUMS`.
+  Windows zip, `.NET` global tool `.nupkg`, Java executable JAR/source
+  JAR/POM, source tarball, and `SHA256SUMS`.
 - Confirm the public package site has APT/RPM metadata, repository signing files when production signing is enabled, Homebrew and macOS installer scripts, Windows installer scripts, and generated community manifests.
 - Confirm the install/uninstall runbook matches generated file names, public
   site paths, package identifiers, uninstall scope, and checksum/signing

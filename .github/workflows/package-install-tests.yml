@@ -527,3 +527,37 @@ jobs:
           test -x "$tmp/project/scripts/uninstall-local.sh"
           test -x "$tmp/project/production/sshfling-session"
           test -f "$tmp/project/secrets/.gitkeep"
+
+  java-jar:
+    name: Java executable JAR run
+    runs-on: ubuntu-latest
+    needs: validate-version
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Download and validate published Java package
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-version.outputs.version }}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/sshfling-cli-${version}.jar?run=${{ github.run_id }}" -o "$tmp/sshfling-cli-${version}.jar"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/sshfling-cli-${version}.pom?run=${{ github.run_id }}" -o "$tmp/sshfling-cli-${version}.pom"
+          curl -fsSL "https://grwlx.github.io/sshfling/downloads/SHA256SUMS?run=${{ github.run_id }}" -o "$tmp/SHA256SUMS"
+          grep "  sshfling-cli-${version}.jar$" "$tmp/SHA256SUMS" >"$tmp/sshfling-cli.jar.SHA256SUMS"
+          grep "  sshfling-cli-${version}.pom$" "$tmp/SHA256SUMS" >"$tmp/sshfling-cli.pom.SHA256SUMS"
+          (cd "$tmp" && sha256sum -c sshfling-cli.jar.SHA256SUMS && sha256sum -c sshfling-cli.pom.SHA256SUMS)
+          java -jar "$tmp/sshfling-cli-${version}.jar" --version | grep -Fx "sshfling $version"
+          java -jar "$tmp/sshfling-cli-${version}.jar" --project-dir "$tmp/project" doctor >/dev/null
+          java -jar "$tmp/sshfling-cli-${version}.jar" init "$tmp/project" --force --session-seconds 60 >/dev/null
+          test -x "$tmp/project/scripts/install-local.sh"
+          test -x "$tmp/project/scripts/uninstall-local.sh"
+          test -x "$tmp/project/production/sshfling-session"
+          test -f "$tmp/project/secrets/.gitkeep"

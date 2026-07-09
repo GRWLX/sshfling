@@ -10,6 +10,7 @@ export TZ=UTC
 umask 022
 
 # shellcheck source=packaging/version.sh
+# shellcheck disable=SC1091
 source "$repo_root/packaging/version.sh"
 version="$(assert_sshfling_version_matches_source "${VERSION:?VERSION is required}" "$repo_root")"
 repository="${REPOSITORY:?REPOSITORY is required}"
@@ -292,6 +293,12 @@ cp "$package_dist"/*.rpm "$public_dir/rpm/"
 cp "$package_dist"/*.tar.gz "$public_dir/downloads/"
 if compgen -G "$package_dist/*.nupkg" >/dev/null; then
   cp "$package_dist"/*.nupkg "$public_dir/downloads/"
+fi
+if compgen -G "$package_dist/*.jar" >/dev/null; then
+  cp "$package_dist"/*.jar "$public_dir/downloads/"
+fi
+if compgen -G "$package_dist/*.pom" >/dev/null; then
+  cp "$package_dist"/*.pom "$public_dir/downloads/"
 fi
 cp "$package_dist"/*.pkg "$public_dir/downloads/"
 cp "$package_dist"/*.msi "$public_dir/downloads/"
@@ -736,6 +743,16 @@ curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
 dotnet tool install --global SSHFling.Tool --add-source "\$tmp" --version "$version"</code></pre>
   <p>Uninstall:</p>
   <pre><code>dotnet tool uninstall --global SSHFling.Tool</code></pre>
+  <h2>Java executable JAR</h2>
+  <p>The Java package is an executable Maven JAR wrapper around the bundled SSHFling Python CLI. It requires Java 11 or newer, Python 3, and OpenSSH tools on the target host.</p>
+  <pre><code>tmp="\$(mktemp -d)"
+curl -fsSL $base_url/downloads/sshfling-cli-$version.jar -o "\$tmp/sshfling-cli-$version.jar"
+curl -fsSL $base_url/downloads/sshfling-cli-$version.pom -o "\$tmp/sshfling-cli-$version.pom"
+curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
+(cd "\$tmp" &amp;&amp; grep -E "  sshfling-cli-${version}[.](jar|pom)\$" SHA256SUMS | sha256sum -c -)
+java -jar "\$tmp/sshfling-cli-$version.jar" --version</code></pre>
+  <p>Uninstall:</p>
+  <pre><code>rm -f "\$tmp/sshfling-cli-$version.jar" "\$tmp/sshfling-cli-$version.pom"</code></pre>
   <h2>macOS pkg</h2>
   <p>Enterprise macOS distribution should use signed and notarized packages. This helper is a convenience wrapper around the published package artifact.</p>
   <pre><code>tmp="\$(mktemp -d)"

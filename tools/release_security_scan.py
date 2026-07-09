@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import uuid
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -74,9 +75,27 @@ OPTIONAL_SCANNER_EXCLUDED_PATHS = [
     "public",
     "package-dist",
     "release-dist",
+    "docs/release/enterprise-release-matrix.csv",
+    "docs/release/enterprise-release-readiness-checklist.md",
+    "docs/release/enterprise-release-summary.md",
+    "docs/release/enterprise-release-evidence",
     "packaging/dotnet/SSHFling.Tool/bin",
     "packaging/dotnet/SSHFling.Tool/obj",
+    "packaging/java/target",
 ]
+
+
+def optional_scanner_exclusions(repo_root: Path) -> tuple[list[str], list[str]]:
+    dirs: list[str] = []
+    files: list[str] = []
+    for path_text in OPTIONAL_SCANNER_EXCLUDED_PATHS:
+        path = repo_root / path_text
+        if path.is_file() or (not path.exists() and Path(path_text).suffix):
+            files.append(path_text)
+        else:
+            dirs.append(path_text)
+    return dirs, files
+
 
 TEXT_SCAN_MAX_BYTES = 2 * 1024 * 1024
 
@@ -981,9 +1000,54 @@ def add_dependency(
     )
 
 
+def xml_child_text(element: ET.Element, local_name: str) -> str:
+    for child in list(element):
+        if child.tag.rsplit("}", 1)[-1] == local_name:
+            return (child.text or "").strip()
+    return ""
+
+
+def collect_maven_dependencies(path: Path, repo_root: Path) -> list[dict[str, str]]:
+    dependencies: list[dict[str, str]] = []
+    rel = repo_relative(path, repo_root)
+    try:
+        root = ET.fromstring(read_text(path))  # nosec B314
+    except ET.ParseError:
+        return dependencies
+
+    def add_maven_item(kind: str, node: ET.Element, scope: str) -> None:
+        group_id = xml_child_text(node, "groupId")
+        artifact_id = xml_child_text(node, "artifactId")
+        version = xml_child_text(node, "version") or "NOASSERTION"
+        if not artifact_id:
+            return
+        name = f"{group_id}:{artifact_id}" if group_id else artifact_id
+        dependencies.append(
+            {
+                "ecosystem": "maven",
+                "kind": kind,
+                "name": name,
+                "source": rel,
+                "package_manager": "maven",
+                "scope": scope,
+                "version": version,
+            }
+        )
+
+    for element in root.iter():
+        local_name = element.tag.rsplit("}", 1)[-1]
+        if local_name == "dependency":
+            scope = xml_child_text(element, "scope") or "compile"
+            add_maven_item("maven-dependency", element, scope)
+        elif local_name == "plugin":
+            add_maven_item("maven-plugin", element, "build")
+    return dependencies
+
+
 def collect_dependencies(files: list[Path], repo_root: Path) -> dict[str, Any]:
     dependencies: list[dict[str, str]] = []
     seen: set[tuple[str, str, str, str]] = set()
+    dependency_manifests: set[str] = set()
 
     for path in dockerfiles(files):
         rel = repo_relative(path, repo_root)
@@ -1058,10 +1122,32 @@ def collect_dependencies(files: list[Path], repo_root: Path) -> dict[str, Any]:
                 name=package,
                 source="flake.nix",
                 package_manager="nix",
-                scope="build-or-runtime",
-            )
+                    scope="build-or-runtime",
+                )
+
+    for path in files:
+        if path.name == "pom.xml":
+            dependency_manifests.add(repo_relative(path, repo_root))
+            for dependency in collect_maven_dependencies(path, repo_root):
+                key = (
+                    dependency["ecosystem"],
+                    dependency["kind"],
+                    dependency["name"],
+                    dependency["source"],
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                dependencies.append(dependency)
 
     dependencies.sort(key=lambda item: (item["ecosystem"], item["kind"], item["name"], item["source"]))
+    notes = [
+        "Versions are NOASSERTION when package manager resolution happens on build or install runners.",
+    ]
+    if dependency_manifests:
+        notes.insert(0, "Dependency manifests found: " + ", ".join(sorted(dependency_manifests)))
+    else:
+        notes.insert(0, "No Python, Node, Go, Rust, Ruby, Java, or PHP dependency manifest was found in the tracked source tree.")
     return {
         "scanner": "builtin-source-dependency-inventory",
         "status": "pass",
@@ -1071,10 +1157,7 @@ def collect_dependencies(files: list[Path], repo_root: Path) -> dict[str, Any]:
             "sources": sorted({item["source"] for item in dependencies}),
         },
         "dependencies": dependencies,
-        "notes": [
-            "No Python, Node, Go, Rust, Ruby, Java, or PHP dependency manifest was found in the tracked source tree.",
-            "Versions are NOASSERTION because package manager resolution happens on build or install runners.",
-        ],
+        "notes": notes,
     }
 
 
@@ -1273,6 +1356,17 @@ def run_command(
         }
 
 
+def normalize_osv_result(result: dict[str, Any], output_path: Path) -> dict[str, Any]:
+    if result.get("status") != "fail" or result.get("exit_code") != 128:
+        return result
+    output = output_path.read_text(encoding="utf-8", errors="replace") if output_path.exists() else ""
+    if "No package sources found" not in output:
+        return result
+    result["status"] = "pass"
+    result["reason"] = "OSV scanner found no package sources to evaluate"
+    return result
+
+
 def trivy_blocking_findings(trivy_json: Path) -> dict[str, Any]:
     payload = json.loads(trivy_json.read_text(encoding="utf-8"))
     blockers: list[dict[str, Any]] = []
@@ -1321,8 +1415,8 @@ def optional_tool_results(
     python_paths = [repo_relative(path, repo_root) for path in python_files(files)]
     docker_paths = [repo_relative(path, repo_root) for path in dockerfiles(files)]
     systemd_paths = [repo_relative(path, repo_root) for path in systemd_units(files)]
+    scanner_skip_dirs, scanner_skip_files = optional_scanner_exclusions(repo_root)
     syft_excludes = [f"./{path}" for path in OPTIONAL_SCANNER_EXCLUDED_PATHS]
-    trivy_skip_dirs = OPTIONAL_SCANNER_EXCLUDED_PATHS
 
     if shell_paths:
         tools.append(
@@ -1435,7 +1529,8 @@ def optional_tool_results(
                     "json",
                     "--output",
                     str(tool_dir / "trivy-fs.json"),
-                    *[part for path in trivy_skip_dirs for part in ("--skip-dirs", path)],
+                    *[part for path in scanner_skip_dirs for part in ("--skip-dirs", path)],
+                    *[part for path in scanner_skip_files for part in ("--skip-files", path)],
                     ".",
                 ],
                 "output": tool_dir / "trivy-fs.log",
@@ -1451,6 +1546,7 @@ def optional_tool_results(
                     "json",
                     "--output",
                     str(tool_dir / "osv-scanner.json"),
+                    "--skip-git",
                     "--recursive",
                     ".",
                 ],
@@ -1525,6 +1621,7 @@ def optional_tool_results(
                         f"{len(trivy_policy['allowlisted_findings'])} documented root-container exceptions"
                     )
         elif tool["name"] == "osv-scanner":
+            result = normalize_osv_result(result, tool_dir / "osv-scanner.log")
             osv_json = tool_dir / "osv-scanner.json"
             if osv_json.exists():
                 result["artifact_path"] = str(osv_json)
