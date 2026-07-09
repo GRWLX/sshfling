@@ -70,6 +70,10 @@ EXCLUDED_DIRS = {
 }
 OPTIONAL_SCANNER_EXCLUDED_PATHS = [
     ".git",
+    ".cache",
+    ".codex",
+    ".codex-24h",
+    ".codex-runs",
     "build",
     "dist",
     "public",
@@ -83,18 +87,40 @@ OPTIONAL_SCANNER_EXCLUDED_PATHS = [
     "packaging/dotnet/SSHFling.Tool/obj",
     "packaging/java/target",
 ]
+OPTIONAL_SCANNER_EXCLUDED_PREFIXES = (
+    ".cache-",
+    ".codex-",
+)
 
 
 def optional_scanner_exclusions(repo_root: Path) -> tuple[list[str], list[str]]:
     dirs: list[str] = []
     files: list[str] = []
-    for path_text in OPTIONAL_SCANNER_EXCLUDED_PATHS:
+    excluded_paths = list(OPTIONAL_SCANNER_EXCLUDED_PATHS)
+    for child in repo_root.iterdir():
+        if child.name.startswith(OPTIONAL_SCANNER_EXCLUDED_PREFIXES) and child.name not in excluded_paths:
+            excluded_paths.append(child.name)
+    for path_text in excluded_paths:
         path = repo_root / path_text
         if path.is_file() or (not path.exists() and Path(path_text).suffix):
             files.append(path_text)
         else:
             dirs.append(path_text)
     return dirs, files
+
+
+def build_tracked_source_snapshot(files: list[Path], repo_root: Path, destination: Path) -> Path:
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.mkdir(parents=True)
+    for source in files:
+        rel = repo_relative(source, repo_root)
+        if source.is_symlink():
+            continue
+        target = destination / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    return destination
 
 
 TEXT_SCAN_MAX_BYTES = 2 * 1024 * 1024
@@ -1476,11 +1502,13 @@ def optional_tool_results(
                 "output": tool_dir / "systemd-analyze-security.log",
             }
         )
+    gitleaks_source = tool_dir / "gitleaks-source"
+    if run_optional_tools:
+        build_tracked_source_snapshot(files, repo_root, gitleaks_source)
     gitleaks_command = [
         "gitleaks",
-        "detect",
-        "--source",
-        ".",
+        "dir",
+        str(gitleaks_source),
         "--redact",
         "--report-format",
         "json",
@@ -2099,7 +2127,7 @@ def generate(args: argparse.Namespace) -> int:
                 evidence_ref=evidence_ref,
                 evidence_sha256=evidence_sha,
                 evidence_source="optional-external-scanner",
-                blocker_reason=str(actual) if status == "blocked" else "NONE",
+                blocker_reason=str(actual) if status in {"blocked", "fail"} else "NONE",
                 notes="Missing optional scanners do not block the baseline release scan unless strict mode is enabled.",
             )
         )
@@ -2166,6 +2194,15 @@ def generate(args: argparse.Namespace) -> int:
     print(f"wrote release security matrix: {matrix_path}")
     print(f"release security rows: {len(rows)}")
     print(f"release security status: {overall_status}")
+    if overall_status != "pass":
+        print("release security failed checks:", file=sys.stderr)
+        for row in rows:
+            if row["result"] in {"fail", "blocked"}:
+                print(
+                    f"- {row['row_id']} {row['check_name']} "
+                    f"{row['result']}: {row['actual_result']}",
+                    file=sys.stderr,
+                )
     return 1 if overall_status != "pass" else 0
 
 

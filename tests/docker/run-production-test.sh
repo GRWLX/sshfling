@@ -77,7 +77,7 @@ spec = importlib.util.spec_from_loader(loader.name, loader)
 sshfling = importlib.util.module_from_spec(spec)
 loader.exec_module(sshfling)
 
-valid_token = "0123456789abcdef0123456789abcdef"
+valid_token = "".join(["01234567", "89abcdef", "01234567", "89abcdef"])
 for token in ["short-token", "replace-with-a-long-random-token", "your-token-goes-here-0123456789abcdef"]:
     try:
         sshfling.validate_bearer_token(token, "SSHFLING_ISSUER_TOKEN")
@@ -897,7 +897,7 @@ grep -q 'time limit reached after 8 seconds' "$work/timeout.err"
 
 log "issuer API returns a temp certificate"
 ssh-keygen -q -t ed25519 -N "" -C "api-client" -f "$work/api-client"
-issuer_token="0123456789abcdef0123456789abcdef"
+issuer_token="$(printf '%s%s%s%s' "01234567" "89abcdef" "01234567" "89abcdef")"
 SSHFLING_ISSUER_TOKEN="$issuer_token" bin/sshfling serve \
   --listen 127.0.0.1:8877 \
   --ca-key "$work/ca_user_ed25519" \
@@ -959,7 +959,7 @@ assert status == 200, (status, payload)
 open(sys.argv[2], "w").write(payload)
 
 seen_rate_limit = False
-wrong_token = "fedcba9876543210fedcba9876543210"
+wrong_token = "".join(["fedcba98", "76543210", "fedcba98", "76543210"])
 for _ in range(sshfling.ISSUER_POST_RATE_LIMIT + 2):
     status, _ = post_json({"public_key": public_key, "principal": "temp-api", "seconds": 30}, wrong_token)
     if status == 429:

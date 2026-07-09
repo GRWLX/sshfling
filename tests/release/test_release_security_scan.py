@@ -230,7 +230,39 @@ class ReleaseSecurityScanTests(unittest.TestCase):
             self.assertIn("packaging/java/target", by_name["trivy-fs"]["command"])
             self.assertIn("--skip-files", by_name["trivy-fs"]["command"])
             self.assertIn("docs/release/enterprise-release-matrix.csv", by_name["trivy-fs"]["command"])
+            self.assertEqual(by_name["gitleaks"]["command"][1], "dir")
+            self.assertIn("gitleaks-source", by_name["gitleaks"]["command"][2])
             self.assertIn("--skip-git", by_name["osv-scanner"]["command"])
+
+    def test_optional_scanner_exclusions_cover_generated_agent_workspaces(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            (repo_root / ".codex-24h").mkdir()
+            (repo_root / ".codex-runs").mkdir()
+            (repo_root / ".cache").mkdir()
+
+            dirs, files = release_security_scan.optional_scanner_exclusions(repo_root)
+
+            self.assertIn(".codex-24h", dirs)
+            self.assertIn(".codex-runs", dirs)
+            self.assertIn(".cache", dirs)
+            self.assertIn("docs/release/enterprise-release-matrix.csv", files)
+
+    def test_gitleaks_source_snapshot_contains_only_tracked_source_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            tracked = write_file(repo_root / "bin" / "sshfling", "#!/usr/bin/env python3\n")
+            untracked_secret = write_file(repo_root / ".git" / "config", "extraheader = AUTHORIZATION: basic token\n")
+
+            snapshot = release_security_scan.build_tracked_source_snapshot(
+                [tracked],
+                repo_root,
+                repo_root / "out" / "gitleaks-source",
+            )
+
+            self.assertTrue((snapshot / "bin" / "sshfling").exists())
+            self.assertFalse((snapshot / ".git" / "config").exists())
+            self.assertTrue(untracked_secret.exists())
 
     def test_osv_no_package_sources_is_empty_pass_not_release_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
