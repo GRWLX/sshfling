@@ -29,7 +29,7 @@ try:
 except ImportError:  # pragma: no cover - Windows does not provide pwd.
     pwd = None
 
-VERSION = "0.1.14"
+VERSION = "0.1.15"
 DEFAULT_NETWORK = "timed-ssh-net"
 DEFAULT_SESSION_WRAPPER = "/usr/local/libexec/sshfling-session"
 DEFAULT_ISSUER_LISTEN = "127.0.0.1:8787"
