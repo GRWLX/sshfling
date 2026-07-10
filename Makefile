@@ -149,7 +149,8 @@ package-language-catalog-strict: package-language-catalog package-dart-consumer
 	python3 tools/validate_promoted_language_evidence.py \
 		--version "$(VERSION)" \
 		--functional "dist/sshfling-functional-languages-$(VERSION)-validation.tsv" \
-		--systems "dist/sshfling-systems-languages-$(VERSION)-validation.tsv"
+		--systems "dist/sshfling-systems-languages-$(VERSION)-validation.tsv" \
+		--scripting "dist/sshfling-scripting-languages-$(VERSION)-validation.tsv"
 
 package-functional-languages: check-package-version
 	SSHFLING_VERSION="$(VERSION)" bash packaging/build-functional-languages.sh

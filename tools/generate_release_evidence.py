@@ -366,10 +366,15 @@ def workflow_run_url() -> str:
 
 def artifact_integrity_note(relative_path: str) -> str:
     name = Path(relative_path).name
-    if name.startswith(("sshfling-nushell-", "sshfling-powershell-", "sshfling-guix-scheme-")):
+    if name.startswith(("sshfling-nushell-", "sshfling-powershell-")):
         return (
             "Artifact-integrity PASS only. This source archive is runtime-gated; publication does not assert "
             "interpreter runtime PASS. Consult the scripting-language validation TSV for per-check status."
+        )
+    if name.startswith("sshfling-guix-scheme-"):
+        return (
+            "Artifact-integrity PASS. Guile runtime and Guix package-definition dry-run PASS evidence is "
+            "recorded in the scripting-language validation TSV."
         )
     if name.startswith("sshfling-scripting-languages-") and name.endswith("-validation.tsv"):
         return (

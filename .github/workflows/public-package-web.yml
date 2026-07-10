@@ -432,7 +432,8 @@ jobs:
           python3 tools/validate_promoted_language_evidence.py \
             --version "$version" \
             --functional "package-dist/sshfling-functional-languages-${version}-validation.tsv" \
-            --systems "package-dist/sshfling-systems-languages-${version}-validation.tsv"
+            --systems "package-dist/sshfling-systems-languages-${version}-validation.tsv" \
+            --scripting "package-dist/sshfling-scripting-languages-${version}-validation.tsv"
           mapfile -t catalog_files < <(
             bash packaging/list-language-release-artifacts.sh "$version" catalog
           )
@@ -565,7 +566,7 @@ jobs:
             echo "Version: ${{ needs.linux.outputs.version }}"
             echo "Ref: ${GITHUB_REF_NAME}"
             echo "Commit: ${GITHUB_SHA}"
-            echo "PowerShell, Nushell, and Guix Scheme source archives are runtime-gated; their publication does not assert runtime PASS. Per-check status is recorded in sshfling-scripting-languages-${{ needs.linux.outputs.version }}-validation.tsv."
+            echo "PowerShell and Nushell source archives are runtime-gated; their publication does not assert runtime PASS. Guix Scheme records package-definition PASS in sshfling-scripting-languages-${{ needs.linux.outputs.version }}-validation.tsv."
             if [[ -f public/sshfling-repo-fingerprint.txt ]]; then
               echo "Repository signing fingerprint: \`$(tr -d '[:space:]' < public/sshfling-repo-fingerprint.txt)\`"
             fi
@@ -742,7 +743,7 @@ jobs:
           grep -Fq "sshfling-systems-languages-${VERSION}-validation.tsv" "$tmp/index.html"
           grep -Fq "Runtime-gated: Nushell" "$tmp/index.html"
           grep -Fq "Runtime-gated: PowerShell" "$tmp/index.html"
-          grep -Fq "Runtime-gated: Guix Scheme" "$tmp/index.html"
+          grep -Fq "Validated: Guix Scheme" "$tmp/index.html"
           forbidden_apt="trusted=""yes"
           forbidden_rpm="gpgcheck=""0"
           ! grep -R -I -F -e "$forbidden_apt" -e "$forbidden_rpm" "$tmp"

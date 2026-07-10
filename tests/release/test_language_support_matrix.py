@@ -282,16 +282,11 @@ class LanguageSupportMatrixTests(unittest.TestCase):
             "Elvish": "packaging/shell-languages/elvish/sshfling.elv",
             "Nushell": "packaging/shell-languages/nushell/sshfling.nu",
             "PowerShell": "packaging/shell-languages/powershell/SSHFling.psm1",
-        }
-        blocked_sources = {
             "Guix Scheme": "packaging/guix-scheme/sshfling-package.scm",
         }
 
         for language, source_path in pass_sources.items():
             self.assertEqual(status_value(rows_by_language[language]).upper(), "PASS")
-            self.assertTrue((REPO_ROOT / source_path).is_file(), source_path)
-        for language, source_path in blocked_sources.items():
-            self.assertEqual(status_value(rows_by_language[language]).upper(), "BLOCKED")
             self.assertTrue((REPO_ROOT / source_path).is_file(), source_path)
 
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")

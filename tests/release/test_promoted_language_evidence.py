@@ -72,6 +72,40 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
                     }
                 )
 
+    def write_scripting(
+        self,
+        path: Path,
+        blocked: tuple[str, str] | None = None,
+        missing: tuple[str, str] | None = None,
+        wrong_version: tuple[str, str] | None = None,
+    ) -> None:
+        with path.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream, delimiter="\t", lineterminator="\n")
+            writer.writerow(["RESULT", "batch", "source-version", "PASS", "0.1.16"])
+            for language in validator.SCRIPTING_LANGUAGES:
+                for phase in validator.SCRIPTING_LIFECYCLE_PHASES:
+                    if missing == (language, phase):
+                        continue
+                    status = "SKIP" if blocked == (language, phase) else "PASS"
+                    version = "9.9.9" if wrong_version == (language, phase) else "0.1.16"
+                    detail = "checked=yes"
+                    if phase == "package-archive":
+                        detail = (
+                            f"artifact=sshfling-{language}-{version}.tar.gz;"
+                            f"sha256={'c' * 64};repeat_build=identical;source_date_epoch=0"
+                        )
+                    elif phase in {"package-cli-version", "symlink-cli-version"}:
+                        detail = f"sshfling {version}"
+                    elif phase == "guile-runtime":
+                        detail = f"sshfling {version}; init-assets=24"
+                    elif phase == "guix-definition":
+                        detail = "guix-dry-run"
+                    elif phase == "removal":
+                        detail = f"isolated-prefix-absent=/tmp/sshfling-{language}-{version}"
+                    elif phase == "removal-source":
+                        detail = "guile-module-and-guix-definition-absent"
+                    writer.writerow(["RESULT", language, phase, status, detail])
+
     def write_systems(
         self,
         path: Path,
@@ -137,19 +171,23 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
             root = Path(temporary)
             functional = root / "functional.tsv"
             systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
             self.write_functional(functional)
             self.write_systems(systems)
-            self.assertEqual(validator.validate(functional, systems, "0.1.16"), [])
+            self.write_scripting(scripting)
+            self.assertEqual(validator.validate(functional, systems, scripting, "0.1.16"), [])
 
     def test_rejects_blocked_functional_outcome(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             functional = root / "functional.tsv"
             systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
             self.write_functional(functional, blocked="julia")
             self.write_systems(systems)
+            self.write_scripting(scripting)
             self.assertTrue(
-                any("julia" in error for error in validator.validate(functional, systems, "0.1.16"))
+                any("julia" in error for error in validator.validate(functional, systems, scripting, "0.1.16"))
             )
 
     def test_rejects_missing_system_lifecycle_phase(self) -> None:
@@ -157,9 +195,11 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
             root = Path(temporary)
             functional = root / "functional.tsv"
             systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
             self.write_functional(functional)
             self.write_systems(systems, blocked=("v", "uninstall"))
-            errors = validator.validate(functional, systems, "0.1.16")
+            self.write_scripting(scripting)
+            errors = validator.validate(functional, systems, scripting, "0.1.16")
             self.assertTrue(any("v: uninstall is not PASS" == error for error in errors))
 
     def test_rejects_missing_swift_lifecycle_phase(self) -> None:
@@ -167,9 +207,11 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
             root = Path(temporary)
             functional = root / "functional.tsv"
             systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
             self.write_functional(functional)
             self.write_systems(systems, missing=("swift", "uninstall-import"))
-            errors = validator.validate(functional, systems, "0.1.16")
+            self.write_scripting(scripting)
+            errors = validator.validate(functional, systems, scripting, "0.1.16")
             self.assertIn("swift: uninstall-import is not PASS", errors)
 
     def test_rejects_blocked_swift_lifecycle_phase(self) -> None:
@@ -177,9 +219,11 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
             root = Path(temporary)
             functional = root / "functional.tsv"
             systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
             self.write_functional(functional)
             self.write_systems(systems, blocked=("swift", "isolated-consumer"))
-            errors = validator.validate(functional, systems, "0.1.16")
+            self.write_scripting(scripting)
+            errors = validator.validate(functional, systems, scripting, "0.1.16")
             self.assertIn("swift: isolated-consumer is not PASS", errors)
             self.assertIn("swift: contradictory systems failure evidence", errors)
 
@@ -188,9 +232,11 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
             root = Path(temporary)
             functional = root / "functional.tsv"
             systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
             self.write_functional(functional)
             self.write_systems(systems, incomplete_capabilities="swift")
-            errors = validator.validate(functional, systems, "0.1.16")
+            self.write_scripting(scripting)
+            errors = validator.validate(functional, systems, scripting, "0.1.16")
             self.assertIn("swift: runtime capability evidence is incomplete", errors)
 
     def test_rejects_evidence_for_a_different_version(self) -> None:
@@ -198,9 +244,11 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
             root = Path(temporary)
             functional = root / "functional.tsv"
             systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
             self.write_functional(functional)
             self.write_systems(systems)
-            errors = validator.validate(functional, systems, "9.9.9")
+            self.write_scripting(scripting)
+            errors = validator.validate(functional, systems, scripting, "9.9.9")
             self.assertTrue(any("version" in error or "output" in error for error in errors))
 
     def test_rejects_mismatched_functional_actual_output(self) -> None:
@@ -208,9 +256,11 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
             root = Path(temporary)
             functional = root / "functional.tsv"
             systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
             self.write_functional(functional, wrong_output="julia")
             self.write_systems(systems)
-            errors = validator.validate(functional, systems, "0.1.16")
+            self.write_scripting(scripting)
+            errors = validator.validate(functional, systems, scripting, "0.1.16")
             self.assertIn("julia: lacks exact version 0.1.16 output evidence", errors)
 
     def test_rejects_contradictory_zig_phase_rows(self) -> None:
@@ -218,17 +268,49 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
             root = Path(temporary)
             functional = root / "functional.tsv"
             systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
             self.write_functional(functional)
             self.write_systems(systems, contradictory_zig=True)
-            errors = validator.validate(functional, systems, "0.1.16")
+            self.write_scripting(scripting)
+            errors = validator.validate(functional, systems, scripting, "0.1.16")
             self.assertIn("zig: cli-version is not PASS", errors)
             self.assertIn("zig: contradictory systems failure evidence", errors)
+
+    def test_rejects_missing_guix_definition_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            functional = root / "functional.tsv"
+            systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
+            self.write_functional(functional)
+            self.write_systems(systems)
+            self.write_scripting(scripting, missing=("guix-scheme", "guix-definition"))
+            errors = validator.validate(functional, systems, scripting, "0.1.16")
+            self.assertIn("guix-scheme: guix-definition is not PASS", errors)
+            self.assertIn(
+                "guix-scheme: guix package-definition evidence is not dry-run",
+                errors,
+            )
+
+    def test_rejects_skipped_guix_definition_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            functional = root / "functional.tsv"
+            systems = root / "systems.tsv"
+            scripting = root / "scripting.tsv"
+            self.write_functional(functional)
+            self.write_systems(systems)
+            self.write_scripting(scripting, blocked=("guix-scheme", "guix-definition"))
+            errors = validator.validate(functional, systems, scripting, "0.1.16")
+            self.assertIn("guix-scheme: guix-definition is not PASS", errors)
+            self.assertIn("guix-scheme: contradictory scripting failure evidence", errors)
 
     def test_release_workflows_depend_on_strict_catalog_evidence(self) -> None:
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn("package-language-catalog-strict:", makefile)
         self.assertIn("validate_promoted_language_evidence.py", makefile)
         self.assertIn('--version "$(VERSION)"', makefile)
+        self.assertIn("--scripting", makefile)
 
         runtime_workflow = (
             REPO_ROOT / ".github/workflows/language-runtime-validation.yml"
@@ -236,6 +318,8 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
         self.assertIn("tools/provision-promoted-language-runtimes.sh", runtime_workflow)
         self.assertIn("make package-language-catalog-strict", runtime_workflow)
         self.assertIn("name: language-catalog-packages", runtime_workflow)
+        self.assertIn("guix-daemon", runtime_workflow)
+        self.assertIn("guix liblua5.1", runtime_workflow)
 
         provisioner = (REPO_ROOT / "tools/provision-promoted-language-runtimes.sh").read_text(
             encoding="utf-8"
@@ -252,6 +336,7 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
             self.assertIn("uses: ./.github/workflows/language-runtime-validation.yml", workflow)
             self.assertIn("validate_promoted_language_evidence.py", workflow)
             self.assertIn('--version "$version"', workflow)
+            self.assertIn("--scripting", workflow)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,17 @@ from pathlib import Path
 
 
 FUNCTIONAL_LANGUAGES = ("julia", "j", "janet")
+SCRIPTING_LANGUAGES = ("guix-scheme",)
+SCRIPTING_LIFECYCLE_PHASES = (
+    "package-archive",
+    "package-cli-version",
+    "package-cli-init-assets",
+    "symlink-cli-version",
+    "guile-runtime",
+    "guix-definition",
+    "removal",
+    "removal-source",
+)
 SYSTEM_LANGUAGES = ("v", "webassembly-wasi", "odin", "pony", "swift")
 SYSTEM_BUILD_LANGUAGES = ("zig",)
 SYSTEM_LIFECYCLE_PHASES = (
@@ -105,6 +116,26 @@ def read_systems(path: Path) -> list[dict[str, str]]:
     return rows
 
 
+def read_scripting(path: Path) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    with path.open(encoding="utf-8", newline="") as stream:
+        reader = csv.reader(stream, delimiter="\t")
+        for row in reader:
+            if len(row) != 5:
+                raise ValueError(f"{path}: invalid scripting evidence row: {row!r}")
+            record, subject, phase, status, detail = row
+            rows.append(
+                {
+                    "record": record,
+                    "subject": subject,
+                    "phase": phase,
+                    "status": status,
+                    "detail": detail,
+                }
+            )
+    return rows
+
+
 def detail_fields(detail: str) -> dict[str, str]:
     fields: dict[str, str] = {}
     for item in detail.split(";"):
@@ -114,10 +145,16 @@ def detail_fields(detail: str) -> dict[str, str]:
     return fields
 
 
-def validate(functional_path: Path, systems_path: Path, version: str) -> list[str]:
+def validate(
+    functional_path: Path,
+    systems_path: Path,
+    scripting_path: Path,
+    version: str,
+) -> list[str]:
     errors: list[str] = []
     functional = read_functional(functional_path)
     systems = read_systems(systems_path)
+    scripting = read_scripting(scripting_path)
 
     canonical = [
         row
@@ -158,6 +195,45 @@ def validate(functional_path: Path, systems_path: Path, version: str) -> list[st
             errors.append(f"{language}: lacks exact version {version} output evidence")
         if any(row.get("result") in {"FAIL", "BLOCKED"} for row in selected):
             errors.append(f"{language}: contradictory functional FAIL/BLOCKED evidence")
+
+    scripting_versions = [
+        row
+        for row in scripting
+        if row.get("subject") == "batch" and row.get("phase") == "source-version"
+    ]
+    if (
+        len(scripting_versions) != 1
+        or scripting_versions[0].get("status") != "PASS"
+        or scripting_versions[0].get("detail") != version
+    ):
+        errors.append(f"scripting source version is not {version}")
+
+    for language in SCRIPTING_LANGUAGES:
+        selected = [row for row in scripting if row.get("subject") == language]
+        by_phase: dict[str, dict[str, str]] = {}
+        for phase in SCRIPTING_LIFECYCLE_PHASES:
+            phase_rows = [row for row in selected if row.get("phase") == phase]
+            if len(phase_rows) != 1 or phase_rows[0].get("status") != "PASS":
+                errors.append(f"{language}: {phase} is not PASS")
+            elif len(phase_rows) == 1:
+                by_phase[phase] = phase_rows[0]
+        archive = detail_fields(by_phase.get("package-archive", {}).get("detail", ""))
+        if archive.get("artifact") != f"sshfling-{language}-{version}.tar.gz":
+            errors.append(f"{language}: package archive is not version {version}")
+        if archive.get("repeat_build") != "identical":
+            errors.append(f"{language}: package archive is not reproducible")
+        if not re.fullmatch(r"[0-9a-f]{64}", archive.get("sha256", "")):
+            errors.append(f"{language}: package archive lacks a valid sha256")
+        for phase in ("package-cli-version", "symlink-cli-version", "guile-runtime"):
+            detail = by_phase.get(phase, {}).get("detail", "")
+            if f"sshfling {version}" not in detail:
+                errors.append(f"{language}: {phase} output is not sshfling {version}")
+        if by_phase.get("guix-definition", {}).get("detail") != "guix-dry-run":
+            errors.append(f"{language}: guix package-definition evidence is not dry-run")
+        if "absent" not in by_phase.get("removal-source", {}).get("detail", ""):
+            errors.append(f"{language}: removal evidence does not prove source absence")
+        if any(row.get("status") in {"FAIL", "BLOCKED", "INCOMPLETE", "SKIP"} for row in selected):
+            errors.append(f"{language}: contradictory scripting failure evidence")
 
     source_versions = [
         row
@@ -254,9 +330,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--functional", type=Path, required=True)
     parser.add_argument("--systems", type=Path, required=True)
+    parser.add_argument("--scripting", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        errors = validate(args.functional, args.systems, args.version)
+        errors = validate(args.functional, args.systems, args.scripting, args.version)
     except (OSError, ValueError) as exc:
         print(exc)
         return 1

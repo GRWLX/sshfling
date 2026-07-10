@@ -5,8 +5,8 @@ an explicit package manager or distribution mechanism, deployment type, interfac
 and artifact boundary. Maven and Gradle are separate JVM deployments, and real
 importable library surfaces are named rather than inferred from language names.
 
-Catalog outcomes: **59 PASS**, **16 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **141 explicit surface cells** (109 PASS, 16 BLOCKED, 16 NOT_APPLICABLE).
-Fully implemented runtime deployments retain **656 detailed PASS cells** across **82 surfaces**, including **67 validated library-capable surfaces**.
+Catalog outcomes: **60 PASS**, **15 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **141 explicit surface cells** (110 PASS, 15 BLOCKED, 16 NOT_APPLICABLE).
+Fully implemented runtime deployments retain **664 detailed PASS cells** across **83 surfaces**, including **68 validated library-capable surfaces**.
 
 A source-archive publication PASS proves deterministic archive creation and inventory
 only. It is deliberately separate from install, library-consumer, CLI, and runtime
@@ -115,9 +115,9 @@ TODO status audit: **0 row(s) differ** from current package evidence (none). The
 | C91-057-01 | 57 | Zsh | source archive | sourceable shell module package | source module + CLI | sshfling-zsh-VERSION.tar.gz | PASS | PASS | PASS | The package-scripting-languages validator supplies the detailed PASS evidence below. |
 | C91-058-01 | 58 | Fish | source archive | sourceable shell module package | source module + CLI | sshfling-fish-VERSION.tar.gz | PASS | PASS | PASS | The package-scripting-languages validator supplies the detailed PASS evidence below. |
 | C91-059-01 | 59 | Nix | Nix flakes | flake package and app | CLI | nix build .#default result | PASS | PASS | PASS | Cross-OS CI builds the generated flake in a pinned Nix container and executes its result. |
-| C91-060-01 | 60 | Guix Scheme | Guile source module | versioned Guile module package | library + CLI | sshfling-guix-scheme-VERSION.tar.gz | PASS | BLOCKED | BLOCKED | The scripting batch builds the archive and CI requires a PASS Guile runtime row at VERSION=0.1.16. |
-| C91-060-02 | 60 | Guix Scheme | source archive | versioned source-archive publication | source package | sshfling-guix-scheme-VERSION.tar.gz | PASS | BLOCKED | BLOCKED | PASS package-archive is recorded for guix-scheme in dist/sshfling-scripting-languages-VERSION-validation.tsv. |
-| C91-060-03 | 60 | Guix Scheme | Guix | Guix package definition | library + CLI package | sshfling-guix-scheme-VERSION.tar.gz | BLOCKED | BLOCKED | BLOCKED | BLOCKED runtime-validation: the archive and Guile module pass, but the validation TSV records guix-definition SKIP because guix is unavailable |
+| C91-060-01 | 60 | Guix Scheme | Guile source module | versioned Guile module package | library + CLI | sshfling-guix-scheme-VERSION.tar.gz | PASS | PASS | PASS | The scripting batch builds the archive and CI requires a PASS Guile runtime row at VERSION=0.1.16. |
+| C91-060-02 | 60 | Guix Scheme | Guix | Guix package definition | library + CLI package | sshfling-guix-scheme-VERSION.tar.gz | PASS | PASS | PASS | The scripting batch validates the Guile module and records guix-definition PASS from guix build --dry-run --no-substitutes. |
+| C91-060-03 | 60 | Guix Scheme | source archive | versioned source-archive publication | source package | sshfling-guix-scheme-VERSION.tar.gz | PASS | PASS | PASS | PASS package-archive is recorded for guix-scheme in dist/sshfling-scripting-languages-VERSION-validation.tsv. |
 | C91-061-01 | 61 | Solidity | Foundry/Hardhat | EVM contract package | no library or CLI surface | none | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE: smart-contract bytecode cannot launch a host process |
 | C91-062-01 | 62 | Vyper | Vyper/EVM tooling | EVM contract package | no library or CLI surface | none | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE: smart-contract bytecode cannot launch a host process |
 | C91-063-01 | 63 | Move | Move package | Move VM package | no library or CLI surface | none | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE: Move modules cannot launch a host process |
@@ -250,6 +250,7 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | pony-corral-library | Pony | Corral | Pony package and executable | library + CLI | sshfling-pony-VERSION.tar.gz | `package-systems-languages` |
 | dart-native-cli-consumer | Dart | pub + npm | compiled server-side adapter | native CLI consumer | sshfling-VERSION.tgz plus sshfling-dart-consumer executable | `package-web-language-consumers` |
 | swift-swiftpm-library | Swift | SwiftPM | Swift package dependency and executable | library + CLI | sshfling-swift-VERSION.tar.gz | `package-systems-languages` |
+| guix-scheme-guix-package | Guix Scheme | Guix | Guix package definition | library + CLI package | sshfling-guix-scheme-VERSION.tar.gz | `package-scripting-languages` |
 
 ## Detailed Eight-Check Verification Cells
 
@@ -911,3 +912,11 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | LD-82-06 | Swift | SwiftPM | Swift package dependency and executable | library + CLI | Public interface | PASS | The Swift library exposes argument-array execution and the package provides a matching executable command. |
 | LD-82-07 | Swift | SwiftPM | Swift package dependency and executable | library + CLI | Version contract | PASS | The hosted SwiftPM consumer and packaged command each report the exact release output sshfling VERSION. |
 | LD-82-08 | Swift | SwiftPM | Swift package dependency and executable | library + CLI | Runtime assets/workflow | PASS | The consumer and CLI validate version, init, invalid option, missing runtime, source archive extraction, removal, and import absence. |
+| LD-83-01 | Guix Scheme | Guix | Guix package definition | library + CLI package | Source surface | PASS | Tracked Guix Scheme package sources and its public surface live under packaging/guix-scheme. |
+| LD-83-02 | Guix Scheme | Guix | Guix package definition | library + CLI package | Package metadata | PASS | package-metadata.json declares the Guile module, Guix definition, CLI, runtime, and templates. |
+| LD-83-03 | Guix Scheme | Guix | Guix package definition | library + CLI package | Package build | PASS | The scripting batch validates the Guile module and records guix-definition PASS from guix build --dry-run --no-substitutes. |
+| LD-83-04 | Guix Scheme | Guix | Guix package definition | library + CLI package | Artifact contents | PASS | The deterministic archive contains the rendered Guile module, package definition, command, runtime, and templates. |
+| LD-83-05 | Guix Scheme | Guix | Guix package definition | library + CLI package | Isolated consumer | PASS | A clean Guile process imports the extracted module, and Guix resolves the package definition from the same staged prefix. |
+| LD-83-06 | Guix Scheme | Guix | Guix package definition | library + CLI package | Public interface | PASS | The Guix package definition exposes the versioned launcher module and CLI package boundary. |
+| LD-83-07 | Guix Scheme | Guix | Guix package definition | library + CLI package | Version contract | PASS | The focused Guix Scheme consumer must print the exact SSHFling release version. |
+| LD-83-08 | Guix Scheme | Guix | Guix package definition | library + CLI package | Runtime assets/workflow | PASS | The packaged CLI validates version, init assets, removal, post-removal module absence, and package-definition dry-run behavior. |

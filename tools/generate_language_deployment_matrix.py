@@ -1879,6 +1879,31 @@ _swift_deployment["validation_evidence"] = (
 )
 DEPLOYMENTS.append(_swift_deployment)
 
+DEPLOYMENTS.append(
+    validated_batch_package(
+        "guix-scheme-guix-package",
+        "Guix Scheme",
+        "Guix",
+        "Guix package definition",
+        "library + CLI package",
+        "sshfling-guix-scheme-VERSION.tar.gz",
+        "package-scripting-languages",
+        "packaging/guix-scheme",
+        [
+            "packaging/guix-scheme/package-metadata.json",
+            "packaging/guix-scheme/sshfling.scm",
+            "packaging/guix-scheme/sshfling-package.scm",
+            "packaging/build-scripting-languages.sh",
+        ],
+        "package-metadata.json declares the Guile module, Guix definition, CLI, runtime, and templates.",
+        "The scripting batch validates the Guile module and records guix-definition PASS from guix build --dry-run --no-substitutes.",
+        "The deterministic archive contains the rendered Guile module, package definition, command, runtime, and templates.",
+        "A clean Guile process imports the extracted module, and Guix resolves the package definition from the same staged prefix.",
+        "The Guix package definition exposes the versioned launcher module and CLI package boundary.",
+        "The packaged CLI validates version, init assets, removal, post-removal module absence, and package-definition dry-run behavior.",
+    )
+)
+
 
 FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Python", "PASS"),
@@ -1940,7 +1965,7 @@ FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Zsh", "PASS"),
     ("Fish", "PASS"),
     ("Nix", "PASS"),
-    ("Guix Scheme", "BLOCKED"),
+    ("Guix Scheme", "PASS"),
     ("Solidity", "NOT_APPLICABLE"),
     ("Vyper", "NOT_APPLICABLE"),
     ("Move", "NOT_APPLICABLE"),
@@ -2087,7 +2112,7 @@ CATALOG_SURFACES = [
 ]
 
 # Guix Scheme predates the two batch source-archive publishers but has the same
-# split contract: archive and Guile-module checks pass while Guix itself is gated.
+# split contract: source publication remains distinct from runtime/package checks.
 CATALOG_SURFACES.append(
     catalog_surface(
         "guix-scheme-source-archive",
@@ -2098,7 +2123,7 @@ CATALOG_SURFACES.append(
         "sshfling-guix-scheme-VERSION.tar.gz",
         "PASS",
         "PASS package-archive is recorded for guix-scheme in dist/sshfling-scripting-languages-VERSION-validation.tsv.",
-        "Archive publication does not claim that guix build validated the package definition.",
+        "Archive publication is separate from the Guile and Guix package-definition runtime checks.",
         ["packaging/guix-scheme/package-metadata.json", "packaging/build-scripting-languages.sh"],
     )
 )
@@ -2244,16 +2269,6 @@ CATALOG_SURFACES.extend(
             "sshfling-smalltalk-VERSION.tar.gz",
             "source publication passes, but gst and gst-package are unavailable for install and consumer validation",
             ["packaging/functional-languages/smalltalk/package.xml", "packaging/functional-languages/smalltalk/src/SSHFling.st", "packaging/build-functional-languages.py"],
-        ),
-        blocked_runtime(
-            "guix-scheme-definition-runtime",
-            "Guix Scheme",
-            "Guix",
-            "Guix package definition",
-            "library + CLI package",
-            "sshfling-guix-scheme-VERSION.tar.gz",
-            "the archive and Guile module pass, but the validation TSV records guix-definition SKIP because guix is unavailable",
-            ["packaging/guix-scheme/sshfling-package.scm", "packaging/build-scripting-languages.sh"],
         ),
         blocked_runtime(
             "wasi-module-runtime",
@@ -2670,6 +2685,7 @@ def validate_matrix(
         "Mix",
         "SwiftPM",
         "Julia Pkg",
+        "Guix",
     ):
         if required not in package_managers:
             errors.append(f"missing required deployment manager: {required}")

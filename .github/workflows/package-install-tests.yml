@@ -45,7 +45,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            fish guile-3.0 liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 \
+            fish guile-3.0 guix liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 \
             luarocks mawk sed tcl zsh
 
       - name: Build and validate scripting language packages
@@ -79,6 +79,17 @@ jobs:
           chmod 0755 "$RUNNER_TEMP/powershell/pwsh"
           ln -s "$RUNNER_TEMP/powershell/pwsh" "$RUNNER_TEMP/sshfling-language-bin/pwsh"
           export PATH="$RUNNER_TEMP/sshfling-language-bin:$PATH"
+          sudo rm -f /var/guix/daemon-socket/socket
+          sudo install -d -m 0755 /var/guix/daemon-socket /gnu/store
+          sudo setsid guix-daemon \
+            --build-users-group=_guixbuild \
+            --listen=/var/guix/daemon-socket/socket \
+            >/tmp/sshfling-guix-daemon.log 2>&1 </dev/null &
+          for _ in $(seq 1 10); do
+            test -S /var/guix/daemon-socket/socket && break
+            sleep 1
+          done
+          test -S /var/guix/daemon-socket/socket
           bash packaging/build-scripting-languages.sh
           evidence="dist/sshfling-scripting-languages-$SSHFLING_VERSION-validation.tsv"
           test -s "$evidence"
@@ -97,10 +108,11 @@ jobs:
             $'elvish\tsource-runtime\tPASS' \
             $'nushell\tsource-runtime\tPASS' \
             $'powershell\tsource-runtime\tPASS' \
-            $'guix-scheme\tguile-runtime\tPASS'; do
+            $'guix-scheme\tguile-runtime\tPASS' \
+            $'guix-scheme\tguix-definition\tPASS'; do
             grep -F $'RESULT\t'"$expected"$'\t' "$evidence" >/dev/null
           done
-          for artifact in tcl awk sed lua zsh fish elvish nushell powershell; do
+          for artifact in tcl awk sed lua zsh fish elvish nushell powershell guix-scheme; do
             test -s "dist/sshfling-$artifact-$SSHFLING_VERSION.tar.gz"
           done
           test -s "dist/sshfling-$SSHFLING_VERSION-1.all.rock"

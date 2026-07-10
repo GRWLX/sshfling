@@ -223,7 +223,7 @@ my $status = SSHFling::run('--version');
 
 ## Generated First-91 Library Surface Index
 
-This index contains 76 explicit library/module surfaces: 65 PASS and 11 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
+This index contains 76 explicit library/module surfaces: 66 PASS and 10 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
 
 | Order | Language | Package manager | Deployment | Interface | Status | Artifact | Evidence or blocker |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
@@ -285,7 +285,7 @@ This index contains 76 explicit library/module surfaces: 65 PASS and 11 BLOCKED.
 | 57 | Zsh | source archive | sourceable shell module package | source module + CLI | PASS | sshfling-zsh-VERSION.tar.gz | The package-scripting-languages validator supplies the detailed PASS evidence below. |
 | 58 | Fish | source archive | sourceable shell module package | source module + CLI | PASS | sshfling-fish-VERSION.tar.gz | The package-scripting-languages validator supplies the detailed PASS evidence below. |
 | 60 | Guix Scheme | Guile source module | versioned Guile module package | library + CLI | PASS | sshfling-guix-scheme-VERSION.tar.gz | The scripting batch builds the archive and CI requires a PASS Guile runtime row at VERSION=0.1.16. |
-| 60 | Guix Scheme | Guix | Guix package definition | library + CLI package | BLOCKED | sshfling-guix-scheme-VERSION.tar.gz | BLOCKED runtime-validation: the archive and Guile module pass, but the validation TSV records guix-definition SKIP because guix is unavailable |
+| 60 | Guix Scheme | Guix | Guix package definition | library + CLI package | PASS | sshfling-guix-scheme-VERSION.tar.gz | The scripting batch validates the Guile module and records guix-definition PASS from guix build --dry-run --no-substitutes. |
 | 64 | WebAssembly/WASI | WASI component/source | host-imported WASI command module | CLI module | PASS | sshfling-webassembly-wasi-VERSION.tar.gz | The systems validator extracts the archive, compiles wasm32-wasi code, and runs it through the tracked Node host adapter. |
 | 65 | Elm | npm | Node port dependency | library consumer | PASS | sshfling-VERSION.tgz | elm make compiles a Platform.worker and its Node host validates the complete port round trip. |
 | 66 | PureScript | npm | Node FFI dependency | library consumer | PASS | sshfling-VERSION.tgz | The PureScript compiler validates the foreign imports and the generated module executes under Node. |

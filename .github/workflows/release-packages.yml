@@ -419,7 +419,8 @@ jobs:
           python3 tools/validate_promoted_language_evidence.py \
             --version "$version" \
             --functional "release-dist/sshfling-functional-languages-${version}-validation.tsv" \
-            --systems "release-dist/sshfling-systems-languages-${version}-validation.tsv"
+            --systems "release-dist/sshfling-systems-languages-${version}-validation.tsv" \
+            --scripting "release-dist/sshfling-scripting-languages-${version}-validation.tsv"
           mapfile -t catalog_files < <(
             bash packaging/list-language-release-artifacts.sh "$version" catalog
           )
@@ -537,7 +538,7 @@ jobs:
             echo "Commit: ${GITHUB_SHA}"
             echo "Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "Expected release artifacts: ${#required_files[@]}"
-            echo "PowerShell, Nushell, and Guix Scheme source archives are runtime-gated; their publication does not assert runtime PASS. Per-check status is recorded in sshfling-scripting-languages-${VERSION}-validation.tsv."
+            echo "PowerShell and Nushell source archives are runtime-gated; their publication does not assert runtime PASS. Guix Scheme records package-definition PASS in sshfling-scripting-languages-${VERSION}-validation.tsv."
             echo
             echo "| File | Bytes | SHA-256 |"
             echo "| --- | ---: | --- |"

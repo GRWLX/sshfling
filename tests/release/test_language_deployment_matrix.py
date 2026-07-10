@@ -128,6 +128,7 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "Julia",
             "V",
             "J",
+            "Guix Scheme",
             "WebAssembly/WASI",
             "Pony",
             "Janet",
@@ -291,11 +292,21 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "elvish-source-module",
             "nushell-source-module",
             "powershell-module-package",
+            "guix-scheme-guile-library",
+            "guix-scheme-guix-package",
         ):
             self.assertEqual(
                 deployments[deployment_id]["build_target"],
                 "package-scripting-languages",
             )
+        self.assertEqual(
+            deployments["guix-scheme-guix-package"]["package_manager"],
+            "Guix",
+        )
+        self.assertIn(
+            "guix-definition PASS",
+            deployments["guix-scheme-guix-package"]["validation_evidence"],
+        )
         for builder in ("build_tcl", "build_awk", "build_sed", "build_lua"):
             self.assertIn(builder, build_script)
         for language in ("zsh", "fish"):

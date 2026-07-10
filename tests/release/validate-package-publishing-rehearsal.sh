@@ -231,7 +231,7 @@ build_direct_downloads() {
     printf 'RESULT\tbatch\tsource-version\tPASS\t%s\n' "$version"
     printf 'RESULT\tnushell\tsource-runtime\tSKIP\trehearsal-runtime-not-installed\n'
     printf 'RESULT\tpowershell\tsource-runtime\tSKIP\trehearsal-runtime-not-installed\n'
-    printf 'RESULT\tguix-scheme\tguix-definition\tSKIP\trehearsal-runtime-not-installed\n'
+    printf 'RESULT\tguix-scheme\tguix-definition\tPASS\tguix-dry-run\n'
   } >"$package_dist/sshfling-scripting-languages-$version-validation.tsv"
   for catalog_file in "${catalog_files[@]}"; do
     printf 'language catalog artifact placeholder for release rehearsal: %s\n' "$catalog_file" \
@@ -309,7 +309,7 @@ write_package_site_evidence() {
     echo "Version: $version"
     echo "Repository: $repository"
     echo "Commit: $source_commit"
-    echo "PowerShell, Nushell, and Guix Scheme source archives are runtime-gated; their publication does not assert runtime PASS. Per-check status is recorded in sshfling-scripting-languages-$version-validation.tsv."
+    echo "PowerShell and Nushell source archives are runtime-gated; their publication does not assert runtime PASS. Guix Scheme records package-definition PASS in sshfling-scripting-languages-$version-validation.tsv."
     if [[ -f "$public_dir/sshfling-repo-fingerprint.txt" ]]; then
       echo "Repository signing fingerprint: \`$(tr -d '[:space:]' <"$public_dir/sshfling-repo-fingerprint.txt")\`"
     fi
@@ -413,7 +413,7 @@ done
 (cd "$unsigned_public/downloads" && sha256sum -c SHA256SUMS >/dev/null)
 grep -Fq "Runtime-gated: Nushell" "$unsigned_public/index.html"
 grep -Fq "Runtime-gated: PowerShell" "$unsigned_public/index.html"
-grep -Fq "Runtime-gated: Guix Scheme" "$unsigned_public/index.html"
+grep -Fq "Validated: Guix Scheme" "$unsigned_public/index.html"
 grep -Fq '(secure-wrap-program' "$unsigned_public/guix/sshfling.scm"
 grep -Fq 'unset BASH_ENV ENV CDPATH GLOBIGNORE' "$unsigned_public/guix/sshfling.scm"
 if grep -Fq '(wrap-program' "$unsigned_public/guix/sshfling.scm"; then

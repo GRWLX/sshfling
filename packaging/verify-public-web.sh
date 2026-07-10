@@ -494,7 +494,7 @@ for file in "${scripting_download_files[@]}"; do
 done
 require_contains "index.html" "Runtime-gated: Nushell"
 require_contains "index.html" "Runtime-gated: PowerShell"
-require_contains "index.html" "Runtime-gated: Guix Scheme"
+require_contains "index.html" "Validated: Guix Scheme"
 require_contains "index.html" "publication and artifact-integrity evidence are separate from optional interpreter runtime status"
 require_contains "index.html" "Functional, scientific, BEAM, and systems language packages"
 require_contains "index.html" "distinguish archive publication from toolchain-gated runtime results"
@@ -503,7 +503,7 @@ for file in "${catalog_download_files[@]}"; do
 done
 require_not_contains "index.html" "Nushell runtime PASS"
 require_not_contains "index.html" "PowerShell runtime PASS"
-require_not_contains "index.html" "Guix Scheme runtime PASS"
+require_contains "index.html" "Guix package-definition dry-run PASS"
 require_contains "index.html" "sudo pkgutil --forget ${pkg_identifier}"
 require_contains "index.html" "Start-Process msiexec.exe -Wait -PassThru -ArgumentList"
 require_contains "index.html" "SSHFling Maintainers"

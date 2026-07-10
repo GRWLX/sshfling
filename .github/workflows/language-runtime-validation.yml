@@ -54,7 +54,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            clang curl fish guile-3.0 liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 \
+            clang curl fish guile-3.0 guix liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 \
             luarocks mawk sed tcl unzip xz-utils zsh
 
       - name: Provision pinned promoted-language runtimes
@@ -69,6 +69,17 @@ jobs:
           SSHFLING_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
+          sudo rm -f /var/guix/daemon-socket/socket
+          sudo install -d -m 0755 /var/guix/daemon-socket /gnu/store
+          sudo setsid guix-daemon \
+            --build-users-group=_guixbuild \
+            --listen=/var/guix/daemon-socket/socket \
+            >/tmp/sshfling-guix-daemon.log 2>&1 </dev/null &
+          for _ in $(seq 1 10); do
+            test -S /var/guix/daemon-socket/socket && break
+            sleep 1
+          done
+          test -S /var/guix/daemon-socket/socket
           make package-language-catalog-strict VERSION="$SSHFLING_VERSION"
           while IFS= read -r artifact; do
             test -s "dist/$artifact"
