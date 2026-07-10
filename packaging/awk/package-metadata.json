@@ -1,0 +1,18 @@
+{
+  "name": "sshfling-awk",
+  "version": "0.0.0",
+  "surface": "cli-and-source-integration",
+  "library": false,
+  "runtime_requirement": "POSIX AWK and Python 3",
+  "interfaces": {
+    "source": "awk -f /prefix/share/sshfling/awk/sshfling.awk -f consumer.awk",
+    "source_configuration": "Set SSHFLING_PACKAGE_ROOT, or both SSHFLING_RUNTIME and SSHFLING_TEMPLATE_DIR",
+    "source_functions": "sshfling_version(), sshfling_runtime_path(), sshfling_template_dir(), sshfling_run(argv, argc)",
+    "cli": "/prefix/bin/sshfling ?arg ...?"
+  },
+  "classification_note": "AWK has source composition through repeated -f options but no standard package/import mechanism; this surface is intentionally not described as a library.",
+  "bundles": [
+    "canonical Python runtime",
+    "canonical deployment templates"
+  ]
+}

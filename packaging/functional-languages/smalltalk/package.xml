@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package>
+  <name>SSHFling</name>
+  <namespace>SSHFling</namespace>
+  <version>0.0.0</version>
+  <url>https://github.com/GRWLX/sshfling</url>
+  <filein>src/SSHFling.st</filein>
+  <file>runtime/sshfling.py</file>
+  <dir name="runtime/templates">
+    <file>.env.example</file>
+    <file>LICENSE</file>
+    <file>README.md</file>
+    <file>compose.server.yml</file>
+    <file>compose.client.yml</file>
+    <file>native/sshfling-linux-account</file>
+    <file>native/sshfling-unix-identity</file>
+    <file>scripts/install-local.sh</file>
+    <file>scripts/uninstall-local.sh</file>
+    <file>scripts/create-network.sh</file>
+    <file>scripts/generate-ssh-key.sh</file>
+    <file>secrets/.gitkeep</file>
+    <file>ssh-client/Dockerfile</file>
+    <file>ssh-client/entrypoint.sh</file>
+    <file>ssh-server/Dockerfile</file>
+    <file>ssh-server/entrypoint.sh</file>
+    <file>ssh-server/limited-session.sh</file>
+    <file>ssh-server/sshd_config</file>
+    <file>production/sshfling-login-shell</file>
+    <file>production/sshfling-session</file>
+    <file>systemd/sshflingd.service</file>
+    <file>systemd/sshfling-prune.service</file>
+    <file>systemd/sshfling-prune.timer</file>
+    <file>systemd/sshflingd.env.example</file>
+  </dir>
+  <test>
+    <filein>test/consumer.st</filein>
+  </test>
+</package>

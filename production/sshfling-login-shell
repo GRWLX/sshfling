@@ -1,0 +1,130 @@
+#!/bin/sh
+set -eu
+
+PATH='/usr/sbin:/usr/bin:/sbin:/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/run/current-system/profile/bin:/var/guix/profiles/system/profile/bin'
+IFS="$(command printf ' \t\n_')"
+IFS=${IFS%_}
+export IFS PATH
+unset BASH_ENV ENV CDPATH GLOBIGNORE LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT LD_DEBUG \
+  LD_PROFILE LD_ORIGIN_PATH DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH \
+  DYLD_FRAMEWORK_PATH LIBPATH SHLIB_PATH LDR_PRELOAD LDR_PRELOAD64 _RLD_LIST \
+  LOCPATH GCONV_PATH NLSPATH PROMPT_COMMAND PS4 SHELLOPTS BASHOPTS \
+  2>/dev/null || :
+
+expected_wrapper=@SSHFLING_SESSION_WRAPPER@
+expected_policy=@SSHFLING_POLICY_FILE@
+expected_bash=@SSHFLING_BASH@
+if [ "$expected_wrapper" = '@SSHFLING_SESSION_WRAPPER@' ]; then
+  expected_wrapper="${0%/*}/sshfling-session"
+fi
+if [ "$expected_policy" = '@SSHFLING_POLICY_FILE@' ]; then
+  expected_policy='/etc/sshfling/policy.json'
+fi
+if [ "$expected_bash" = '@SSHFLING_BASH@' ]; then
+  expected_bash=
+  for candidate in \
+    /bin/bash \
+    /usr/bin/bash \
+    /usr/local/bin/bash \
+    /opt/homebrew/bin/bash \
+    /opt/local/bin/bash \
+    /usr/pkg/bin/bash \
+    /run/current-system/sw/bin/bash \
+    /nix/var/nix/profiles/default/bin/bash \
+    /run/current-system/profile/bin/bash \
+    /var/guix/profiles/system/profile/bin/bash; do
+    if [ -x "$candidate" ]; then
+      expected_bash=$candidate
+      break
+    fi
+  done
+fi
+[ -n "$expected_bash" ] || {
+  echo 'sshfling-login-shell: trusted Bash is unavailable' >&2
+  exit 126
+}
+
+if [ "$#" -ne 2 ] || [ "$1" != '-c' ] || [ -z "$2" ]; then
+  echo 'sshfling-login-shell: an administrative forced command is required' >&2
+  exit 126
+fi
+
+case "$2" in
+  *[!A-Za-z0-9_./:@%+=,\ -]*)
+    echo 'sshfling-login-shell: rejected an unsafe forced command' >&2
+    exit 126
+    ;;
+esac
+
+set -f
+# The accepted alphabet excludes quoting and expansion characters, so splitting
+# produces the exact argv that the administrative CLI generated.
+# shellcheck disable=SC2086
+set -- $2
+
+valid_name() {
+  case "$1" in
+    ''|[!A-Za-z0-9_]*|*[!A-Za-z0-9_.@-]*) return 1 ;;
+  esac
+  [ "${#1}" -le 128 ]
+}
+
+valid_number() {
+  case "$1" in
+    ''|0*|*[!0-9]*) return 1 ;;
+  esac
+}
+
+valid_lifetime() {
+  valid_number "$1" && [ "${#1}" -le 5 ] && [ "$1" -le 86400 ]
+}
+
+actual_login_user=
+for id_command in \
+  /usr/bin/id \
+  /bin/id \
+  /usr/xpg4/bin/id \
+  /usr/pkg/bin/id \
+  /opt/local/bin/id \
+  /run/current-system/sw/bin/id \
+  /nix/var/nix/profiles/default/bin/id \
+  /run/current-system/profile/bin/id \
+  /var/guix/profiles/system/profile/bin/id; do
+  if [ -x "$id_command" ]; then
+    actual_login_user="$($id_command -un 2>/dev/null)" || actual_login_user=
+    [ -z "$actual_login_user" ] || break
+  fi
+done
+if ! valid_name "$actual_login_user"; then
+  echo 'sshfling-login-shell: could not identify the login user' >&2
+  exit 126
+fi
+unset id_command
+
+valid_command=0
+if [ "$#" -eq 9 ]; then
+  if [ "$1" = "$expected_wrapper" ] \
+    && [ "$2" = '--max-seconds' ] && valid_lifetime "$3" \
+    && [ "$4" = '--username' ] && valid_name "$5" \
+    && [ "$6" = '--login-user' ] && [ "$7" = "$actual_login_user" ] \
+    && [ "$8" = '--policy-file' ] && [ "$9" = "$expected_policy" ]; then
+    valid_command=1
+  fi
+elif [ "$#" -eq 13 ]; then
+  if [ "$1" = "$expected_wrapper" ] \
+    && [ "$2" = '--max-seconds' ] && valid_lifetime "$3" \
+    && [ "$4" = '--max-connections' ] && [ "$5" = 1 ] \
+    && [ "$6" = '--username' ] && [ "$7" = "$actual_login_user" ] \
+    && [ "$8" = '--login-user' ] && [ "$9" = "$actual_login_user" ] \
+    && [ "${10}" = '--policy-file' ] && [ "${11}" = "$expected_policy" ] \
+    && [ "${12}" = '--expires-at' ] && valid_number "${13}"; then
+    valid_command=1
+  fi
+fi
+
+if [ "$valid_command" -ne 1 ]; then
+  echo 'sshfling-login-shell: rejected an unrecognized forced command' >&2
+  exit 126
+fi
+
+exec "$expected_bash" -p "$@"

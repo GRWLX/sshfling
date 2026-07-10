@@ -33,6 +33,123 @@ jobs:
           version="$(bash packaging/resolve-version.sh "$INPUT_VERSION")"
           echo "version=$version" >>"$GITHUB_OUTPUT"
 
+  scripting-language-packages:
+    name: Scripting language packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: validate-version
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install language runtimes
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fish guile-3.0 liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 \
+            luarocks mawk sed tcl zsh
+
+      - name: Build and validate scripting language packages
+        env:
+          SSHFLING_VERSION: ${{ needs.validate-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          GOBIN="$RUNNER_TEMP/sshfling-language-bin" go install src.elv.sh/cmd/elvish@v0.21.0
+          nu_version=0.113.1
+          nu_archive="nu-$nu_version-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$nu_archive" \
+            "https://github.com/nushell/nushell/releases/download/$nu_version/$nu_archive"
+          curl -fsSL -o "$RUNNER_TEMP/nu-SHA256SUMS" \
+            "https://github.com/nushell/nushell/releases/download/$nu_version/SHA256SUMS"
+          (
+            cd "$RUNNER_TEMP"
+            grep "$nu_archive\$" nu-SHA256SUMS | sha256sum -c -
+            tar -xzf "$nu_archive" --wildcards '*/nu'
+          )
+          install -m 0755 "$(find "$RUNNER_TEMP" -type f -path '*/nu' -print -quit)" \
+            "$RUNNER_TEMP/sshfling-language-bin/nu"
+          pwsh_version=7.6.2
+          pwsh_archive="powershell-$pwsh_version-linux-x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$pwsh_archive" \
+            "https://github.com/PowerShell/PowerShell/releases/download/v$pwsh_version/$pwsh_archive"
+          printf '%s  %s\n' \
+            6cbcfbf20e376aa62ffd91c973493c41a7a52ddfd5a5db3ff9bc12f0d0fe9292 \
+            "$RUNNER_TEMP/$pwsh_archive" | sha256sum -c -
+          install -d "$RUNNER_TEMP/powershell"
+          tar -xzf "$RUNNER_TEMP/$pwsh_archive" -C "$RUNNER_TEMP/powershell"
+          chmod 0755 "$RUNNER_TEMP/powershell/pwsh"
+          ln -s "$RUNNER_TEMP/powershell/pwsh" "$RUNNER_TEMP/sshfling-language-bin/pwsh"
+          export PATH="$RUNNER_TEMP/sshfling-language-bin:$PATH"
+          bash packaging/build-scripting-languages.sh
+          evidence="dist/sshfling-scripting-languages-$SSHFLING_VERSION-validation.tsv"
+          test -s "$evidence"
+          ! grep -F $'\tFAIL\t' "$evidence"
+          for expected in \
+            $'tcl\tpackage-require-runtime\tPASS' \
+            $'awk\tsource-runtime\tPASS' \
+            $'sed\tsource-filter\tPASS' \
+            $'lua\tlua5.1-source-runtime\tPASS' \
+            $'lua\tlua5.4-source-runtime\tPASS' \
+            $'lua\tlua-5.1-luarocks-install\tPASS' \
+            $'lua\tlua-5.1-packed-rock-read-only-init\tPASS' \
+            $'lua\tlua-5.4-luarocks-install\tPASS' \
+            $'zsh\tsource-runtime\tPASS' \
+            $'fish\tsource-runtime\tPASS' \
+            $'elvish\tsource-runtime\tPASS' \
+            $'nushell\tsource-runtime\tPASS' \
+            $'powershell\tsource-runtime\tPASS' \
+            $'guix-scheme\tguile-runtime\tPASS'; do
+            grep -F $'RESULT\t'"$expected"$'\t' "$evidence" >/dev/null
+          done
+          for artifact in tcl awk sed lua zsh fish elvish nushell powershell; do
+            test -s "dist/sshfling-$artifact-$SSHFLING_VERSION.tar.gz"
+          done
+          test -s "dist/sshfling-$SSHFLING_VERSION-1.all.rock"
+
+  language-catalog-source-packages:
+    name: Functional and systems language source packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: validate-version
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build source packages and collect runtime-gate evidence
+        env:
+          SSHFLING_VERSION: ${{ needs.validate-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          make package-language-catalog VERSION="$SSHFLING_VERSION"
+          mapfile -t expected_files < <(
+            bash packaging/list-language-release-artifacts.sh "$SSHFLING_VERSION" all
+          )
+          printf '%s\n' "${expected_files[@]}" | sort >"$RUNNER_TEMP/expected-language-files.txt"
+          find dist -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort \
+            >"$RUNNER_TEMP/actual-language-files.txt"
+          diff -u "$RUNNER_TEMP/expected-language-files.txt" "$RUNNER_TEMP/actual-language-files.txt"
+          for file in "${expected_files[@]}"; do
+            test -s "dist/$file"
+          done
+          for evidence in dist/sshfling-*-languages-"$SSHFLING_VERSION"-validation.tsv; do
+            test -s "$evidence"
+            ! grep -Eq $'\t(FAIL|FAILED)\t' "$evidence"
+          done
+
+  dart-language-consumer:
+    name: Dart compiled server consumer
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: validate-version
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.12.2"
+      - name: Compile and run the typed Dart adapter
+        run: make package-dart-consumer VERSION="${{ needs.validate-version.outputs.version }}"
+
   linux-public-repos:
     name: Linux public repo installs
     runs-on: ubuntu-latest
@@ -162,12 +279,17 @@ jobs:
           set -euo pipefail
           docker run --rm -v "$PWD/tests/cross-os:/tests/cross-os:ro" opensuse/tumbleweed bash -lc 'set -euo pipefail
           zypper --non-interactive --gpg-auto-import-keys refresh >/dev/null
-          zypper --non-interactive --gpg-auto-import-keys install rpm-build curl tar gzip python3 openssh shadow procps util-linux >/dev/null
+          zypper --non-interactive --gpg-auto-import-keys install rpm-build curl tar gzip python3 jq openssh shadow procps util-linux >/dev/null
           mkdir -p /root/rpmbuild/SOURCES /root/rpmbuild/SPECS
           curl -fsSL https://grwlx.github.io/sshfling/downloads/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz -o /root/rpmbuild/SOURCES/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
           curl -fsSL https://grwlx.github.io/sshfling/opensuse/sshfling.spec -o /root/rpmbuild/SPECS/sshfling.spec
           rpmbuild --define "_topdir /root/rpmbuild" -ba /root/rpmbuild/SPECS/sshfling.spec >/tmp/opensuse-rpmbuild.log
           rpm -Uvh /root/rpmbuild/RPMS/noarch/sshfling-${{ needs.validate-version.outputs.version }}-1.noarch.rpm >/dev/null
+          test -x /usr/libexec/sshfling/sshfling-linux-account
+          test -x /usr/libexec/sshfling/sshfling-unix-identity
+          /usr/libexec/sshfling/sshfling-linux-account identity root | grep -Fq "status=present"
+          /usr/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq "uid=0"
+          bash /tests/cross-os/validate-native-session-policy.sh /usr/share/sshfling/templates/production/sshfling-session >/dev/null
           /tests/cross-os/validate-cli.sh sshfling "${{ needs.validate-version.outputs.version }}"'
 
   nix-flake:
@@ -188,7 +310,17 @@ jobs:
           docker run --rm -e NIX_CONFIG -v "$PWD/nix-test:/work" -v "$PWD/tests/cross-os:/tests/cross-os:ro" nixos/nix:2.24.9 sh -lc 'set -eu
           cd /work
           NIXPKGS_ALLOW_UNFREE=1 nix --extra-experimental-features "nix-command flakes" build --impure .#default -o result
-          nix --extra-experimental-features "nix-command flakes" shell nixpkgs#python3 -c /tests/cross-os/validate-cli.sh ./result/bin/sshfling "${{ needs.validate-version.outputs.version }}"'
+          runtime_path="$(nix-store -qR ./result | while IFS= read -r store_path; do
+            if [ -d "$store_path/bin" ]; then printf "%s:" "$store_path/bin"; fi
+          done)"
+          runtime_path=${runtime_path%:}
+          PATH="$runtime_path:$PATH"
+          export PATH
+          ./result/libexec/sshfling/sshfling-linux-account identity root | grep -Fq "status=present"
+          ./result/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq "uid=0"
+          bash /tests/cross-os/validate-native-login-shell.sh ./result/share/sshfling/templates/production/sshfling-login-shell >/dev/null
+          bash /tests/cross-os/validate-native-session-policy.sh ./result/share/sshfling/templates/production/sshfling-session >/dev/null
+          /tests/cross-os/validate-cli.sh ./result/bin/sshfling "${{ needs.validate-version.outputs.version }}"'
 
   slackware-slackbuild:
     name: Slackware SlackBuild
@@ -211,6 +343,9 @@ jobs:
           if command -v update-ca-certificates >/dev/null 2>&1; then update-ca-certificates >/tmp/update-ca-certificates.log 2>&1 || true; fi
           ssl_ca=/etc/ssl/certs/ca-certificates.crt
           test -s "$ssl_ca"
+          wget --ca-certificate="$ssl_ca" -qO /tmp/jq https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64
+          printf '%s  %s\n' 020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d /tmp/jq | sha256sum -c -
+          install -m 0755 /tmp/jq /usr/local/bin/jq
           wget --ca-certificate="$ssl_ca" -qO /tmp/python3.txz "$slackware_https_mirror/slackware64/d/python3-3.9.10-x86_64-1.txz"
           installpkg /tmp/python3.txz >/tmp/install-python3.log
           mkdir -p /tmp/slacktest
@@ -377,6 +512,15 @@ jobs:
           sudo installer -pkg "$pkg" -target /
           tests/cross-os/validate-cli.sh /usr/local/bin/sshfling "$version"
           /usr/local/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+          cmp native/sshfling-unix-identity /usr/local/libexec/sshfling/sshfling-unix-identity
+          cmp production/sshfling-login-shell /usr/local/share/sshfling/templates/production/sshfling-login-shell
+          cmp production/sshfling-session /usr/local/share/sshfling/templates/production/sshfling-session
+          test "$(stat -f '%Lp' /usr/local/libexec/sshfling/sshfling-unix-identity)" = 755
+          test "$(stat -f '%Lp' /usr/local/share/sshfling/templates/production/sshfling-login-shell)" = 755
+          test "$(stat -f '%Lp' /usr/local/share/sshfling/templates/production/sshfling-session)" = 755
+          brew install jq flock
+          tests/cross-os/validate-native-login-shell.sh /usr/local/share/sshfling/templates/production/sshfling-login-shell
+          tests/cross-os/validate-native-session-policy.sh /usr/local/share/sshfling/templates/production/sshfling-session
 
   macos-homebrew:
     name: Homebrew formula install
@@ -396,7 +540,13 @@ jobs:
           cp /tmp/sshfling.rb "$tap_dir/Formula/sshfling.rb"
           brew install grwlx/sshfling-test/sshfling
           tests/cross-os/validate-cli.sh sshfling "${{ needs.validate-version.outputs.version }}"
-          "$(brew --prefix grwlx/sshfling-test/sshfling)/libexec/sshfling/sshfling-unix-identity" identity root | grep -Fq 'uid=0'
+          formula_prefix="$(brew --prefix grwlx/sshfling-test/sshfling)"
+          "$formula_prefix/libexec/sshfling/sshfling-unix-identity" identity root | grep -Fq 'uid=0'
+          cmp native/sshfling-unix-identity "$formula_prefix/libexec/sshfling/sshfling-unix-identity"
+          cmp production/sshfling-login-shell "$(brew --prefix)/share/sshfling/templates/production/sshfling-login-shell"
+          cmp production/sshfling-session "$(brew --prefix)/share/sshfling/templates/production/sshfling-session"
+          tests/cross-os/validate-native-login-shell.sh "$(brew --prefix)/share/sshfling/templates/production/sshfling-login-shell"
+          tests/cross-os/validate-native-session-policy.sh "$(brew --prefix)/share/sshfling/templates/production/sshfling-session"
 
   windows-msi:
     name: Windows MSI install
@@ -583,7 +733,7 @@ jobs:
     name: Java executable JAR run
     runs-on: ubuntu-latest
     needs: validate-version
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
 
@@ -629,9 +779,74 @@ jobs:
           java -cp "$tmp/maven-consumer/target/classes:$tmp/sshfling-cli-${version}.jar" \
             io.sshfling.validation.MavenConsumer --version | grep -Fx "sshfling $version"
 
+          for language in kotlin scala groovy; do
+            case "$language" in
+              kotlin) main_class="io.sshfling.validation.KotlinConsumer" ;;
+              scala) main_class="io.sshfling.validation.ScalaConsumer" ;;
+              groovy) main_class="io.sshfling.validation.GroovyConsumer" ;;
+            esac
+            consumer_dir="$tmp/$language-consumer"
+            cp -R "packaging/java/consumers/$language" "$consumer_dir"
+            mvn -B -f "$consumer_dir/pom.xml" \
+              -Dmaven.repo.local="$tmp/m2" \
+              -Dsshfling.version="$version" \
+              -Dstyle.color=never \
+              package
+            mvn -B -q -f "$consumer_dir/pom.xml" \
+              -Dmaven.repo.local="$tmp/m2" \
+              -Dsshfling.version="$version" \
+              -Dstyle.color=never \
+              -Dexec.mainClass="$main_class" \
+              -Dexec.args=--version \
+              exec:java | grep -Fx "sshfling $version"
+          done
+
+          cp -R packaging/java/consumers/clojure "$tmp/clojure-consumer"
+          mvn -B -f "$tmp/clojure-consumer/pom.xml" \
+            -Dmaven.repo.local="$tmp/m2" \
+            -Dsshfling.version="$version" \
+            -Dstyle.color=never \
+            verify
+          mvn -B -q -f "$tmp/clojure-consumer/pom.xml" \
+            -Dmaven.repo.local="$tmp/m2" \
+            -Dsshfling.version="$version" \
+            -Dstyle.color=never \
+            -Dexec.mainClass=clojure.main \
+            -Dexec.args="-m io.sshfling.validation.clojure-consumer --version" \
+            exec:java | grep -Fx "sshfling $version"
+
           cp -R packaging/java/consumers/gradle "$tmp/gradle-consumer"
           packaging/java/gradlew --no-daemon --console=plain \
             -p "$tmp/gradle-consumer" \
+            -PsshflingVersion="$version" \
+            -PsshflingRepository="$tmp/m2" \
+            run --args=--version | grep -Fx "sshfling $version"
+
+          for language in kotlin scala groovy; do
+            case "$language" in
+              kotlin) class_file="build/classes/kotlin/main/io/sshfling/validation/KotlinGradleConsumer.class" ;;
+              scala) class_file="build/classes/scala/main/io/sshfling/validation/ScalaGradleConsumer.class" ;;
+              groovy) class_file="build/classes/groovy/main/io/sshfling/validation/GroovyGradleConsumer.class" ;;
+            esac
+            consumer_dir="$tmp/$language-gradle-consumer"
+            cp -R "packaging/java/consumers/$language-gradle" "$consumer_dir"
+            packaging/java/gradlew --no-daemon --console=plain \
+              -p "$consumer_dir" \
+              -PsshflingVersion="$version" \
+              -PsshflingRepository="$tmp/m2" \
+              run --args=--version | grep -Fx "sshfling $version"
+            test -s "$consumer_dir/$class_file"
+            javap -verbose "$consumer_dir/$class_file" | grep -F "major version: 55"
+          done
+
+          cp -R packaging/java/consumers/clojure-gradle "$tmp/clojure-gradle-consumer"
+          packaging/java/gradlew --no-daemon --console=plain \
+            -p "$tmp/clojure-gradle-consumer" \
+            -PsshflingVersion="$version" \
+            -PsshflingRepository="$tmp/m2" \
+            clean check
+          packaging/java/gradlew --no-daemon --console=plain \
+            -p "$tmp/clojure-gradle-consumer" \
             -PsshflingVersion="$version" \
             -PsshflingRepository="$tmp/m2" \
             run --args=--version | grep -Fx "sshfling $version"
@@ -640,7 +855,7 @@ jobs:
     name: Node.js npm package run
     runs-on: ubuntu-latest
     needs: validate-version
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
 
@@ -672,6 +887,9 @@ jobs:
             node -e 'const api = require("sshfling"); if (typeof api.run !== "function") throw new Error("CommonJS import failed");'
             node --input-type=module -e 'const mod = await import("sshfling"); const api = mod.default || mod; if (typeof api.run !== "function") throw new Error("ESM import failed");'
           )
+          SSHFLING_NPM_PACKAGE="$tmp/sshfling-${version}.tgz" \
+            bash packaging/build-web-language-consumers.sh \
+              react vue svelte angular elm purescript rescript html-css
           npm uninstall --prefix "$tmp/app" sshfling >/dev/null
           test ! -e "$tmp/app/node_modules/.bin/sshfling"
 

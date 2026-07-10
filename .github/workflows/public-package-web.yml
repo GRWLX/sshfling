@@ -29,6 +29,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  language-catalog:
+    name: Validated language catalog
+    uses: ./.github/workflows/language-runtime-validation.yml
+    with:
+      version: ${{ github.event.inputs.version || '' }}
+
   linux:
     name: Linux packages
     runs-on: ubuntu-latest
@@ -52,8 +58,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cargo cmake composer dpkg-dev file g++ make maven ninja-build php-cli \
-            php-zip pkg-config rpm ruby ruby-dev rust-clippy rustfmt zip
+            cargo cmake composer dpkg-dev elvish file fish g++ guile-3.0 \
+            liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 luarocks make mawk maven \
+            ninja-build php-cli php-zip pkg-config rpm ruby ruby-dev rust-clippy \
+            rustfmt sed tcl zip zsh
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -79,7 +87,10 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-          cache-dependency-path: packaging/java/pom.xml
+          cache-dependency-path: |
+            packaging/java/pom.xml
+            packaging/java/consumers/*/pom.xml
+            packaging/java/consumers/*/build.gradle.kts
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -129,6 +140,8 @@ jobs:
             dist/*.whl
             dist/*.crate
             dist/*.gem
+            dist/sshfling-${{ steps.version.outputs.version }}-1.all.rock
+            dist/*.tsv
             dist/*.zip
             dist/*.tar.gz
           if-no-files-found: error
@@ -387,6 +400,7 @@ jobs:
     outputs:
       publish: ${{ steps.package_site_mode.outputs.publish }}
     needs:
+      - language-catalog
       - linux
       - macos
       - windows
@@ -415,6 +429,13 @@ jobs:
             echo "Package tag '${GITHUB_REF_NAME}' does not match resolved package version '${version}'." >&2
             exit 1
           fi
+          python3 tools/validate_promoted_language_evidence.py \
+            --version "$version" \
+            --functional "package-dist/sshfling-functional-languages-${version}-validation.tsv" \
+            --systems "package-dist/sshfling-systems-languages-${version}-validation.tsv"
+          mapfile -t catalog_files < <(
+            bash packaging/list-language-release-artifacts.sh "$version" catalog
+          )
           cd package-dist
           required_files=(
             "sshfling_${version}_all.deb"
@@ -434,6 +455,19 @@ jobs:
             "sshfling-${version}.gem"
             "sshfling-native-${version}.tar.gz"
             "sshfling-perl-${version}.tar.gz"
+            "sshfling-tcl-${version}.tar.gz"
+            "sshfling-awk-${version}.tar.gz"
+            "sshfling-sed-${version}.tar.gz"
+            "sshfling-lua-${version}.tar.gz"
+            "sshfling-zsh-${version}.tar.gz"
+            "sshfling-fish-${version}.tar.gz"
+            "sshfling-elvish-${version}.tar.gz"
+            "sshfling-nushell-${version}.tar.gz"
+            "sshfling-powershell-${version}.tar.gz"
+            "sshfling-guix-scheme-${version}.tar.gz"
+            "sshfling-${version}-1.all.rock"
+            "sshfling-scripting-languages-${version}-validation.tsv"
+            "${catalog_files[@]}"
             "sshfling-${version}.pkg"
             "sshfling-${version}.msi"
             "sshfling-${version}-windows.zip"
@@ -531,6 +565,7 @@ jobs:
             echo "Version: ${{ needs.linux.outputs.version }}"
             echo "Ref: ${GITHUB_REF_NAME}"
             echo "Commit: ${GITHUB_SHA}"
+            echo "PowerShell, Nushell, and Guix Scheme source archives are runtime-gated; their publication does not assert runtime PASS. Per-check status is recorded in sshfling-scripting-languages-${{ needs.linux.outputs.version }}-validation.tsv."
             if [[ -f public/sshfling-repo-fingerprint.txt ]]; then
               echo "Repository signing fingerprint: \`$(tr -d '[:space:]' < public/sshfling-repo-fingerprint.txt)\`"
             fi
@@ -673,6 +708,18 @@ jobs:
           fetch rpm/repodata/repomd.xml.asc "$tmp/repomd.xml.asc"
           fetch downloads/SHA256SUMS "$tmp/downloads-SHA256SUMS"
 
+          : >"$tmp/deployed-SHA256SUMS"
+          while read -r expected_hash file; do
+            if [[ ! "$expected_hash" =~ ^[0-9a-f]{64}$ || ! "$file" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+              echo "Invalid deployed download checksum row: $expected_hash $file" >&2
+              exit 1
+            fi
+            fetch "downloads/$file" "$tmp/$file"
+            printf '%s  %s\n' "$expected_hash" "$file" >>"$tmp/deployed-SHA256SUMS"
+          done <"$tmp/downloads-SHA256SUMS"
+          test -s "$tmp/deployed-SHA256SUMS"
+          (cd "$tmp" && sha256sum -c deployed-SHA256SUMS)
+
           expected_fingerprint="$(tr -d '[:space:]' < "$tmp/sshfling-repo-fingerprint.txt" | tr '[:lower:]' '[:upper:]')"
           actual_fingerprint="$(gpg --batch --show-keys --with-colons "$tmp/sshfling-repo.asc" | awk -F: '/^fpr:/ {print toupper($10); exit}')"
           test -n "$expected_fingerprint"
@@ -690,6 +737,12 @@ jobs:
           grep -Fq "signed-by=/usr/share/keyrings/sshfling-repo.gpg" "$tmp/install.sh"
           grep -Fq "repo_gpgcheck=1" "$tmp/install.sh"
           grep -Fq "sshfling-${VERSION}.tar.gz" "$tmp/downloads-SHA256SUMS"
+          grep -Fq "sshfling-scripting-languages-${VERSION}-validation.tsv" "$tmp/index.html"
+          grep -Fq "sshfling-functional-languages-${VERSION}-validation.tsv" "$tmp/index.html"
+          grep -Fq "sshfling-systems-languages-${VERSION}-validation.tsv" "$tmp/index.html"
+          grep -Fq "Runtime-gated: Nushell" "$tmp/index.html"
+          grep -Fq "Runtime-gated: PowerShell" "$tmp/index.html"
+          grep -Fq "Runtime-gated: Guix Scheme" "$tmp/index.html"
           forbidden_apt="trusted=""yes"
           forbidden_rpm="gpgcheck=""0"
           ! grep -R -I -F -e "$forbidden_apt" -e "$forbidden_rpm" "$tmp"

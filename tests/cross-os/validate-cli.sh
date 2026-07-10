@@ -640,6 +640,7 @@ for rel in \
   ssh-server/entrypoint.sh \
   ssh-server/limited-session.sh \
   ssh-server/sshd_config \
+  production/sshfling-login-shell \
   production/sshfling-session \
   systemd/sshflingd.service \
   systemd/sshfling-prune.service \
@@ -655,6 +656,11 @@ grep -Fq "SSHFLING_MAX_SECONDS=86400" "$project/systemd/sshflingd.env.example" |
 grep -Fq "max_allowed_seconds=86400" "$project/production/sshfling-session" || fail "production wrapper did not allow 24h sessions"
 if grep -Eq 'python3|python' "$project/production/sshfling-session"; then
   fail "production wrapper should use native shell policy parsing, not Python"
+fi
+grep -Fq 'unset BASH_ENV ENV' "$project/production/sshfling-login-shell" \
+  || fail "managed login shell did not clear startup-file environment variables"
+if grep -Eq 'python3|python' "$project/production/sshfling-login-shell"; then
+  fail "managed login shell should use native shell commands, not Python"
 fi
 if grep -Eq 'python3|python' "$project/native/sshfling-unix-identity"; then
   fail "Unix identity lookup should use native shell commands, not Python"
@@ -1186,6 +1192,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
         "set_user_password": sshfling.set_user_password,
         "resource_file": sshfling.resource_file,
         "install_file": sshfling.install_file,
+        "install_managed_login_shell": sshfling.install_managed_login_shell,
+        "provision_session_locks": sshfling.provision_session_locks,
         "write_if_changed": sshfling.write_if_changed,
         "write_password_grant_metadata": sshfling.write_password_grant_metadata,
         "reload_sshd": sshfling.reload_sshd,
@@ -1200,10 +1208,11 @@ with tempfile.TemporaryDirectory() as tmpdir:
         sshfling.require_root = lambda action: None
         sshfling.require_password_host_tools = lambda: None
         sshfling.unix_user_exists = lambda username: True
-        sshfling.ensure_unix_user = lambda username, allow_existing=False: {
+        sshfling.ensure_unix_user = lambda username, allow_existing=False, login_shell=None: {
             "user": username,
             "created": False,
             "allow_existing": allow_existing,
+            "login_shell": login_shell,
         }
         def capture_password(username, password):
             captured["password_user"] = username
@@ -1211,6 +1220,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
         sshfling.set_user_password = capture_password
         sshfling.resource_file = lambda relative: command_path
         sshfling.install_file = lambda *args, **kwargs: {"installed": True}
+        sshfling.install_managed_login_shell = lambda *args, **kwargs: {"installed_login_shell": True}
+        sshfling.provision_session_locks = lambda *args, **kwargs: {"session_locks": "provisioned"}
         sshfling.write_if_changed = lambda *args, **kwargs: {"changed": True}
         def capture_metadata(grant_dir, username, metadata, dry_run=False):
             captured["metadata"] = metadata
@@ -1486,15 +1497,29 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
     originals = {
         "require_root": sshfling.require_root,
+        "require_native_policy_parser": sshfling.require_native_policy_parser,
+        "require_native_session_lock_tool": sshfling.require_native_session_lock_tool,
+        "require_native_identity_backend": sshfling.require_native_identity_backend,
         "command_path": sshfling.command_path,
         "resource_file": sshfling.resource_file,
+        "install_managed_login_shell": sshfling.install_managed_login_shell,
+        "unix_user_identity": sshfling.unix_user_identity,
+        "provision_session_locks": sshfling.provision_session_locks,
         "validate_sshd_effective": sshfling.validate_sshd_effective,
     }
     try:
         sshfling.require_root = lambda action: None
+        sshfling.require_native_policy_parser = lambda dry_run=False: None
+        sshfling.require_native_session_lock_tool = lambda dry_run=False: None
+        sshfling.require_native_identity_backend = lambda: None
         command_paths = {"sshd": "/usr/sbin/sshd", "jq": "/usr/bin/jq"}
         sshfling.command_path = lambda name: command_paths.get(name)
         sshfling.resource_file = lambda relative: template
+        sshfling.install_managed_login_shell = lambda *args, **kwargs: {"installed_login_shell": True}
+        sshfling.unix_user_identity = lambda username: {
+            "username": username, "uid": 1234, "gid": 1234, "home": f"/home/{username}"
+        }
+        sshfling.provision_session_locks = lambda *args, **kwargs: {"session_locks": "provisioned"}
         def fail_validation(*args, **kwargs):
             raise sshfling.SSHFlingError("forced validation failure", 2)
         sshfling.validate_sshd_effective = fail_validation

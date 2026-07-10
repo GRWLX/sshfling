@@ -1,0 +1,19 @@
+{
+  "name": "sshfling-zsh",
+  "version": "0.0.0",
+  "surface": "zsh-source-module-and-cli",
+  "library": false,
+  "runtime_requirement": "Zsh 5.0 or newer and Python 3",
+  "interfaces": {
+    "source": "source /prefix/share/sshfling/zsh/sshfling.zsh",
+    "version": "sshfling_version",
+    "runtime_path": "sshfling_runtime_path",
+    "template_dir": "sshfling_template_dir",
+    "launch": "sshfling_run ?arg ...?",
+    "cli": "/prefix/bin/sshfling ?arg ...?"
+  },
+  "bundles": [
+    "canonical Python runtime",
+    "canonical deployment templates"
+  ]
+}

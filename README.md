@@ -164,10 +164,20 @@ Rules:
 Under the hood, password mode writes a temporary sshd `Match User` block that forces the timeout wrapper. Certificate mode uses OpenSSH user certificates and the same host-side timeout wrapper.
 
 OS-sensitive operations use native command backends: the forced-session wrapper
-parses policy with Bash and `jq`, UID/GID/home checks use a POSIX shell helper
-with `getent` or macOS directory services, and Linux account create/lock/delete
-uses a Bash helper around shadow tools. The shared CLI orchestration remains
-Python; privileged account and session-policy enforcement do not invoke Python.
+parses policy with Bash and `jq`, holds root-provisioned connection slots with
+`flock` or BSD/macOS `lockf`, UID/GID/home checks use a POSIX shell helper with
+`getent` or macOS directory services, and Linux account create/lock/delete uses
+a Bash helper around shadow tools. New managed accounts use the root-owned
+`sshfling-login-shell` POSIX dispatcher so user-owned Bash startup files,
+`BASH_ENV`, and an injected interpreter `PATH` cannot run before the managed
+session. The dispatcher accepts only the CLI-generated wrapper and policy path
+with the certificate or password argument shape; alternate commands, wrapper
+options, policies, and shell operators fail closed, then starts a root-selected
+Bash in privileged mode. Validated host and password setup also rejects user
+environment files and dangerous `AcceptEnv` patterns anywhere in the included
+`sshd` configuration, including address-specific matches and exported Bash
+functions. The shared CLI orchestration remains Python; privileged account and
+session-policy enforcement do not invoke Python.
 
 SSHFling also fits AI-assisted operations where the target server should not run an AI CLI, agent, SDK, or vendor daemon. An operator can grant a short-lived standard SSH session to a human or AI tool from a workstation, while the server continues to rely on OpenSSH, local policy, and a forced command wrapper for timeout enforcement. See [AI-assisted temporary server access](docs/ai-temporary-access.md) and [Codex and enterprise detached workflows](docs/codex-enterprise-workflow.md).
 
@@ -183,7 +193,7 @@ For production hosts, Docker is only a test harness. The normal production grant
 - `sudo sshfling -t 10m` creates a tracked temporary Unix password grant.
 - `sudo sshfling -t 10m --username ticket-1234` creates a shorter named password grant.
 - `sudo sshfling password prune --all` removes expired tracked password grants.
-- DEB/RPM package installs on systemd hosts enable `sshfling-prune.timer`, which periodically runs guarded password and certificate prune commands.
+- The repository DEB and primary RHEL-family RPM artifacts enable `sshfling-prune.timer` on systemd hosts, which periodically runs guarded password and certificate prune commands. Generated RPM ecosystem packages do not all carry these scriptlets.
 
 OpenSSH user certificates are available explicitly:
 
@@ -199,7 +209,14 @@ user CA. It replaces the existing CA keypair; hosts that trust the old public
 key and clients with certificates from the old CA need a planned trust update
 and certificate reissue.
 
-The issued certificate includes an OpenSSH `force-command` option that runs `sshfling-session` on the target host. That wrapper enforces the session wall-clock limit, so an already-connected SSH session is killed when its allowed time is reached.
+The issued certificate includes an OpenSSH `force-command` option that runs
+`sshfling-session` on the target host. The wrapper applies the session
+wall-clock limit and kills the command tree when the limit is reached. This is
+an operational control, not a sandbox against a hostile process running as the
+same Unix UID: such a process can signal the shell monitor or escape ordinary
+process-tree cleanup. Use a root-managed cgroup, systemd scope, PAM session
+control, or another privileged supervisor when the lifetime must be an
+unavoidable security boundary.
 
 ## Production Quick Start
 
@@ -411,7 +428,9 @@ Package-channel-specific uninstall commands are in
 Package uninstall removes SSHFling-managed package files for the selected
 install path. It does not remove host SSH configuration that was created with
 `sshfling host install`, temporary password grant state, local CA keys, or
-`/etc/sshfling` policy/config files. Dependency packages such as Python,
+`/etc/sshfling` policy/config files. Root-managed session lock slots in the
+platform state directory are also preserved so uninstall cannot replace an
+inode held by an active session. Dependency packages such as Python,
 OpenSSH client/server packages, account-management tools, `procps`, or
 `util-linux` are controlled by the host package manager and fleet policy;
 uninstall does not guarantee that dependency state is restored to the exact
@@ -499,6 +518,11 @@ account:
 sudo sshfling host uninstall --username temp-remote --delete-user --reload
 ```
 
+The root-owned `sshfling-login-shell` installed beside the session wrapper is
+preserved during host and package uninstall because a Unix passwd entry may
+still reference it. Remove it only after native account inspection confirms
+that no remaining user has that login-shell path.
+
 Clean up temporary password grants:
 
 ```bash
@@ -523,8 +547,8 @@ generated and tracked that material in the managed certificate session
 directory. It does not remove operator-supplied keys or certificates created
 outside that directory.
 
-On systemd hosts installed from DEB/RPM packages, check the automatic cleanup
-timer with:
+On systemd hosts installed from the repository DEB or primary RHEL-family RPM
+artifact, check the automatic cleanup timer with:
 
 ```bash
 systemctl status sshfling-prune.timer
@@ -589,8 +613,9 @@ Package outputs go to `dist/`.
   library need the .NET 10 SDK to build and Python 3/OpenSSH at run time. Clean
   C#, Visual Basic, and F# consumers validate the library package.
 - The Java executable, source, and Javadocs JARs need Maven, the pinned Gradle
-  wrapper, and JDK 11 or newer to build. Maven and Gradle library consumers
-  still require Python 3 and OpenSSH tools on the target host.
+  wrapper, and JDK 11 or newer to build. Java, Kotlin, Scala, and Groovy Maven
+  and Gradle library consumers still require Python 3 and OpenSSH tools on the
+  target host.
 - `sshfling-VERSION.tgz` needs Node.js 18 or newer and npm to build. The
   installed npm package still requires Python 3 and OpenSSH tools on the target
   host.

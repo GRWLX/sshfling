@@ -63,6 +63,7 @@ validate_library_consumer() {
     -- "$version" init "$smoke_project" --force --session-seconds 60 >/dev/null
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
   "$dotnet_cmd" remove "$consumer_project" package SSHFling
   if grep -Fq 'PackageReference Include="SSHFling"' "$consumer_project"; then
     echo "dotnet remove left the SSHFling library PackageReference in the $language consumer." >&2
@@ -105,6 +106,7 @@ packages = {
     sys.argv[1]: {
     "tools/net10.0/any/templates/native/sshfling-linux-account",
     "tools/net10.0/any/templates/native/sshfling-unix-identity",
+    "tools/net10.0/any/templates/production/sshfling-login-shell",
     "tools/net10.0/any/templates/systemd/sshfling-prune.service",
     "tools/net10.0/any/templates/systemd/sshfling-prune.timer",
     },
@@ -139,6 +141,7 @@ if [[ "${SSHFLING_DOTNET_SKIP_VALIDATE:-}" != "1" ]]; then
   test -x "$smoke_project/scripts/uninstall-local.sh"
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
   test -x "$smoke_project/production/sshfling-session"
   test -f "$smoke_project/secrets/.gitkeep"
 

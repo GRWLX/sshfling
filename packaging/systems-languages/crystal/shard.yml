@@ -1,0 +1,10 @@
+name: sshfling
+version: 0.0.0
+description: Crystal launcher API and CLI for the bundled SSHFling runtime
+authors:
+  - GRWLX
+license: LicenseRef-SSHFling-Commercial
+repository: https://github.com/GRWLX/sshfling
+targets:
+  sshfling-crystal:
+    main: src/cli.cr

@@ -40,6 +40,7 @@
     <Content Include="../../../ssh-server/entrypoint.sh" Link="templates/ssh-server/entrypoint.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../ssh-server/limited-session.sh" Link="templates/ssh-server/limited-session.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../ssh-server/sshd_config" Link="templates/ssh-server/sshd_config" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+    <Content Include="../../../production/sshfling-login-shell" Link="templates/production/sshfling-login-shell" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../production/sshfling-session" Link="templates/production/sshfling-session" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../systemd/sshflingd.service" Link="templates/systemd/sshflingd.service" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
     <Content Include="../../../systemd/sshfling-prune.service" Link="templates/systemd/sshfling-prune.service" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />

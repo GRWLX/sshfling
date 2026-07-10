@@ -76,7 +76,8 @@ SSHFling $Version package notes
 Runtime dependencies:
 - The MSI does not bundle Python, OpenSSH, or Windows OpenSSH Server.
 - Client commands require Python and OpenSSH client tools on PATH.
-- Server-side host setup requires the target host's OpenSSH server tooling.
+- The Windows MSI and portable ZIP are client-side artifacts.
+- Server-side host setup, password grants, account mutation, and forced-session enforcement must run on a supported Unix/Linux host with its OpenSSH server and native host tools.
 
 Uninstall and revert scope:
 - MSI uninstall removes files under the SSHFling install directory and the PATH entry added by the MSI.
@@ -109,6 +110,7 @@ $templateEntries = @(
   "ssh-server\entrypoint.sh",
   "ssh-server\limited-session.sh",
   "ssh-server\sshd_config",
+  "production\sshfling-login-shell",
   "production\sshfling-session",
   "systemd\sshflingd.service",
   "systemd\sshfling-prune.service",

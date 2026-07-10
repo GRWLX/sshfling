@@ -1,0 +1,20 @@
+{
+  "name": "sshfling-powershell",
+  "version": "0.0.0",
+  "surface": "powershell-module-and-cli",
+  "library": true,
+  "runtime_requirement": "PowerShell 7.2 or newer and Python 3",
+  "interfaces": {
+    "module": "Import-Module /prefix/share/powershell/Modules/SSHFling/SSHFling.psd1",
+    "version": "Get-SSHFlingVersion",
+    "runtime_path": "Get-SSHFlingRuntimePath",
+    "template_dir": "Get-SSHFlingTemplateDirectory",
+    "launch": "Invoke-SSHFling ?arg ...?",
+    "native_cli": "pwsh -File /prefix/bin/sshfling.ps1 ?arg ...?",
+    "posix_cli": "/prefix/bin/sshfling ?arg ...?"
+  },
+  "bundles": [
+    "canonical Python runtime",
+    "canonical deployment templates"
+  ]
+}

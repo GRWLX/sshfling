@@ -13,7 +13,8 @@ site that includes:
 - RHEL, Fedora, Rocky Linux, AlmaLinux, and UBI `.rpm` packages with RPM repo
   metadata.
 - A Homebrew formula, .NET global-tool and library `.nupkg` files, Java
-  executable/source/Javadocs JARs and POM with Maven and Gradle consumers,
+  executable/source/Javadocs JARs and POM with Java, Kotlin, Scala, and Groovy
+  Maven and Gradle consumers,
   Node.js npm `.tgz`, Python wheel, Go module zip, Rust `.crate`, PHP Composer
   zip, Ruby `.gem`, POSIX C/C++ native source distribution, Perl source
   distribution, macOS `.pkg`, Windows MSI, Windows portable zip, main source

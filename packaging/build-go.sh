@@ -82,6 +82,7 @@ build_archive() {
   unzip -Z1 "$archive_path" | grep -Fx "$project_name/runtime/templates/systemd/sshfling-prune.timer" >/dev/null
   unzip -Z1 "$archive_path" | grep -Fx "$project_name/runtime/templates/native/sshfling-linux-account" >/dev/null
   unzip -Z1 "$archive_path" | grep -Fx "$project_name/runtime/templates/native/sshfling-unix-identity" >/dev/null
+  unzip -Z1 "$archive_path" | grep -Fx "$project_name/runtime/templates/production/sshfling-login-shell" >/dev/null
   unzip -Z1 "$archive_path" | grep -Fx "$project_name/runtime/templates/secrets/.gitkeep" >/dev/null
 }
 
@@ -105,6 +106,7 @@ validate_archive_install() {
   test -x "$smoke_project/scripts/uninstall-local.sh"
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
   test -x "$smoke_project/production/sshfling-session"
   test -f "$smoke_project/secrets/.gitkeep"
 

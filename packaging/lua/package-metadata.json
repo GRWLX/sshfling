@@ -1,0 +1,21 @@
+{
+  "name": "sshfling-lua",
+  "version": "0.0.0",
+  "rock_version": "0.0.0-1",
+  "surface": "luarocks-library-and-cli",
+  "library": true,
+  "supported_platforms": ["POSIX"],
+  "runtime_requirement": "Lua 5.1 or newer and Python 3",
+  "interfaces": {
+    "load": "local sshfling = require(\"sshfling\")",
+    "version": "sshfling.version()",
+    "runtime_path": "sshfling.runtime_path()",
+    "template_dir": "sshfling.template_dir()",
+    "launch": "sshfling.run({arg1, ...})",
+    "cli": "sshfling ?arg ...?"
+  },
+  "bundles": [
+    "canonical Python runtime",
+    "canonical deployment templates"
+  ]
+}

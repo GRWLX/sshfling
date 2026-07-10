@@ -1,0 +1,42 @@
+PREFIX = @prefix@
+VERSION = @VERSION@
+GUILE = @GUILE@
+PKGDATADIR = @pkgdatadir@
+GUILEMODULEDIR = @guilemoduledir@
+GUILEOBJECTDIR = @guileobjectdir@
+PACKAGE = sshfling-guile-$(VERSION)
+RUNTIME_FILES := $(shell find runtime -type f -print | sort)
+
+.PHONY: all check install uninstall dist clean
+
+all: build/sshfling.go
+
+build/sshfling.go: module/sshfling.scm
+	mkdir -p build
+	GUILE_AUTO_COMPILE=0 $(GUILE) --no-auto-compile -c '(compile-file "module/sshfling.scm" #:output-file "build/sshfling.go")'
+
+check: all
+	GUILE_AUTO_COMPILE=0 GUILE_LOAD_PATH=module GUILE_LOAD_COMPILED_PATH=build $(GUILE) --no-auto-compile -c '(use-modules (sshfling)) (unless (procedure? run) (exit 1))'
+
+install: all
+	install -d "$(DESTDIR)$(GUILEMODULEDIR)" "$(DESTDIR)$(GUILEOBJECTDIR)" "$(DESTDIR)$(PKGDATADIR)/runtime" "$(DESTDIR)$(PREFIX)/bin"
+	install -m 0644 module/sshfling.scm "$(DESTDIR)$(GUILEMODULEDIR)/sshfling.scm"
+	install -m 0644 build/sshfling.go "$(DESTDIR)$(GUILEOBJECTDIR)/sshfling.go"
+	cp -R runtime/templates "$(DESTDIR)$(PKGDATADIR)/runtime/templates"
+	install -m 0755 runtime/sshfling.py "$(DESTDIR)$(PKGDATADIR)/runtime/sshfling.py"
+	install -m 0755 bin/sshfling-guile "$(DESTDIR)$(PREFIX)/bin/sshfling-guile"
+
+uninstall:
+	rm -f "$(DESTDIR)$(GUILEMODULEDIR)/sshfling.scm" "$(DESTDIR)$(GUILEOBJECTDIR)/sshfling.go" "$(DESTDIR)$(PREFIX)/bin/sshfling-guile"
+	rm -rf "$(DESTDIR)$(PKGDATADIR)"
+
+dist:
+	rm -rf "$(PACKAGE)" "$(PACKAGE).tar.gz"
+	mkdir "$(PACKAGE)"
+	cp -R Makefile.am Makefile.in configure configure.ac module bin test runtime LICENSE README.md "$(PACKAGE)/"
+	rm -f "$(PACKAGE)/Makefile" "$(PACKAGE)/module/sshfling.scm" "$(PACKAGE)/bin/sshfling-guile"
+	tar -czf "$(PACKAGE).tar.gz" "$(PACKAGE)"
+	rm -rf "$(PACKAGE)"
+
+clean:
+	rm -rf build

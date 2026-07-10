@@ -1,0 +1,34 @@
+slug	language	disposition	surface	validator
+sql	SQL	blocked	-	-
+plsql	PL/SQL	blocked	-	-
+tsql	T-SQL	blocked	-	-
+hcl-terraform	HCL/Terraform	blocked	-	-
+solidity	Solidity	blocked	-	-
+vyper	Vyper	blocked	-	-
+move	Move	blocked	-	-
+verilog	Verilog	blocked	-	-
+vhdl	VHDL	blocked	-	-
+systemverilog	SystemVerilog	blocked	-	-
+cuda	CUDA	blocked	-	-
+opencl-c	OpenCL C	blocked	-	-
+glsl	GLSL	blocked	-	-
+hlsl	HLSL	blocked	-	-
+wgsl	WGSL	blocked	-	-
+matlab	MATLAB	candidate	matlab/+sshfling/run.m	matlab
+sas	SAS	blocked	-	-
+abap	ABAP	blocked	-	-
+apex	Apex	blocked	-	-
+labview-g	LabVIEW G	blocked	-	-
+scratch	Scratch	blocked	-	-
+wolfram-language	Wolfram Language	candidate	wolfram-language/Kernel/SSHFling.wl	wolframscript
+power-query-m	Power Query M	blocked	-	-
+qsharp	Q#	blocked	-	-
+arduino-wiring	Arduino/Wiring	blocked	-	-
+micropython	MicroPython	blocked	-	-
+circuitpython	CircuitPython	blocked	-	-
+autohotkey	AutoHotkey	candidate	autohotkey/sshfling.ahk	AutoHotkey64.exe
+autoit	AutoIt	candidate	autoit/sshfling.au3	AutoIt3.exe
+applescript	AppleScript	candidate	applescript/sshfling.applescript	osascript
+vbscript	VBScript	candidate	vbscript/sshfling.vbs	cscript.exe
+xojo	Xojo	blocked	-	-
+delphi-object-pascal	Delphi/Object Pascal	candidate	object-pascal/sshfling.pas	fpc

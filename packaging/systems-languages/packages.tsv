@@ -1,0 +1,19 @@
+# slug|language|toolchains|metadata|sources
+assembly|Assembly|gcc,clang,objcopy|package.toml|src/sshfling.S,src/main.S,include/sshfling_assembly.h,consumers/c/main.c
+objective-c|Objective-C|clang,gcc|CMakeLists.txt|include/SSHFling/SSHFling.h,src/SSHFling.m,src/main.m,consumers/main.m
+fortran|Fortran|gfortran,flang-new,flang|fpm.toml|src/sshfling.f90,app/main.f90,consumers/main.f90
+cobol|COBOL|cobc|package.toml|src/sshfling.cob,app/main.cob,consumers/main.cob
+ada|Ada|gnatmake,gprbuild|alire.toml|src/sshfling.ads,src/sshfling.adb,app/sshfling_main.adb,consumers/main.adb
+zig|Zig|zig|build.zig.zon|build.zig,src/sshfling.zig,src/main.zig
+nim|Nim|nim|sshfling.nimble|src/sshfling.nim,src/sshfling_cli.nim,consumers/main.nim
+d|D|ldc2,dmd,gdc|dub.json|source/sshfling.d,app/main.d,consumers/main.d
+v|V|v|v.mod|sshfling/sshfling.v,cmd/sshfling/main.v,consumers/main.v
+crystal|Crystal|crystal|shard.yml|src/sshfling.cr,src/cli.cr,consumers/main.cr
+webassembly-wasi|WebAssembly/WASI|clang,node|package.toml|src/main.c,wit/sshfling.wit,host/sshfling-wasi.mjs,bin/sshfling-wasi.mjs,consumers/node/main.mjs
+forth|Forth|gforth|package.toml|sshfling.fs,cli.fs,bridge.c,consumers/main.fs
+odin|Odin|odin|package.toml|sshfling/sshfling.odin,cmd/sshfling/main.odin,consumers/main.odin
+pony|Pony|ponyc|corral.json|sshfling/sshfling.pony,main.pony,consumers/main.pony
+chapel|Chapel|chpl|Mason.toml|src/SSHFling.chpl,src/main.chpl,consumers/main.chpl
+harbour|Harbour|hbmk2,harbour|sshfling.hbp|src/sshfling.prg,src/bridge.c
+red|Red|red|package.toml|src/sshfling.reds,src/main.reds
+swift|Swift|swift,swiftc|Package.swift|Sources/CSSHFLing/include/CSSHFLing.h,Sources/CSSHFLing/launcher.c,Sources/SSHFling/SSHFling.swift,Sources/sshfling/main.swift,Consumers/SSHFlingConsumer/Package.swift,Consumers/SSHFlingConsumer/Sources/SSHFlingConsumer/main.swift

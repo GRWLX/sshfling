@@ -8,6 +8,7 @@ import ast
 import csv
 import datetime as dt
 import fcntl
+import gzip
 import hashlib
 import io
 import json
@@ -36,7 +37,9 @@ MANIFESTS = (
     REPO_ROOT / "packaging/scientific-languages/languages.tsv",
     REPO_ROOT / "packaging/beam-languages/languages.tsv",
 )
-DEFAULT_EVIDENCE = REPO_ROOT / "packaging/functional-languages/validation-evidence.tsv"
+EXPECTED_VERSION = "0.1.16"
+DIST_ROOT = REPO_ROOT / "dist"
+DEFAULT_EVIDENCE = DIST_ROOT / f"sshfling-functional-languages-{EXPECTED_VERSION}-validation.tsv"
 EXPECTED_FIELDS = (
     "id",
     "label",
@@ -48,12 +51,20 @@ EXPECTED_FIELDS = (
     "consumer",
     "bundle",
 )
-EXPECTED_VERSION = "0.1.16"
 UNSET_RUNTIME_ENV = (
     "SSHFLING_RUNTIME",
     "SSHFLING_TEMPLATE_DIR",
     "SSHFLING_PACKAGE_ROOT",
     "SSHFLING_PYTHON",
+)
+SOURCE_IGNORES = (
+    ".git",
+    ".DS_Store",
+    "__pycache__",
+    "*.pyc",
+    "dist-newstyle",
+    "_build",
+    "target",
 )
 
 
@@ -386,13 +397,14 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
     elif identifier == "janet":
         require_tokens(root / "project.janet", ':name "sshfling"', ':version "0.0.0"', ':files @[')
         api = require_tokens(
-            root / "src/sshfling.janet",
+            root / "src/sshfling/init.janet",
             "module/expand-path (dyn :current-file)",
             'configured-or "SSHFLING_PACKAGE_ROOT" package-root',
             "(os/stat (runtime-path))",
         )
         if '(os/cwd)' in api:
             raise ValidationFailure("janet: default resource lookup still depends on CWD")
+        require_tokens(root / "bin/sshfling", "import sshfling", "sshfling/run")
     elif identifier == "ring":
         require_tokens(root / "package.ring", ':version = "0.0.0"', ':files = ["lib.ring"')
         api = require_tokens(
@@ -416,12 +428,14 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
         if "configuredor jpath '.'" in api:
             raise ValidationFailure("j: default resource lookup still depends on CWD")
         require_tokens(root / "test/consumer.ijs", "load 'src/sshfling.ijs'", "run_sshfling_")
+        require_tokens(root / "bin/sshfling.ijs", "SSHFLING_PACKAGE_ROOT", "run_sshfling_ 2}.ARGV")
     elif identifier == "julia":
         metadata = require_toml(root / "Project.toml")
         if metadata.get("name") != "SSHFling" or metadata.get("version") != "0.0.0":
             raise ValidationFailure("julia: Project.toml package identity is invalid")
         require_tokens(root / "src/SSHFling.jl", "export run", "@__DIR__", "return 127")
         require_tokens(root / "test/runtests.jl", "using SSHFling", "SSHFling.run")
+        require_tokens(root / "bin/sshfling.jl", "using SSHFling", "SSHFling.run(ARGS)")
     elif identifier == "r":
         description = require_tokens(
             root / "DESCRIPTION",
@@ -547,7 +561,12 @@ def stage_language(
     language_root = root / language.identifier
     stage = language_root / "stage"
     work = language_root / "work"
-    shutil.copytree(language.package_dir, stage, copy_function=shutil.copy2)
+    shutil.copytree(
+        language.package_dir,
+        stage,
+        copy_function=shutil.copy2,
+        ignore=shutil.ignore_patterns(*SOURCE_IGNORES),
+    )
     work.mkdir(parents=True)
     shutil.copy2(REPO_ROOT / "LICENSE", stage / "LICENSE")
     shutil.copy2(REPO_ROOT / "README.md", stage / "README.md")
@@ -604,9 +623,35 @@ def safe_extract(archive: tarfile.TarFile, destination: Path) -> None:
 
 
 def archive_tree(source: Path, archive: Path, root_name: str) -> None:
+    """Write a byte-reproducible source archive with normalized ownership and times."""
     archive.parent.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive, "w:gz", format=tarfile.PAX_FORMAT) as stream:
-        stream.add(source, arcname=root_name, recursive=True)
+    temporary = archive.with_name(f".{archive.name}.{os.getpid()}.tmp")
+    try:
+        with temporary.open("wb") as raw:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
+                with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as stream:
+                    paths = [source, *sorted(source.rglob("*"), key=lambda item: item.relative_to(source).as_posix())]
+                    for path in paths:
+                        if path.is_symlink():
+                            raise ValidationFailure(f"source archive contains unsupported link: {path}")
+                        relative = path.relative_to(source).as_posix() if path != source else ""
+                        member_name = root_name if not relative else f"{root_name}/{relative}"
+                        info = stream.gettarinfo(str(path), arcname=member_name)
+                        info.uid = 0
+                        info.gid = 0
+                        info.uname = ""
+                        info.gname = ""
+                        info.mtime = 0
+                        if path.is_file():
+                            with path.open("rb") as payload:
+                                stream.addfile(info, payload)
+                        else:
+                            stream.addfile(info)
+            raw.flush()
+            os.fsync(raw.fileno())
+        os.replace(temporary, archive)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def extract_single_root(archive: Path, destination: Path) -> Path:
@@ -616,6 +661,57 @@ def extract_single_root(archive: Path, destination: Path) -> Path:
     if len(children) != 1 or not children[0].is_dir():
         raise ValidationFailure(f"archive does not contain one package root: {archive}")
     return children[0]
+
+
+def publish_source_archive(
+    stage: Path,
+    language: Language,
+    version: str,
+    verification_root: Path,
+    evidence: Evidence,
+) -> Path:
+    root_name = f"sshfling-{language.identifier}-{version}"
+    archive = DIST_ROOT / f"{root_name}.tar.gz"
+    archive_tree(stage, archive, root_name)
+    digest = file_digest(archive)
+    evidence.record(
+        language.identifier,
+        "PASS",
+        "published-source-archive",
+        status=0,
+        detail=f"archive={archive};bytes={archive.stat().st_size};sha256={digest}",
+    )
+
+    reproduction = verification_root / f"{root_name}.reproduced.tar.gz"
+    archive_tree(stage, reproduction, root_name)
+    reproduced_digest = file_digest(reproduction)
+    if reproduced_digest != digest:
+        raise ValidationFailure(
+            f"{language.identifier}: deterministic source archive hash mismatch: "
+            f"{digest} != {reproduced_digest}"
+        )
+    reproduction.unlink()
+
+    extracted = extract_single_root(archive, verification_root / "published-source")
+    expected = file_inventory(stage)
+    actual = file_inventory(extracted)
+    if actual != expected:
+        missing = sorted(set(expected) - set(actual))
+        extra = sorted(set(actual) - set(expected))
+        changed = sorted(name for name in set(expected) & set(actual) if expected[name] != actual[name])
+        raise ValidationFailure(
+            f"{language.identifier}: published archive inventory mismatch: "
+            f"missing={missing};extra={extra};changed={changed}"
+        )
+    evidence.record(
+        language.identifier,
+        "PASS",
+        "published-source-inventory",
+        status=0,
+        detail=f"files={len(actual)};inventory_match=True;reproducible_sha256={digest}",
+    )
+    shutil.rmtree(extracted.parent)
+    return archive
 
 
 def prolog_atom(value: str) -> str:
@@ -634,6 +730,7 @@ class PackageRunner:
         evidence: Evidence,
         timeout: int,
         tools: dict[str, str],
+        published_archive: Path,
     ):
         self.language = language
         self.stage = stage
@@ -644,6 +741,7 @@ class PackageRunner:
         self.evidence = evidence
         self.timeout = timeout
         self.tools = tools
+        self.published_archive = published_archive
         self.command_count = 0
         self.base_env = isolated_environment(work)
         self.evidence.record(
@@ -739,7 +837,10 @@ class PackageRunner:
         )
 
     def source_archive(self, package_name: str | None = None) -> Path:
-        root_name = package_name or f"sshfling-{self.version}"
+        if package_name is None:
+            self.record_archive("source-archive", self.published_archive)
+            return self.published_archive
+        root_name = package_name
         archive = self.work / f"{root_name}.tar.gz"
         archive_tree(self.stage, archive, root_name)
         self.record_archive("source-archive", archive)
@@ -806,6 +907,7 @@ class PackageRunner:
         *,
         cwd: Path,
         env: dict[str, str] | None = None,
+        smoke: Path | None = None,
     ) -> None:
         version = self.command("consumer-version", command_factory(["--version"]), cwd=cwd, env=env)
         self.assert_version_output(version)
@@ -816,7 +918,7 @@ class PackageRunner:
             env=env,
             expected={2},
         )
-        smoke = self.work / "smoke"
+        smoke = smoke or self.work / "smoke"
         self.command(
             "consumer-init",
             command_factory(["init", str(smoke), "--force", "--session-seconds", "60"]),
@@ -905,51 +1007,291 @@ class PackageRunner:
     def validate_haskell(self) -> None:
         self.probe("ghc-version", [self.tools["ghc"], "--version"])
         self.probe("cabal-version", [self.tools["cabal"], "--version"])
-        self.command("cabal-build", [self.tools["cabal"], "build", "--offline"], cwd=self.stage)
-        cli = self.command("cabal-list-bin-cli", [self.tools["cabal"], "list-bin", "sshfling"], cwd=self.stage).stdout.strip()
-        consumer = self.command(
-            "cabal-list-bin-consumer", [self.tools["cabal"], "list-bin", "sshfling-consumer"], cwd=self.stage
-        ).stdout.strip()
-        run_env = {
-            "SSHFLING_RUNTIME": str(self.stage / "runtime" / "sshfling.py"),
-            "SSHFLING_TEMPLATE_DIR": str(self.stage / "runtime" / "templates"),
-            "SSHFLING_PYTHON": "python3",
-        }
-        self.verify_runtime(self.stage / "runtime")
-        cli_result = self.command("installed-cli-version", [cli, "--version"], cwd=self.work, env=run_env)
+        self.source_archive()
+        sdist_dir = self.work / "cabal-sdist"
+        sdist_dir.mkdir()
+        self.command(
+            "cabal-native-sdist",
+            [self.tools["cabal"], "sdist", f"--output-directory={sdist_dir}"],
+            cwd=self.stage,
+        )
+        native_archives = list(sdist_dir.glob(f"sshfling-{self.version}.tar.gz"))
+        self.check("cabal-sdist-count", len(native_archives) == 1, f"archives={native_archives}")
+        self.record_archive("cabal-sdist-archive", native_archives[0])
+        source = extract_single_root(native_archives[0], self.work / "installed-source")
+
+        package_env = self.work / "haskell-package.env"
+        prefix = self.work / "prefix"
+        bin_dir = prefix / "bin"
+        bin_dir.mkdir(parents=True)
+        self.command(
+            "cabal-library-install",
+            [
+                self.tools["cabal"],
+                "install",
+                "--offline",
+                "--lib",
+                "lib:sshfling",
+                f"--package-env={package_env}",
+            ],
+            cwd=source,
+        )
+        self.command(
+            "cabal-cli-install",
+            [
+                self.tools["cabal"],
+                "install",
+                "--offline",
+                "exe:sshfling",
+                "--install-method=copy",
+                "--overwrite-policy=always",
+                f"--installdir={bin_dir}",
+            ],
+            cwd=source,
+        )
+        cli = bin_dir / "sshfling"
+        cli_result = self.command("installed-cli-version", [cli, "--version"], cwd=self.work)
         self.assert_version_output(cli_result)
-        consumer_version = self.command("consumer-version", [consumer, "--version"], cwd=self.work, env=run_env)
-        self.assert_version_output(consumer_version)
-        self.command(
-            "consumer-invalid-option",
-            [consumer, "--definitely-invalid"],
-            cwd=self.work,
-            env=run_env,
-            expected={2},
+
+        consumer_dir = self.work / "external-haskell-consumer"
+        consumer_dir.mkdir()
+        consumer_source = consumer_dir / "Main.hs"
+        consumer_source.write_text(
+            "module Main (main) where\n\n"
+            "import SSHFling (run, runtimePath)\n"
+            "import System.Environment (getArgs, lookupEnv)\n"
+            "import System.Exit (ExitCode (..), exitWith)\n\n"
+            "main :: IO ()\n"
+            "main = do\n"
+            "  inspect <- lookupEnv \"SSHFLING_HASKELL_PRINT_RUNTIME\"\n"
+            "  case inspect of\n"
+            "    Just \"1\" -> runtimePath >>= putStrLn\n"
+            "    _ -> do\n"
+            "      status <- getArgs >>= run\n"
+            "      exitWith $ if status == 0 then ExitSuccess else ExitFailure status\n",
+            encoding="utf-8",
         )
-        smoke = self.work / "smoke"
         self.command(
-            "consumer-init",
-            [consumer, "init", str(smoke), "--force", "--session-seconds", "60"],
-            cwd=self.work,
-            env=run_env,
+            "external-consumer-build",
+            [
+                self.tools["ghc"],
+                f"-package-env={package_env}",
+                "-Wall",
+                "-Werror",
+                consumer_source,
+                "-o",
+                consumer_dir / "sshfling-consumer",
+            ],
+            cwd=consumer_dir,
         )
-        self.verify_init(smoke)
-        missing_env = {
-            **run_env,
-            "SSHFLING_RUNTIME": str(self.work / "missing-runtime.py"),
-            "SSHFLING_PYTHON": "python3",
-        }
-        self.command(
-            "consumer-missing-runtime",
+        consumer = consumer_dir / "sshfling-consumer"
+        runtime_result = self.command(
+            "installed-runtime-path",
             [consumer],
             cwd=self.work,
-            env=missing_env,
-            expected={2},
+            env={"SSHFLING_HASKELL_PRINT_RUNTIME": "1"},
         )
-        self.command("cabal-clean", [self.tools["cabal"], "clean"], cwd=self.stage)
-        self.check("cli-removed", not Path(cli).exists(), f"path={cli}")
-        self.check("package-removed", not Path(consumer).exists(), f"path={consumer}")
+        installed_runtime_file = Path(runtime_result.stdout.strip())
+        self.verify_runtime(installed_runtime_file.parent)
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        self.run_status_cases(lambda args: [consumer, *args], cwd=unrelated)
+
+        shutil.rmtree(prefix)
+        package_env.unlink()
+        shutil.rmtree(self.work / "home" / ".cabal" / "store", ignore_errors=True)
+        shutil.rmtree(source)
+        self.check("cli-removed", not cli.exists(), f"path={cli}")
+        self.command(
+            "import-absence",
+            [
+                self.tools["ghc"],
+                f"-package-env={package_env}",
+                "-fno-code",
+                consumer_source,
+            ],
+            cwd=consumer_dir,
+            expected=lambda status: status != 0,
+        )
+        self.check("package-removed", not installed_runtime_file.exists(), f"path={installed_runtime_file}")
+
+    def validate_julia(self) -> None:
+        self.probe("julia-version", [self.tools["julia"], "--version"])
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "installed-source")
+        depot = self.work / "julia-depot"
+        consumer = self.work / "external-julia-consumer"
+        consumer.mkdir()
+        consumer_script = consumer / "consumer.jl"
+        consumer_script.write_text(
+            "using SSHFling\nexit(SSHFling.run(ARGS))\n",
+            encoding="utf-8",
+        )
+        env = {
+            "JULIA_DEPOT_PATH": str(depot),
+            "JULIA_PKG_OFFLINE": "true",
+            "JULIA_HISTORY": str(self.work / "julia-history"),
+        }
+        julia = [self.tools["julia"], "--startup-file=no", f"--project={consumer}"]
+        self.command(
+            "julia-package-install",
+            [
+                *julia,
+                "-e",
+                "using Pkg; Pkg.develop(path=ARGS[1]); Pkg.precompile()",
+                source,
+            ],
+            cwd=consumer,
+            env=env,
+        )
+        self.command(
+            "julia-package-test",
+            [
+                self.tools["julia"],
+                "--startup-file=no",
+                f"--project={source}",
+                "-e",
+                "using Pkg; Pkg.test()",
+            ],
+            cwd=source,
+            env=env,
+        )
+        self.verify_runtime(source / "runtime")
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        command = lambda args: [
+            *julia,
+            "-e",
+            "script = popfirst!(ARGS); include(script)",
+            "--",
+            consumer_script,
+            *args,
+        ]
+        self.run_status_cases(command, cwd=unrelated, env=env)
+        cli_result = self.command(
+            "installed-cli-version",
+            [
+                *julia,
+                "-e",
+                "script = popfirst!(ARGS); include(script)",
+                "--",
+                source / "bin/sshfling.jl",
+                "--version",
+            ],
+            cwd=unrelated,
+            env=env,
+        )
+        self.assert_version_output(cli_result)
+        self.command(
+            "julia-package-remove",
+            [*julia, "-e", 'using Pkg; Pkg.rm("SSHFling")'],
+            cwd=consumer,
+            env=env,
+        )
+        shutil.rmtree(source)
+        self.command(
+            "import-absence",
+            [*julia, "-e", "using SSHFling"],
+            cwd=unrelated,
+            env=env,
+            expected=lambda status: status != 0,
+        )
+        self.check("package-removed", not source.exists(), f"path={source}")
+
+    def validate_janet(self) -> None:
+        self.probe("janet-version", [self.tools["janet"], "--version"])
+        self.probe("jpm-paths", [self.tools["jpm"], "show-paths"])
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "installed-source")
+        local_tree = source / "jpm_tree"
+        modpath = local_tree / "lib"
+        binpath = local_tree / "bin"
+        env = {
+            "JANET_PATH": str(modpath),
+            "JANET_LIBPATH": str(modpath),
+        }
+        self.command(
+            "jpm-package-install",
+            [self.tools["jpm"], "--local", "--offline", "install"],
+            cwd=source,
+            env=env,
+        )
+        installed_runtime = modpath / "sshfling/runtime"
+        self.verify_runtime(installed_runtime)
+        consumer = self.work / "external-consumer.janet"
+        consumer.write_text(
+            "(import sshfling)\n"
+            "(os/exit (sshfling/run (slice (dyn :args) 1)))\n",
+            encoding="utf-8",
+        )
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        command = lambda args: [self.tools["janet"], consumer, *args]
+        self.run_status_cases(command, cwd=unrelated, env=env)
+        cli = binpath / "sshfling"
+        cli_result = self.command("installed-cli-version", [cli, "--version"], cwd=unrelated, env=env)
+        self.assert_version_output(cli_result)
+        self.command(
+            "jpm-package-remove",
+            [self.tools["jpm"], "--local", "uninstall"],
+            cwd=source,
+            env=env,
+        )
+        self.check("cli-removed", not cli.exists(), f"path={cli}")
+        self.command(
+            "import-absence",
+            [self.tools["janet"], consumer, "--version"],
+            cwd=unrelated,
+            env=env,
+            expected=lambda status: status != 0,
+        )
+        self.check("package-removed", not installed_runtime.exists(), f"path={installed_runtime}")
+
+    def validate_j(self) -> None:
+        self.probe(
+            "j-version",
+            [self.tools["jconsole"], "-js", "echo 9!:14''", "exit 0"],
+        )
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "source")
+        package = self.work / "j-addons/sshfling"
+        package.parent.mkdir(parents=True)
+        shutil.copytree(source, package, copy_function=shutil.copy2)
+        self.check("j-addon-install", package.is_dir(), f"path={package};manifest=manifest.ijs")
+        self.verify_runtime(package / "runtime")
+        consumer = self.work / "external-consumer.ijs"
+        package_literal = "'" + str(package / "src/sshfling.ijs").replace("'", "''") + "'"
+        consumer.write_text(
+            f"load {package_literal}\n"
+            "exit run_sshfling_ 2}.ARGV\n",
+            encoding="utf-8",
+        )
+        env = {"SSHFLING_PACKAGE_ROOT": str(package)}
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        command = lambda args: [self.tools["jconsole"], consumer, *args]
+        smoke = self.work / "smoke project's"
+        self.run_status_cases(command, cwd=unrelated, env=env, smoke=smoke)
+        self.check(
+            "consumer-init-cwd-isolation",
+            not (unrelated / ".env").exists(),
+            f"cwd={unrelated};unexpected_deployment={unrelated / '.env'}",
+        )
+        cli_result = self.command(
+            "installed-cli-version",
+            [self.tools["jconsole"], package / "bin/sshfling.ijs", "--version"],
+            cwd=unrelated,
+            env=env,
+        )
+        self.assert_version_output(cli_result)
+        shutil.rmtree(package)
+        self.check("package-removed", not package.exists(), f"path={package}")
+        self.command(
+            "import-absence",
+            [self.tools["jconsole"], "-js", f"exit fexist {package_literal}"],
+            cwd=unrelated,
+            env=env,
+        )
 
     def validate_common_lisp(self) -> None:
         self.probe("sbcl-version", [self.tools["sbcl"], "--version"])
@@ -1364,7 +1706,7 @@ TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "janet": ("janet", "jpm"),
     "ring": ("ring", "ringpm"),
     "apl": ("dyalog",),
-    "j": ("ijconsole",),
+    "j": ("jconsole",),
     "julia": ("julia",),
     "r": ("R", "Rscript"),
     "q": ("q",),
@@ -1376,6 +1718,9 @@ TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {
 
 NATIVE_RUNNERS = {
     "haskell",
+    "janet",
+    "j",
+    "julia",
     "ocaml",
     "common-lisp",
     "scheme",
@@ -1448,6 +1793,7 @@ def main() -> int:
         tested = 0
         blocked = 0
         audited = 0
+        published = 0
         failed = 0
         blocked_tools: list[str] = []
 
@@ -1468,6 +1814,14 @@ def main() -> int:
                     status=0,
                     detail=f"bundle={language.bundle};files={len(canonical_files)};version={version}",
                 )
+                published_archive = publish_source_archive(
+                    stage,
+                    language,
+                    version,
+                    work,
+                    evidence,
+                )
+                published += 1
                 if args.audit_only:
                     audited += 1
                     outcome_recorded = True
@@ -1520,6 +1874,7 @@ def main() -> int:
                     evidence,
                     args.timeout,
                     tools,
+                    published_archive,
                 )
                 runner.run()
                 tested += 1
@@ -1558,10 +1913,12 @@ def main() -> int:
             "PASS" if failed == 0 else "FAIL",
             "summary",
             status=0 if failed == 0 else 1,
-            detail=f"tested={tested};blocked={blocked};audited={audited};failed={failed};selected={len(selected)}",
+            detail=f"tested={tested};blocked={blocked};audited={audited};published={published};"
+            f"failed={failed};selected={len(selected)}",
         )
         print(
-            f"SUMMARY\ttested={tested}\tblocked={blocked}\taudited={audited}\tfailed={failed}\t"
+            f"SUMMARY\ttested={tested}\tblocked={blocked}\taudited={audited}\tpublished={published}\t"
+            f"failed={failed}\t"
             f"evidence={evidence.path}",
             flush=True,
         )
@@ -1571,14 +1928,14 @@ def main() -> int:
             return 1
         if args.audit_only:
             return 0
-        if tested == 0:
+        if blocked and not args.allow_blocked:
+            return 3
+        if tested == 0 and not (blocked and args.allow_blocked and published == len(selected)):
             print(
                 "validator: no native package was tested; use --audit-only for a structural-only run",
                 file=sys.stderr,
             )
             return 4
-        if blocked and not args.allow_blocked:
-            return 3
         return 0
     except (ValidationFailure, OSError, SyntaxError, csv.Error) as error:
         print(f"validator: {error}", file=sys.stderr)

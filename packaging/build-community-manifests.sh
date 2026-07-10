@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export LC_ALL=C
+export TZ=UTC
+umask 022
+
 package_dist="${1:?package dist directory is required}"
 public_dir="${2:?public directory is required}"
 base_url="${3:?base URL is required}"
@@ -8,11 +12,16 @@ repository="${5:?repository is required}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck source=packaging/version.sh
+# shellcheck disable=SC1091
 source "$repo_root/packaging/version.sh"
 version="$(assert_sshfling_version_matches_source "${4:?version is required}" "$repo_root")"
 manifest_timestamp="${SOURCE_DATE_EPOCH:-}"
 if [[ -z "$manifest_timestamp" ]]; then
   manifest_timestamp="$(git -C "$repo_root" log -1 --format=%ct 2>/dev/null || date -u +%s)"
+fi
+if [[ ! "$manifest_timestamp" =~ ^[0-9]+$ ]]; then
+  echo "SOURCE_DATE_EPOCH must be Unix epoch seconds, got: $manifest_timestamp" >&2
+  exit 2
 fi
 
 owner="${repository%%/*}"
@@ -42,43 +51,96 @@ file_size() {
   wc -c <"$1" | tr -d '[:space:]'
 }
 
-python_hashes() {
-  python3 - "$source_path" <<'PY'
-import base64
-import hashlib
-import sys
+sha256_nix_base32() {
+  local path="$1"
+  local alphabet="0123456789abcdfghijklmnpqrsvwxyz"
+  local byte_values result=""
+  local bit byte_index shift value digit index length
+  local -a bytes=()
 
-path = sys.argv[1]
-data = open(path, "rb").read()
-sha256 = hashlib.sha256(data).digest()
-alphabet = "0123456789abcdfghijklmnpqrsvwxyz"
+  byte_values="$(openssl dgst -sha256 -binary "$path" | od -An -v -tu1 | tr '\n' ' ')"
+  read -r -a bytes <<<"$byte_values"
+  [[ "${#bytes[@]}" -eq 32 ]] || {
+    echo "Could not read the 32-byte SHA-256 digest for $path" >&2
+    return 1
+  }
 
-def nix_base32(raw):
-    length = (len(raw) * 8 + 4) // 5
-    chars = []
-    for index in range(length - 1, -1, -1):
-        bit = index * 5
-        byte_index = bit // 8
-        shift = bit % 8
-        value = raw[byte_index] >> shift
-        if byte_index + 1 < len(raw):
-            value |= raw[byte_index + 1] << (8 - shift)
-        chars.append(alphabet[value & 31])
-    return "".join(chars)
+  length=$(( (${#bytes[@]} * 8 + 4) / 5 ))
+  for ((index = length - 1; index >= 0; index--)); do
+    bit=$(( index * 5 ))
+    byte_index=$(( bit / 8 ))
+    shift=$(( bit % 8 ))
+    value=$(( bytes[byte_index] >> shift ))
+    if (( byte_index + 1 < ${#bytes[@]} )); then
+      value=$(( value | (bytes[byte_index + 1] << (8 - shift)) ))
+    fi
+    digit=$(( value & 31 ))
+    result+="${alphabet:digit:1}"
+  done
+  printf '%s\n' "$result"
+}
 
-print(hashlib.blake2s(data).hexdigest())
-print("sha256-" + base64.b64encode(sha256).decode("ascii"))
-print(nix_base32(sha256))
-PY
+native_hashes() {
+  local path="$1"
+
+  openssl dgst -blake2s256 "$path" | awk '{print $NF}'
+  printf 'sha256-'
+  openssl dgst -sha256 -binary "$path" | base64 | tr -d '\r\n'
+  printf '\n'
+  sha256_nix_base32 "$path"
+}
+
+deterministic_zip() {
+  local root="$1"
+  local output="$2"
+  local epoch="$3"
+  local output_dir output_path relative
+
+  command -v zip >/dev/null 2>&1 || {
+    echo "zip is required to build the Chocolatey package." >&2
+    return 127
+  }
+  if (( 10#$epoch < 315532800 )); then
+    epoch=315532800
+  fi
+  for relative in sshfling.nuspec tools/chocolateyinstall.ps1; do
+    [[ -f "$root/$relative" && ! -L "$root/$relative" ]] || {
+      echo "Missing Chocolatey package input: $root/$relative" >&2
+      return 1
+    }
+    chmod 0644 "$root/$relative"
+    touch -d "@$epoch" "$root/$relative"
+  done
+
+  output_dir="$(cd "$(dirname "$output")" && pwd)"
+  output_path="$output_dir/$(basename "$output")"
+  rm -f "$output_path"
+  (
+    cd "$root"
+    zip -q -X "$output_path" sshfling.nuspec tools/chocolateyinstall.ps1
+  )
 }
 
 source_sha="$(hash_file sha256 "$source_path")"
 source_sha512="$(hash_file sha512 "$source_path")"
 source_size="$(file_size "$source_path")"
-readarray -t derived_hashes < <(python_hashes)
+hash_output="$(native_hashes "$source_path")"
+readarray -t derived_hashes <<<"$hash_output"
 source_blake2s="${derived_hashes[0]}"
 source_sri="${derived_hashes[1]}"
 source_nix32="${derived_hashes[2]}"
+[[ "$source_blake2s" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "Invalid BLAKE2s digest generated for $source_path" >&2
+  exit 1
+}
+[[ "$source_sri" =~ ^sha256-[A-Za-z0-9+/]{43}=$ ]] || {
+  echo "Invalid SHA-256 SRI digest generated for $source_path" >&2
+  exit 1
+}
+[[ "$source_nix32" =~ ^[0123456789abcdfghijklmnpqrsvwxyz]{52}$ ]] || {
+  echo "Invalid Nix base32 digest generated for $source_path" >&2
+  exit 1
+}
 
 msi_path="$(first_file_optional "$public_dir/downloads" "sshfling-${version}.msi")"
 windows_zip_path="$(first_file_optional "$public_dir/downloads" "sshfling-${version}-windows.zip")"
@@ -135,6 +197,7 @@ package() {
   install -Dm755 bin/sshfling "\${pkgdir}/usr/bin/sshfling"
   install -Dm755 native/sshfling-linux-account "\${pkgdir}/usr/libexec/sshfling/sshfling-linux-account"
   install -Dm755 native/sshfling-unix-identity "\${pkgdir}/usr/libexec/sshfling/sshfling-unix-identity"
+  install -Dm755 production/sshfling-login-shell "\${pkgdir}/usr/share/sshfling/templates/production/sshfling-login-shell"
   install -Dm755 production/sshfling-session "\${pkgdir}/usr/share/sshfling/templates/production/sshfling-session"
   install -Dm644 packaging/policy.json "\${pkgdir}/etc/sshfling/policy.json"
   install -Dm644 systemd/sshflingd.service "\${pkgdir}/usr/lib/systemd/system/sshflingd.service"
@@ -191,6 +254,7 @@ package() {
 	install -Dm755 "\$builddir/bin/sshfling" "\$pkgdir/usr/bin/sshfling"
 	install -Dm755 "\$builddir/native/sshfling-linux-account" "\$pkgdir/usr/libexec/sshfling/sshfling-linux-account"
 	install -Dm755 "\$builddir/native/sshfling-unix-identity" "\$pkgdir/usr/libexec/sshfling/sshfling-unix-identity"
+	install -Dm755 "\$builddir/production/sshfling-login-shell" "\$pkgdir/usr/share/sshfling/templates/production/sshfling-login-shell"
 	install -Dm755 "\$builddir/production/sshfling-session" "\$pkgdir/usr/share/sshfling/templates/production/sshfling-session"
 	install -Dm644 "\$builddir/packaging/policy.json" "\$pkgdir/etc/sshfling/policy.json"
 	install -Dm644 "\$builddir/LICENSE" "\$pkgdir/usr/share/licenses/sshfling/LICENSE"
@@ -264,6 +328,7 @@ do-install:
 	\${INSTALL_SCRIPT} \${WRKSRC}/ssh-server/entrypoint.sh \${STAGEDIR}\${PREFIX}/share/sshfling/templates/ssh-server/entrypoint.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/ssh-server/limited-session.sh \${STAGEDIR}\${PREFIX}/share/sshfling/templates/ssh-server/limited-session.sh
 	\${INSTALL_DATA} \${WRKSRC}/ssh-server/sshd_config \${STAGEDIR}\${PREFIX}/share/sshfling/templates/ssh-server/sshd_config
+	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-login-shell \${STAGEDIR}\${PREFIX}/share/sshfling/templates/production/sshfling-login-shell
 	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-session \${STAGEDIR}\${PREFIX}/share/sshfling/templates/production/sshfling-session
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshflingd.service \${STAGEDIR}\${PREFIX}/share/sshfling/templates/systemd/sshflingd.service
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshfling-prune.service \${STAGEDIR}\${PREFIX}/share/sshfling/templates/systemd/sshfling-prune.service
@@ -294,6 +359,7 @@ share/sshfling/templates/LICENSE
 share/sshfling/templates/README.md
 share/sshfling/templates/compose.client.yml
 share/sshfling/templates/compose.server.yml
+share/sshfling/templates/production/sshfling-login-shell
 share/sshfling/templates/production/sshfling-session
 share/sshfling/templates/native/sshfling-linux-account
 share/sshfling/templates/native/sshfling-unix-identity
@@ -332,7 +398,8 @@ PERMIT_DISTFILES =	requires prior written permission from GRWLX
 MASTER_SITES =	${base_url}/downloads/
 
 MODULES =	lang/python
-RUN_DEPENDS =	shells/bash textproc/jq
+MODPY_ADJ_FILES = bin/sshfling
+RUN_DEPENDS =	shells/bash textproc/jq sysutils/flock
 NO_BUILD =	Yes
 
 do-install:
@@ -368,6 +435,7 @@ do-install:
 	\${INSTALL_SCRIPT} \${WRKSRC}/ssh-server/entrypoint.sh \${PREFIX}/share/sshfling/templates/ssh-server/entrypoint.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/ssh-server/limited-session.sh \${PREFIX}/share/sshfling/templates/ssh-server/limited-session.sh
 	\${INSTALL_DATA} \${WRKSRC}/ssh-server/sshd_config \${PREFIX}/share/sshfling/templates/ssh-server/sshd_config
+	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-login-shell \${PREFIX}/share/sshfling/templates/production/sshfling-login-shell
 	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-session \${PREFIX}/share/sshfling/templates/production/sshfling-session
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshflingd.service \${PREFIX}/share/sshfling/templates/systemd/sshflingd.service
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshfling-prune.service \${PREFIX}/share/sshfling/templates/systemd/sshfling-prune.service
@@ -399,6 +467,7 @@ share/sshfling/templates/LICENSE
 share/sshfling/templates/README.md
 share/sshfling/templates/compose.client.yml
 share/sshfling/templates/compose.server.yml
+share/sshfling/templates/production/sshfling-login-shell
 share/sshfling/templates/production/sshfling-session
 share/sshfling/templates/native/sshfling-linux-account
 share/sshfling/templates/native/sshfling-unix-identity
@@ -471,6 +540,7 @@ do-install:
 	\${INSTALL_SCRIPT} \${WRKSRC}/ssh-server/entrypoint.sh \${DESTDIR}\${PREFIX}/share/sshfling/templates/ssh-server/entrypoint.sh
 	\${INSTALL_SCRIPT} \${WRKSRC}/ssh-server/limited-session.sh \${DESTDIR}\${PREFIX}/share/sshfling/templates/ssh-server/limited-session.sh
 	\${INSTALL_DATA} \${WRKSRC}/ssh-server/sshd_config \${DESTDIR}\${PREFIX}/share/sshfling/templates/ssh-server/sshd_config
+	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-login-shell \${DESTDIR}\${PREFIX}/share/sshfling/templates/production/sshfling-login-shell
 	\${INSTALL_SCRIPT} \${WRKSRC}/production/sshfling-session \${DESTDIR}\${PREFIX}/share/sshfling/templates/production/sshfling-session
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshflingd.service \${DESTDIR}\${PREFIX}/share/sshfling/templates/systemd/sshflingd.service
 	\${INSTALL_DATA} \${WRKSRC}/systemd/sshfling-prune.service \${DESTDIR}\${PREFIX}/share/sshfling/templates/systemd/sshfling-prune.service
@@ -496,6 +566,7 @@ share/sshfling/templates/LICENSE
 share/sshfling/templates/README.md
 share/sshfling/templates/compose.client.yml
 share/sshfling/templates/compose.server.yml
+share/sshfling/templates/production/sshfling-login-shell
 share/sshfling/templates/production/sshfling-session
 share/sshfling/templates/native/sshfling-linux-account
 share/sshfling/templates/native/sshfling-unix-identity
@@ -541,7 +612,20 @@ cat >"$public_dir/nix/flake.nix" <<NIX
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
-          runtimePath = [ pkgs.bash pkgs.python3 pkgs.openssh pkgs.openssl pkgs.jq pkgs.procps pkgs.util-linux ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.shadow ];
+          nativeRuntimePath = [
+            pkgs.coreutils
+            pkgs.gawk
+            pkgs.gnused
+            pkgs.bash
+            pkgs.jq
+          ]
+            ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+              pkgs.shadow
+              pkgs.procps
+              pkgs.util-linux
+            ]
+            ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.flock ];
+          runtimePath = nativeRuntimePath ++ [ pkgs.python3 pkgs.openssh pkgs.openssl ];
         in {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "sshfling";
@@ -551,22 +635,37 @@ cat >"$public_dir/nix/flake.nix" <<NIX
               hash = "${source_sri}";
             };
             nativeBuildInputs = [ pkgs.makeWrapper ];
+            dontPatchShebangs = true;
             dontBuild = true;
             installPhase = ''
               runHook preInstall
               install -Dm755 bin/sshfling \$out/bin/sshfling
               install -Dm755 native/sshfling-linux-account \$out/libexec/sshfling/sshfling-linux-account
               install -Dm755 native/sshfling-unix-identity \$out/libexec/sshfling/sshfling-unix-identity
+              install -Dm755 production/sshfling-login-shell \$out/share/sshfling/templates/production/sshfling-login-shell
               install -Dm755 production/sshfling-session \$out/share/sshfling/templates/production/sshfling-session
               install -Dm644 LICENSE \$out/share/doc/sshfling/LICENSE
               install -Dm644 README.md \$out/share/doc/sshfling/README.md
               mkdir -p \$out/share/sshfling/templates
               cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml native scripts secrets ssh-client ssh-server production systemd \$out/share/sshfling/templates/
+              substituteInPlace \$out/share/sshfling/templates/production/sshfling-session \
+                --replace-fail \
+                  'session_user_path="''\${PATH:-}"' \
+                  'session_user_path="\${pkgs.lib.makeBinPath nativeRuntimePath}:''\${PATH:-}"' \
+                --replace-fail \
+                  'PATH="/usr/sbin:/usr/bin:/sbin:/bin:' \
+                  'PATH="\${pkgs.lib.makeBinPath nativeRuntimePath}:/usr/sbin:/usr/bin:/sbin:/bin:'
+              patchShebangs \$out/share/sshfling/templates/production/sshfling-session
               patchShebangs \$out/bin/sshfling
               patchShebangs \$out/libexec/sshfling/sshfling-linux-account
               patchShebangs \$out/libexec/sshfling/sshfling-unix-identity
+              wrapProgram \$out/libexec/sshfling/sshfling-linux-account \
+                --set SSHFLING_NATIVE_TOOL_PATH \${pkgs.lib.makeBinPath nativeRuntimePath}
+              wrapProgram \$out/libexec/sshfling/sshfling-unix-identity \
+                --set SSHFLING_NATIVE_TOOL_PATH \${pkgs.lib.makeBinPath nativeRuntimePath}
               wrapProgram \$out/bin/sshfling \
                 --prefix PATH : \${pkgs.lib.makeBinPath runtimePath} \
+                --set SSHFLING_NATIVE_TOOL_PATH \${pkgs.lib.makeBinPath nativeRuntimePath} \
                 --set SSHFLING_LINUX_ACCOUNT_HELPER \$out/libexec/sshfling/sshfling-linux-account \
                 --set SSHFLING_UNIX_IDENTITY_HELPER \$out/libexec/sshfling/sshfling-unix-identity
               runHook postInstall
@@ -598,6 +697,7 @@ cat >"$public_dir/guix/sshfling.scm" <<GUIX
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (gnu packages admin)
   #:use-module (gnu packages bash)
+  #:use-module (gnu packages base)
   #:use-module (gnu packages linux)
   #:use-module (gnu packages python)
   #:use-module (gnu packages ssh)
@@ -633,8 +733,101 @@ cat >"$public_dir/guix/sshfling.scm" <<GUIX
          ("ssh-client" "share/sshfling/templates/ssh-client")
          ("ssh-server" "share/sshfling/templates/ssh-server")
          ("production" "share/sshfling/templates/production")
-         ("systemd" "share/sshfling/templates/systemd"))))
-    (propagated-inputs (list bash-minimal python openssh openssl shadow procps util-linux jq))
+         ("systemd" "share/sshfling/templates/systemd"))
+       #:modules ((guix build copy-build-system)
+                  (guix build utils)
+                  (srfi srfi-13))
+       #:phases
+       (modify-phases %standard-phases
+         (add-after 'install 'wire-runtime-paths
+           (lambda* (#:key inputs outputs #:allow-other-keys)
+             (let* ((out (assoc-ref outputs "out"))
+                    (templates (string-append out "/share/sshfling/templates"))
+                    (bash (search-input-file inputs "/bin/bash"))
+                    (native-programs
+                     '("/bin/bash"
+                       "/bin/id"
+                       "/bin/awk"
+                       "/bin/sed"
+                       "/sbin/useradd"
+                       "/bin/ps"
+                       "/bin/flock"
+                       "/bin/jq"
+                       "/bin/openssl"))
+                    (native-path-directories
+                     (map (lambda (program)
+                            (dirname (search-input-file inputs program)))
+                          native-programs))
+                    (native-path (string-join native-path-directories ":"))
+                    (runtime-path-directories
+                     (append native-path-directories
+                             (map (lambda (program)
+                                    (dirname (search-input-file inputs program)))
+                                  '("/bin/python3" "/bin/ssh" "/sbin/sshd"))))
+                    (runtime-path (string-join runtime-path-directories ":"))
+                    (linux-account
+                     (string-append out
+                                    "/libexec/sshfling/sshfling-linux-account"))
+                    (unix-identity
+                     (string-append out
+                                    "/libexec/sshfling/sshfling-unix-identity"))
+                    (cli (string-append out "/bin/sshfling"))
+                    (session
+                     (string-append templates "/production/sshfling-session"))
+                    (secure-wrap-program
+                     (lambda (program assignments)
+                       (let ((real-program (string-append program ".real")))
+                         (rename-file program real-program)
+                         (call-with-output-file program
+                           (lambda (port)
+                             (display (string-append "#!" bash " -p\n") port)
+                             (display "set -eu\n" port)
+                             (display "unset BASH_ENV ENV CDPATH GLOBIGNORE 2>/dev/null || :\n"
+                                      port)
+                             (for-each (lambda (assignment)
+                                         (display assignment port)
+                                         (newline port))
+                                       assignments)
+                             (display (string-append "exec '" real-program
+                                                     "' \"\$@\"\n")
+                                      port)))
+                         (chmod program #o555)))))
+               (substitute* (string-append templates "/native/sshfling-linux-account")
+                 (("^#!.*$") "#!/bin/bash -p"))
+               (substitute* (string-append templates "/native/sshfling-unix-identity")
+                 (("^#!.*$") "#!/bin/sh"))
+               (substitute* (string-append templates "/production/sshfling-login-shell")
+                 (("^#!.*$") "#!/bin/sh"))
+               (substitute* session
+                 (("^#!.*$") (string-append "#!" bash))
+                 (("^session_user_path=.*$")
+                  (string-append "session_user_path=\"" native-path
+                                 ":\${PATH:-}\""))
+                 (("^PATH=\"/usr/sbin:/usr/bin:/sbin:/bin:")
+                  (string-append "PATH=\"" native-path
+                                 ":/usr/sbin:/usr/bin:/sbin:/bin:")))
+               (secure-wrap-program
+                linux-account
+                (list (string-append
+                       "export SSHFLING_NATIVE_TOOL_PATH='" native-path "'")))
+               (secure-wrap-program
+                unix-identity
+                (list (string-append
+                       "export SSHFLING_NATIVE_TOOL_PATH='" native-path "'")))
+               (secure-wrap-program
+                cli
+                (list (string-append "export PATH='" runtime-path
+                                     "':\"\${PATH:-}\"")
+                      (string-append
+                       "export SSHFLING_NATIVE_TOOL_PATH='" native-path "'")
+                      (string-append
+                       "export SSHFLING_LINUX_ACCOUNT_HELPER='" linux-account "'")
+                      (string-append
+                       "export SSHFLING_UNIX_IDENTITY_HELPER='" unix-identity
+                       "'")))))))))
+    (propagated-inputs
+     (list bash-minimal coreutils gawk sed jq shadow procps util-linux openssl
+           python openssh))
     (home-page "${base_url}")
     (synopsis "Temporary SSH access broker and CLI")
     (description
@@ -661,6 +854,7 @@ do_install() {
 	vbin bin/sshfling
 	vinstall native/sshfling-linux-account 755 usr/libexec/sshfling
 	vinstall native/sshfling-unix-identity 755 usr/libexec/sshfling
+	vinstall production/sshfling-login-shell 755 usr/share/sshfling/templates/production
 	vinstall production/sshfling-session 755 usr/share/sshfling/templates/production
 	vinstall packaging/policy.json 644 etc/sshfling
 	vlicense LICENSE
@@ -703,7 +897,7 @@ src_install() {
 	doexe native/sshfling-linux-account
 	doexe native/sshfling-unix-identity
 	exeinto /usr/share/sshfling/templates/production
-	doexe production/sshfling-session
+	doexe production/sshfling-login-shell production/sshfling-session
 	insinto /etc/sshfling
 	doins packaging/policy.json
 	systemd_dounit systemd/sshflingd.service systemd/sshfling-prune.service systemd/sshfling-prune.timer
@@ -722,6 +916,7 @@ src_install() {
 		/usr/share/sshfling/templates/ssh-client/entrypoint.sh \
 		/usr/share/sshfling/templates/ssh-server/entrypoint.sh \
 		/usr/share/sshfling/templates/ssh-server/limited-session.sh \
+		/usr/share/sshfling/templates/production/sshfling-login-shell \
 		/usr/share/sshfling/templates/production/sshfling-session
 }
 GENTOO
@@ -748,6 +943,7 @@ cd "$TMP/$PRGNAM-$VERSION"
 install -Dm755 bin/sshfling "$PKG/usr/bin/sshfling"
 install -Dm755 native/sshfling-linux-account "$PKG/usr/libexec/sshfling/sshfling-linux-account"
 install -Dm755 native/sshfling-unix-identity "$PKG/usr/libexec/sshfling/sshfling-unix-identity"
+install -Dm755 production/sshfling-login-shell "$PKG/usr/share/sshfling/templates/production/sshfling-login-shell"
 install -Dm755 production/sshfling-session "$PKG/usr/share/sshfling/templates/production/sshfling-session"
 install -Dm644 packaging/policy.json "$PKG/etc/sshfling/policy.json"
 install -Dm644 LICENSE "$PKG/usr/doc/$PRGNAM-$VERSION/LICENSE"
@@ -820,6 +1016,7 @@ sessions are capped by a server-side wall-clock timeout.
 install -Dm755 bin/sshfling %{buildroot}%{_bindir}/sshfling
 install -Dm755 native/sshfling-linux-account %{buildroot}%{_libexecdir}/sshfling/sshfling-linux-account
 install -Dm755 native/sshfling-unix-identity %{buildroot}%{_libexecdir}/sshfling/sshfling-unix-identity
+install -Dm755 production/sshfling-login-shell %{buildroot}%{_datadir}/sshfling/templates/production/sshfling-login-shell
 install -Dm755 production/sshfling-session %{buildroot}%{_datadir}/sshfling/templates/production/sshfling-session
 install -Dm644 packaging/policy.json %{buildroot}%{_sysconfdir}/sshfling/policy.json
 install -Dm644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
@@ -904,6 +1101,7 @@ TERMUX_PKG_PLATFORM_INDEPENDENT=true
 
 termux_step_make_install() {
 	install -Dm755 bin/sshfling "\$TERMUX_PREFIX/bin/sshfling"
+	install -Dm755 production/sshfling-login-shell "\$TERMUX_PREFIX/share/sshfling/templates/production/sshfling-login-shell"
 	install -Dm755 production/sshfling-session "\$TERMUX_PREFIX/share/sshfling/templates/production/sshfling-session"
 	install -Dm644 LICENSE "\$TERMUX_PREFIX/share/doc/sshfling/LICENSE"
 	install -Dm644 README.md "\$TERMUX_PREFIX/share/doc/sshfling/README.md"
@@ -1079,17 +1277,10 @@ NUSPEC
 Install-ChocolateyPackage @packageArgs
 CHOCO
 
-  python3 - "$public_dir/chocolatey" "$public_dir/chocolatey/sshfling.${version}.nupkg" <<'PY'
-import sys
-import zipfile
-from pathlib import Path
-
-root = Path(sys.argv[1])
-output = Path(sys.argv[2])
-with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
-    for relative in ["sshfling.nuspec", "tools/chocolateyinstall.ps1"]:
-        archive.write(root / relative, relative)
-PY
+  deterministic_zip \
+    "$public_dir/chocolatey" \
+    "$public_dir/chocolatey/sshfling.${version}.nupkg" \
+    "$manifest_timestamp"
 
   choco_pkg_sha="$(hash_file sha256 "$public_dir/chocolatey/sshfling.${version}.nupkg")"
   cat >"$public_dir/chocolatey/install.ps1" <<CHOCO

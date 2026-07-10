@@ -48,6 +48,7 @@ start_container() {
 copy_validate() {
   local name="$1"
   docker cp tests/cross-os/validate-cli.sh "$name:/tmp/validate-cli.sh"
+  docker cp tests/cross-os/validate-native-login-shell.sh "$name:/tmp/validate-native-login-shell.sh"
   docker cp tests/cross-os/validate-native-session-policy.sh "$name:/tmp/validate-native-session-policy.sh"
 }
 
@@ -118,14 +119,24 @@ pull_and_smoke_images() {
   done
 }
 
-test_compose_images() {
+build_compose_images() {
   log "building compose images"
-  docker compose -f compose.server.yml -f compose.client.yml build --pull
+  if docker buildx version >/dev/null 2>&1; then
+    docker compose -f compose.server.yml -f compose.client.yml build --pull
+  else
+    COMPOSE_BAKE=false DOCKER_BUILDKIT=0 \
+      docker compose -f compose.server.yml -f compose.client.yml build --pull
+  fi
+  docker image inspect timed-ssh-server:latest timed-ssh-client:latest >/dev/null
+}
 
+test_production_image() {
   log "building and running production test image"
   docker build --pull -f tests/docker/Dockerfile.production -t sshfling-production-test:latest .
   docker run --rm sshfling-production-test:latest
+}
 
+test_compose_round_trip() {
   log "running server/client SSH round trip"
   local network="sshfling-test-net-$$"
   local key="$tmp/client_ed25519"
@@ -158,6 +169,12 @@ test_compose_images() {
     -e SSH_COMMAND='whoami && hostname' \
     timed-ssh-client:latest)"
   printf '%s\n' "$client_output" | grep -Fq deploy
+}
+
+test_compose_images() {
+  build_compose_images
+  test_production_image
+  test_compose_round_trip
 }
 
 test_deb_image() {
@@ -213,6 +230,14 @@ test_deb_image() {
     test -x /usr/libexec/sshfling/sshfling-unix-identity
     /usr/libexec/sshfling/sshfling-linux-account identity root | grep -Fq 'status=present'
     /usr/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+    /usr/libexec/sshfling/sshfling-linux-account create sshflingtest /bin/sh | grep -Fq 'created=true'
+    printf '%s\n' 'native-test-password' \
+      | /usr/libexec/sshfling/sshfling-linux-account set-password sshflingtest \
+      | grep -Fq 'password_set=true'
+    /usr/libexec/sshfling/sshfling-linux-account lock sshflingtest | grep -Fq 'locked=true'
+    /usr/libexec/sshfling/sshfling-linux-account delete sshflingtest | grep -Fq 'deleted=true'
+    ! id -u sshflingtest >/dev/null 2>&1
+    test -x /usr/share/sshfling/templates/production/sshfling-login-shell
     bash /tmp/validate-native-session-policy.sh /usr/share/sshfling/templates/production/sshfling-session >/dev/null
     sshfling --version | grep -Fx 'sshfling $version'
     assert_sshflingd_account_present
@@ -323,6 +348,14 @@ test_rpm_image() {
     test -x /usr/libexec/sshfling/sshfling-unix-identity
     /usr/libexec/sshfling/sshfling-linux-account identity root | grep -Fq 'status=present'
     /usr/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+    /usr/libexec/sshfling/sshfling-linux-account create sshflingtest /bin/sh | grep -Fq 'created=true'
+    printf '%s\n' 'native-test-password' \
+      | /usr/libexec/sshfling/sshfling-linux-account set-password sshflingtest \
+      | grep -Fq 'password_set=true'
+    /usr/libexec/sshfling/sshfling-linux-account lock sshflingtest | grep -Fq 'locked=true'
+    /usr/libexec/sshfling/sshfling-linux-account delete sshflingtest | grep -Fq 'deleted=true'
+    ! id -u sshflingtest >/dev/null 2>&1
+    test -x /usr/share/sshfling/templates/production/sshfling-login-shell
     bash /tmp/validate-native-session-policy.sh /usr/share/sshfling/templates/production/sshfling-session >/dev/null
     sshfling --version | grep -Fx 'sshfling $version'
     assert_sshflingd_account_present
@@ -395,12 +428,25 @@ test_opensuse() {
   docker cp "$tmp/site/opensuse/sshfling.spec" "$name:/tmp/sshfling.spec"
   docker exec "$name" sh -lc "set -eu
     zypper --non-interactive --gpg-auto-import-keys refresh >/dev/null
-    zypper --non-interactive --gpg-auto-import-keys install rpm-build tar gzip python3 openssh shadow procps util-linux >/dev/null
+    zypper --non-interactive --gpg-auto-import-keys install rpm-build tar gzip python3 jq openssh shadow procps util-linux >/dev/null
     mkdir -p /root/rpmbuild/SOURCES /root/rpmbuild/SPECS
     cp /tmp/sshfling-${version}.tar.gz /root/rpmbuild/SOURCES/
     cp /tmp/sshfling.spec /root/rpmbuild/SPECS/
     rpmbuild --define '_topdir /root/rpmbuild' -ba /root/rpmbuild/SPECS/sshfling.spec >/tmp/opensuse-rpmbuild.log
     rpm -Uvh /root/rpmbuild/RPMS/noarch/sshfling-${version}-1.noarch.rpm >/dev/null
+    test -x /usr/libexec/sshfling/sshfling-linux-account
+    test -x /usr/libexec/sshfling/sshfling-unix-identity
+    /usr/libexec/sshfling/sshfling-linux-account identity root | grep -Fq 'status=present'
+    /usr/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+    /usr/libexec/sshfling/sshfling-linux-account create sshflingtest /bin/sh | grep -Fq 'created=true'
+    printf '%s\n' 'native-test-password' \
+      | /usr/libexec/sshfling/sshfling-linux-account set-password sshflingtest \
+      | grep -Fq 'password_set=true'
+    /usr/libexec/sshfling/sshfling-linux-account lock sshflingtest | grep -Fq 'locked=true'
+    /usr/libexec/sshfling/sshfling-linux-account delete sshflingtest | grep -Fq 'deleted=true'
+    ! id -u sshflingtest >/dev/null 2>&1
+    test -x /usr/share/sshfling/templates/production/sshfling-login-shell
+    bash /tmp/validate-native-session-policy.sh /usr/share/sshfling/templates/production/sshfling-session >/dev/null
     sh /tmp/validate-cli.sh sshfling '$version'"
 }
 
@@ -413,8 +459,8 @@ test_arch() {
   docker cp "$tmp/site/." "$name:/srv/site/"
   docker cp "$tmp/site/arch/PKGBUILD" "$name:/build/PKGBUILD"
   docker exec "$name" sh -lc "set -eu
-    pacman -Sy --noconfirm --needed base-devel python openssh shadow procps-ng util-linux sudo >/dev/null
-    python -m http.server 8000 --directory /srv/site >/tmp/http.log 2>&1 &
+    pacman -Sy --noconfirm --needed base-devel busybox python openssh shadow procps-ng util-linux sudo >/dev/null
+    busybox httpd -f -p 8000 -h /srv/site >/tmp/http.log 2>&1 &
     http_pid=\$!
     trap 'kill \$http_pid 2>/dev/null || true' EXIT
     useradd -m builder
@@ -434,8 +480,8 @@ test_alpine() {
   docker cp "$tmp/site/." "$name:/srv/site/"
   docker cp "$tmp/site/alpine/APKBUILD" "$name:/build/APKBUILD"
   docker exec "$name" sh -lc "set -eu
-    apk add --no-cache alpine-sdk curl python3 openssh-client shadow procps util-linux sudo >/dev/null
-    python3 -m http.server 8000 --directory /srv/site >/tmp/http.log 2>&1 &
+    apk add --no-cache alpine-sdk bash busybox-extras curl jq python3 openssh-client shadow procps util-linux sudo >/dev/null
+    httpd -f -p 8000 -h /srv/site >/tmp/http.log 2>&1 &
     http_pid=\$!
     trap 'kill \$http_pid 2>/dev/null || true' EXIT
     adduser -D builder
@@ -469,6 +515,9 @@ test_slackware() {
     if command -v update-ca-certificates >/dev/null 2>&1; then update-ca-certificates >/tmp/update-ca-certificates.log 2>&1 || true; fi
     ssl_ca=/etc/ssl/certs/ca-certificates.crt
     test -s \"\$ssl_ca\"
+    wget --ca-certificate=\"\$ssl_ca\" -qO /tmp/jq https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64
+    printf '%s  %s\n' 020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d /tmp/jq | sha256sum -c -
+    install -m 0755 /tmp/jq /usr/local/bin/jq
     wget --ca-certificate=\"\$ssl_ca\" -qO /tmp/python3.txz \"\$slackware_https_mirror/slackware64/d/python3-3.9.10-x86_64-1.txz\"
     installpkg /tmp/python3.txz >/tmp/install-python3.log
     cd /tmp/slacktest
@@ -486,13 +535,18 @@ test_void() {
   docker cp "$tmp/site/downloads/sshfling-${version}.tar.gz" "$name:/tmp/sshfling-${version}.tar.gz"
   docker exec "$name" sh -lc "set -eu
     xbps-install -Syu -y xbps >/dev/null || true
-    xbps-install -Syu -y bash tar gzip python3 openssh shadow procps-ng util-linux coreutils >/dev/null
+    xbps-install -Syu -y bash tar gzip python3 jq openssh shadow procps-ng util-linux coreutils >/dev/null
     cd /tmp
     tar -xzf sshfling-${version}.tar.gz
     cd sshfling-${version}
     install -Dm755 bin/sshfling /usr/bin/sshfling
+    install -Dm755 native/sshfling-linux-account /usr/libexec/sshfling/sshfling-linux-account
+    install -Dm755 native/sshfling-unix-identity /usr/libexec/sshfling/sshfling-unix-identity
     install -d /usr/share/sshfling/templates
-    cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml scripts secrets ssh-client ssh-server production systemd /usr/share/sshfling/templates/
+    cp -a .env.example LICENSE README.md compose.server.yml compose.client.yml native scripts secrets ssh-client ssh-server production systemd /usr/share/sshfling/templates/
+    /usr/libexec/sshfling/sshfling-linux-account identity root | grep -Fq 'status=present'
+    /usr/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
+    bash /tmp/validate-native-session-policy.sh /usr/share/sshfling/templates/production/sshfling-session >/dev/null
     sh /tmp/validate-cli.sh sshfling '$version'"
 }
 
@@ -512,29 +566,110 @@ test_nix() {
     tar -xzf /tmp/sshfling-${version}.tar.gz
     cd sshfling-${version}
     NIXPKGS_ALLOW_UNFREE=1 nix --extra-experimental-features 'nix-command flakes' build --impure .#default -o result
-    nix --extra-experimental-features 'nix-command flakes' shell nixpkgs#coreutils nixpkgs#gnugrep nixpkgs#gnused nixpkgs#openssh nixpkgs#python3 -c sh /tmp/validate-cli.sh ./result/bin/sshfling '$version'"
+    closure_file=/tmp/sshfling-nix-closure
+    nix-store -qR ./result >\"\$closure_file\"
+    find_closure_tool() {
+      tool=\$1
+      while IFS= read -r store_path; do
+        if [ -x \"\$store_path/bin/\$tool\" ]; then
+          printf '%s\n' \"\$store_path/bin/\$tool\"
+          return 0
+        fi
+      done <\"\$closure_file\"
+      printf 'missing %s in the sshfling package closure\n' \"\$tool\" >&2
+      return 1
+    }
+    IFS= read -r session_shebang <./result/share/sshfling/templates/production/sshfling-session
+    harness_bash=\${session_shebang#\#!}
+    case \"\$harness_bash\" in
+      /nix/store/*/bin/bash) test -x \"\$harness_bash\" ;;
+      *) printf 'invalid packaged session shebang: %s\n' \"\$session_shebang\" >&2; exit 1 ;;
+    esac
+    coreutils_tool=\"\$(find_closure_tool mktemp)\"
+    grep_tool=\"\$(command -v grep)\"
+    case \"\$grep_tool\" in
+      /*) test -x \"\$grep_tool\" ;;
+      *) printf 'invalid harness grep path: %s\n' \"\$grep_tool\" >&2; exit 1 ;;
+    esac
+    sed_tool=\"\$(find_closure_tool sed)\"
+    python_tool=\"\$(find_closure_tool python3)\"
+    ssh_tool=\"\$(find_closure_tool ssh)\"
+    harness_path=\"\${harness_bash%/*}:\${coreutils_tool%/*}:\${grep_tool%/*}:\${sed_tool%/*}:\${python_tool%/*}:\${ssh_tool%/*}\"
+    minimal_path=/tmp/sshfling-empty-path
+    mkdir -p \"\$minimal_path\"
+    account_output=\"\$(PATH=\"\$minimal_path\" ./result/libexec/sshfling/sshfling-linux-account identity root)\"
+    case \"\$account_output\" in *status=present*) ;; *) exit 1 ;; esac
+    identity_output=\"\$(PATH=\"\$minimal_path\" ./result/libexec/sshfling/sshfling-unix-identity identity root)\"
+    case \"\$identity_output\" in *uid=0*) ;; *) exit 1 ;; esac
+    version_output=\"\$(PATH=\"\$minimal_path\" ./result/bin/sshfling --version)\"
+    test \"\$version_output\" = 'sshfling $version'
+    PATH=\"\$minimal_path\" ./result/bin/sshfling --json doctor --dependencies --mode client >/dev/null
+    PATH=\"\$minimal_path\" ./result/bin/sshfling --json doctor --dependencies --mode password-server >/dev/null
+    PATH=\"\$harness_path\" \"\$harness_bash\" /tmp/validate-native-login-shell.sh ./result/share/sshfling/templates/production/sshfling-login-shell >/dev/null
+    PATH=\"\$harness_path\" \"\$harness_bash\" /tmp/validate-native-session-policy.sh ./result/share/sshfling/templates/production/sshfling-session >/dev/null
+    PATH=\"\$harness_path\" \"\$harness_bash\" /tmp/validate-cli.sh ./result/bin/sshfling '$version'"
 }
 
-prepare_artifacts
-pull_and_smoke_images
-test_compose_images
+phase="${SSHFLING_CONTAINER_TEST_PHASE:-all}"
+case "$phase" in
+  all)
+    prepare_artifacts
+    pull_and_smoke_images
+    test_compose_images
+    log "testing Debian and Ubuntu packages"
+    test_deb_image debian:bookworm-slim
+    test_deb_image ubuntu:24.04
+    log "testing RPM-family packages"
+    test_rpm_image fedora:latest
+    test_rpm_image rockylinux:9
+    test_rpm_image almalinux:9
+    test_rpm_image registry.access.redhat.com/ubi9/ubi
+    log "testing community package/container targets"
+    test_opensuse
+    test_arch
+    test_alpine
+    test_slackware
+    test_void
+    test_nix
+    ;;
+  smoke)
+    pull_and_smoke_images
+    ;;
+  compose)
+    test_compose_images
+    ;;
+  compose-build)
+    build_compose_images
+    ;;
+  production)
+    test_production_image
+    ;;
+  roundtrip)
+    docker image inspect timed-ssh-server:latest timed-ssh-client:latest >/dev/null
+    test_compose_round_trip
+    ;;
+  debian|ubuntu)
+    prepare_artifacts
+    test_deb_image "$([[ "$phase" == debian ]] && echo debian:bookworm-slim || echo ubuntu:24.04)"
+    ;;
+  fedora|rocky|alma|ubi)
+    prepare_artifacts
+    case "$phase" in
+      fedora) image="fedora:latest" ;;
+      rocky) image="rockylinux:9" ;;
+      alma) image="almalinux:9" ;;
+      ubi) image="registry.access.redhat.com/ubi9/ubi" ;;
+    esac
+    test_rpm_image "$image"
+    ;;
+  opensuse|arch|alpine|slackware|void|nix)
+    prepare_artifacts
+    "test_$phase"
+    ;;
+  *)
+    echo "Unknown SSHFLING_CONTAINER_TEST_PHASE: $phase" >&2
+    exit 2
+    ;;
+esac
 
-log "testing Debian and Ubuntu packages"
-test_deb_image debian:bookworm-slim
-test_deb_image ubuntu:24.04
-
-log "testing RPM-family packages"
-test_rpm_image fedora:latest
-test_rpm_image rockylinux:9
-test_rpm_image almalinux:9
-test_rpm_image registry.access.redhat.com/ubi9/ubi
-
-log "testing community package/container targets"
-test_opensuse
-test_arch
-test_alpine
-test_slackware
-test_void
-test_nix
-
-log "all container image tests passed"
+log "container image test phase passed: $phase"

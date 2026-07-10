@@ -39,7 +39,7 @@ registry_url="${SSHFLING_JAVA_REGISTRY_URL:-https://maven.pkg.github.com/${GITHU
 
 export LC_ALL=C
 export TZ=UTC
-export GRADLE_USER_HOME="$build_root/gradle-home"
+export GRADLE_USER_HOME="${SSHFLING_GRADLE_USER_HOME:-$build_root/gradle-home}"
 umask 022
 
 source_date_epoch="${SOURCE_DATE_EPOCH:-}"
@@ -124,6 +124,7 @@ write_resource_manifest() {
         case "$relative" in
           templates/native/sshfling-linux-account|\
           templates/native/sshfling-unix-identity|\
+          templates/production/sshfling-login-shell|\
           templates/production/sshfling-session|\
           templates/scripts/create-network.sh|\
           templates/scripts/generate-ssh-key.sh|\
@@ -150,6 +151,132 @@ write_dist_pom() {
     "$repo_root/packaging/java/pom.xml" >"$pom_path"
 }
 
+validate_maven_language_consumer() {
+  local language="$1"
+  local main_class="$2"
+  local class_file="$3"
+  local consumer_dir="$build_root/validation/$language-consumer"
+  local smoke_project="$build_root/validation/$language-smoke-project"
+
+  cp -R "$repo_root/packaging/java/consumers/$language" "$consumer_dir"
+  "$mvn_cmd" -B \
+    -f "$consumer_dir/pom.xml" \
+    -Dmaven.repo.local="$maven_repo" \
+    -Dsshfling.version="$version" \
+    -Dstyle.color=never \
+    package
+  test -s "$consumer_dir/target/classes/$class_file"
+  "$mvn_cmd" -B -q \
+    -f "$consumer_dir/pom.xml" \
+    -Dmaven.repo.local="$maven_repo" \
+    -Dsshfling.version="$version" \
+    -Dstyle.color=never \
+    -Dexec.mainClass="$main_class" \
+    -Dexec.args=--version \
+    exec:java | grep -Fx "sshfling $version" >/dev/null
+  "$mvn_cmd" -B -q \
+    -f "$consumer_dir/pom.xml" \
+    -Dmaven.repo.local="$maven_repo" \
+    -Dsshfling.version="$version" \
+    -Dstyle.color=never \
+    -Dexec.mainClass="$main_class" \
+    -Dexec.args="init $smoke_project --force --session-seconds 60" \
+    exec:java >/dev/null
+  test -x "$smoke_project/native/sshfling-linux-account"
+  test -x "$smoke_project/native/sshfling-unix-identity"
+}
+
+validate_gradle_language_consumer() {
+  local language="$1"
+  local class_file="$2"
+  local consumer_dir="$build_root/validation/$language-gradle-consumer"
+  local smoke_project="$build_root/validation/$language-gradle-smoke-project"
+
+  cp -R "$repo_root/packaging/java/consumers/$language-gradle" "$consumer_dir"
+  "$gradle_cmd" \
+    --no-daemon \
+    --console=plain \
+    -p "$consumer_dir" \
+    -PsshflingVersion="$version" \
+    -PsshflingRepository="$gradle_repo" \
+    run --args=--version | grep -Fx "sshfling $version" >/dev/null
+  test -s "$consumer_dir/$class_file"
+  javap -verbose "$consumer_dir/$class_file" | grep -F "major version: 55" >/dev/null
+  "$gradle_cmd" \
+    --no-daemon \
+    --console=plain \
+    -p "$consumer_dir" \
+    -PsshflingVersion="$version" \
+    -PsshflingRepository="$gradle_repo" \
+    run --args="init $smoke_project --force --session-seconds 60" >/dev/null
+  test -x "$smoke_project/native/sshfling-linux-account"
+  test -x "$smoke_project/native/sshfling-unix-identity"
+}
+
+validate_clojure_maven_consumer() {
+  local consumer_dir="$build_root/validation/clojure-consumer"
+  local smoke_project="$build_root/validation/clojure-smoke-project"
+  local namespace="io.sshfling.validation.clojure-consumer"
+
+  cp -R "$repo_root/packaging/java/consumers/clojure" "$consumer_dir"
+  "$mvn_cmd" -B \
+    -f "$consumer_dir/pom.xml" \
+    -Dmaven.repo.local="$maven_repo" \
+    -Dsshfling.version="$version" \
+    -Dstyle.color=never \
+    verify
+  test -s "$consumer_dir/target/classes/io/sshfling/validation/clojure_consumer.clj"
+  "$mvn_cmd" -B -q \
+    -f "$consumer_dir/pom.xml" \
+    -Dmaven.repo.local="$maven_repo" \
+    -Dsshfling.version="$version" \
+    -Dstyle.color=never \
+    -Dexec.mainClass=clojure.main \
+    -Dexec.args="-m $namespace --version" \
+    exec:java | grep -Fx "sshfling $version" >/dev/null
+  "$mvn_cmd" -B -q \
+    -f "$consumer_dir/pom.xml" \
+    -Dmaven.repo.local="$maven_repo" \
+    -Dsshfling.version="$version" \
+    -Dstyle.color=never \
+    -Dexec.mainClass=clojure.main \
+    -Dexec.args="-m $namespace init $smoke_project --force --session-seconds 60" \
+    exec:java >/dev/null
+  test -x "$smoke_project/native/sshfling-linux-account"
+  test -x "$smoke_project/native/sshfling-unix-identity"
+}
+
+validate_clojure_gradle_consumer() {
+  local consumer_dir="$build_root/validation/clojure-gradle-consumer"
+  local smoke_project="$build_root/validation/clojure-gradle-smoke-project"
+
+  cp -R "$repo_root/packaging/java/consumers/clojure-gradle" "$consumer_dir"
+  "$gradle_cmd" \
+    --no-daemon \
+    --console=plain \
+    -p "$consumer_dir" \
+    -PsshflingVersion="$version" \
+    -PsshflingRepository="$gradle_repo" \
+    clean check
+  test -s "$consumer_dir/build/resources/main/io/sshfling/validation/clojure_gradle_consumer.clj"
+  "$gradle_cmd" \
+    --no-daemon \
+    --console=plain \
+    -p "$consumer_dir" \
+    -PsshflingVersion="$version" \
+    -PsshflingRepository="$gradle_repo" \
+    run --args=--version | grep -Fx "sshfling $version" >/dev/null
+  "$gradle_cmd" \
+    --no-daemon \
+    --console=plain \
+    -p "$consumer_dir" \
+    -PsshflingVersion="$version" \
+    -PsshflingRepository="$gradle_repo" \
+    run --args="init $smoke_project --force --session-seconds 60" >/dev/null
+  test -x "$smoke_project/native/sshfling-linux-account"
+  test -x "$smoke_project/native/sshfling-unix-identity"
+}
+
 validate_java_package() {
   local validation_dir="$build_root/validation"
   local smoke_project="$validation_dir/smoke-project"
@@ -168,6 +295,7 @@ validate_java_package() {
   test -x "$smoke_project/scripts/uninstall-local.sh"
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
   test -x "$smoke_project/production/sshfling-session"
   test -f "$smoke_project/secrets/.gitkeep"
   jar tf "$jar_path" | grep -Fx "sshfling/sshfling.py" >/dev/null
@@ -175,10 +303,12 @@ validate_java_package() {
   jar tf "$jar_path" | grep -Fx "sshfling/templates/systemd/sshfling-prune.service" >/dev/null
   jar tf "$jar_path" | grep -Fx "sshfling/templates/systemd/sshfling-prune.timer" >/dev/null
   jar tf "$jar_path" | grep -Fx "sshfling/templates/native/sshfling-linux-account" >/dev/null
+  jar tf "$jar_path" | grep -Fx "sshfling/templates/production/sshfling-login-shell" >/dev/null
   install -d "$jar_extract"
   (cd "$jar_extract" && jar xf "$jar_path" sshfling/resource-manifest.txt)
   grep -Fx "0755 templates/native/sshfling-linux-account" "$jar_extract/sshfling/resource-manifest.txt" >/dev/null
   grep -Fx "0755 templates/native/sshfling-unix-identity" "$jar_extract/sshfling/resource-manifest.txt" >/dev/null
+  grep -Fx "0755 templates/production/sshfling-login-shell" "$jar_extract/sshfling/resource-manifest.txt" >/dev/null
   jar tf "$javadoc_jar_path" | grep -Fx "io/sshfling/cli/SSHFling.html" >/dev/null
 
   test -s "$gradle_jar"
@@ -200,6 +330,20 @@ validate_java_package() {
   java -cp "$maven_consumer/target/classes:$jar_path" \
     io.sshfling.validation.MavenConsumer --version | grep -Fx "sshfling $version" >/dev/null
 
+  validate_maven_language_consumer \
+    kotlin \
+    io.sshfling.validation.KotlinConsumer \
+    io/sshfling/validation/KotlinConsumer.class
+  validate_maven_language_consumer \
+    scala \
+    io.sshfling.validation.ScalaConsumer \
+    io/sshfling/validation/ScalaConsumer.class
+  validate_maven_language_consumer \
+    groovy \
+    io.sshfling.validation.GroovyConsumer \
+    io/sshfling/validation/GroovyConsumer.class
+  validate_clojure_maven_consumer
+
   cp -R "$repo_root/packaging/java/consumers/gradle" "$gradle_consumer"
   "$gradle_cmd" \
     --no-daemon \
@@ -208,6 +352,17 @@ validate_java_package() {
     -PsshflingVersion="$version" \
     -PsshflingRepository="$gradle_repo" \
     run --args=--version | grep -Fx "sshfling $version" >/dev/null
+
+  validate_gradle_language_consumer \
+    kotlin \
+    build/classes/kotlin/main/io/sshfling/validation/KotlinGradleConsumer.class
+  validate_gradle_language_consumer \
+    scala \
+    build/classes/scala/main/io/sshfling/validation/ScalaGradleConsumer.class
+  validate_gradle_language_consumer \
+    groovy \
+    build/classes/groovy/main/io/sshfling/validation/GroovyGradleConsumer.class
+  validate_clojure_gradle_consumer
 }
 
 rm -rf "$build_root"

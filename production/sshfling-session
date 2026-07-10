@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+session_user_path="${PATH:-}"
+original_arguments=("$@")
+PATH="/usr/sbin:/usr/bin:/sbin:/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/run/current-system/profile/bin:/var/guix/profiles/system/profile/bin"
+export PATH
+
 max_seconds=300
 max_allowed_seconds=86400
 max_allowed_connections=10
@@ -13,6 +18,7 @@ allow_detached_start=0
 session_lock_root=""
 provision_lock_user=""
 jq_command="jq"
+lockf_handshake=""
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
@@ -56,12 +62,31 @@ while [[ "$#" -gt 0 ]]; do
       jq_command="${2:-}"
       shift 2
       ;;
+    --lockf-held)
+      [[ -z "$lockf_handshake" ]] || {
+        echo "Duplicate internal lockf marker." >&2
+        exit 2
+      }
+      lockf_handshake="${2:-}"
+      shift 2
+      ;;
     *)
       echo "Unknown sshfling-session option: $1" >&2
       exit 2
       ;;
   esac
 done
+
+if [[ -n "$lockf_handshake" ]]; then
+  [[ "$lockf_handshake" =~ ^/tmp/sshfling-lockf\.[A-Za-z0-9]+$ ]] || {
+    echo "Invalid internal lockf marker." >&2
+    exit 2
+  }
+  (umask 077; set -o noclobber; : >"$lockf_handshake") || {
+    echo "Could not create internal lockf marker." >&2
+    exit 75
+  }
+fi
 
 default_session_lock_root() {
   local operating_system
@@ -177,7 +202,7 @@ provision_session_locks() {
     fi
     chown "$uid" "$lock_file"
     chgrp "$gid" "$lock_file"
-    chmod 0400 "$lock_file"
+    chmod 0600 "$lock_file"
     owner="$(stat_number %u %u "$lock_file")" || return 1
     [[ -f "$lock_file" && ! -L "$lock_file" && "$owner" == "$uid" ]] || return 1
     slot=$(( slot + 1 ))
@@ -197,6 +222,11 @@ if [[ -n "$provision_lock_user" ]]; then
   provision_session_locks "$provision_lock_user"
   exit $?
 fi
+
+# Package-manager tools are needed by regular macOS/BSD sessions, but root lock
+# provisioning above uses only OS-owned paths and system profiles.
+PATH="$PATH:/usr/local/sbin:/usr/local/bin:/opt/homebrew/bin:/opt/local/bin:/usr/pkg/bin"
+export PATH
 
 if [[ -z "$login_user" ]]; then
   login_user="$(id -un 2>/dev/null || true)"
@@ -406,12 +436,23 @@ close_lock_fd() {
   esac
 }
 
+lock_operating_system="$(uname -s 2>/dev/null)" || {
+  echo "Could not identify the operating system for session locking." >&2
+  exit 1
+}
+session_shell="$(command -v bash || true)"
+if [[ -z "$session_shell" || ! -x "$session_shell" ]]; then
+  echo "bash is required to run the SSHFling forced session." >&2
+  exit 127
+fi
+
 if command -v flock >/dev/null 2>&1; then
   lock_backend=flock
-elif command -v lockf >/dev/null 2>&1; then
+elif [[ "$lock_operating_system" == Darwin || "$lock_operating_system" == FreeBSD || "$lock_operating_system" == DragonFly ]] \
+  && command -v lockf >/dev/null 2>&1; then
   lock_backend=lockf
 else
-  echo "flock or lockf is required for sshfling connection limits." >&2
+  echo "flock or a supported lockf command is required for sshfling connection limits on $lock_operating_system." >&2
   exit 127
 fi
 
@@ -419,13 +460,8 @@ acquire_lock_fd() {
   local fd="$1"
   local lock_status
 
-  if [[ "$lock_backend" == flock ]]; then
-    flock -n "$fd" && return 0
-    lock_status="$?"
-  else
-    lockf -s -t 0 "$fd" && return 0
-    lock_status="$?"
-  fi
+  flock -n "$fd" && return 0
+  lock_status="$?"
   if [[ "$lock_status" -eq 1 || "$lock_status" -eq 75 ]]; then
     return 1
   fi
@@ -440,18 +476,59 @@ validate_lock_path_components "$lock_root" 1 || {
   exit 75
 }
 
+validate_session_lock_file() {
+  local path="$1"
+  local owner
+
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  owner="$(stat_number %u %u "$path")" || return 1
+  [[ "$owner" == "$uid" ]]
+}
+
+if [[ "$lock_backend" == lockf && -z "$lockf_handshake" ]]; then
+  slot=1
+  while (( slot <= max_sessions )); do
+    lock_file="${lock_root}/session-${slot}.lock"
+    validate_session_lock_file "$lock_file" || {
+      echo "Missing or unsafe sshfling session lock file: $lock_file" >&2
+      exit 75
+    }
+    handshake="$(mktemp /tmp/sshfling-lockf.XXXXXXXX)" || exit 75
+    rm -f "$handshake"
+    lock_status=0
+    if lockf -k -t 0 "$lock_file" \
+      "$session_shell" -p "$0" --lockf-held "$handshake" "${original_arguments[@]}"; then
+      lock_status=0
+    else
+      lock_status="$?"
+    fi
+    if [[ -e "$handshake" ]]; then
+      rm -f "$handshake"
+      exit "$lock_status"
+    fi
+    rm -f "$handshake"
+    if [[ "$lock_status" -ne 1 && "$lock_status" -ne 75 ]]; then
+      echo "lockf could not acquire sshfling session lock $lock_file (exit $lock_status)." >&2
+      exit 75
+    fi
+    slot=$(( slot + 1 ))
+  done
+  audit_log session_rejected reason=max_sessions max_connections="$max_sessions"
+  echo "Maximum active sshfling sessions reached for ${USER:-uid-$uid}." >&2
+  exit 75
+fi
+
+if [[ "$lock_backend" == lockf ]]; then
+  slot_fd=lockf
+fi
+
 slot=1
-while (( slot <= max_sessions )); do
+while [[ "$lock_backend" == flock ]] && (( slot <= max_sessions )); do
   lock_file="${lock_root}/session-${slot}.lock"
-  if [[ ! -f "$lock_file" || -L "$lock_file" ]]; then
+  if ! validate_session_lock_file "$lock_file"; then
     echo "Missing or unsafe sshfling session lock file: $lock_file" >&2
     exit 75
   fi
-  lock_owner="$(stat_number %u %u "$lock_file")" || exit 75
-  [[ "$lock_owner" == "$uid" ]] || {
-    echo "Incorrect owner for sshfling session lock file: $lock_file" >&2
-    exit 75
-  }
   candidate_fd=$(( slot + 9 ))
   open_lock_fd "$candidate_fd" "$lock_file" || {
     echo "Could not open sshfling session lock file: $lock_file" >&2
@@ -499,6 +576,8 @@ run_limited() {
     exec 17>&-
     exec 18>&-
     exec 19>&-
+    PATH="$session_user_path"
+    export PATH
     exec "$@"
   ) &
   local command_pid="$!"
@@ -523,20 +602,11 @@ run_limited() {
   fi
 }
 
-session_shell="${SSHFLING_SESSION_SHELL:-${BASH:-}}"
-if [[ -z "$session_shell" || ! -x "$session_shell" ]]; then
-  session_shell="$(command -v bash || true)"
-fi
-if [[ -z "$session_shell" || ! -x "$session_shell" ]]; then
-  echo "bash is required to run the SSHFling forced session." >&2
-  exit 127
-fi
-
 if [[ -n "${SSH_ORIGINAL_COMMAND:-}" ]]; then
-  run_limited "$session_shell" -lc "$SSH_ORIGINAL_COMMAND"
+  run_limited "$session_shell" --noprofile --norc -c "$SSH_ORIGINAL_COMMAND"
 else
   echo "Temporary SSH session ${username} is limited to ${max_seconds} seconds." >&2
-  run_limited "$session_shell" -l
+  run_limited "$session_shell" --noprofile --norc
 fi
 
 if [[ "$timed_out" -eq 1 ]]; then

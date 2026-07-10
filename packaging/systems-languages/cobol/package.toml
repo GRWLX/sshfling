@@ -1,0 +1,12 @@
+schema_version = 1
+name = "sshfling-cobol"
+version = "0.0.0"
+language = "COBOL"
+compiler = "GnuCOBOL >= 3.1"
+platforms = ["linux-posix"]
+abi = "sshfling-launcher-v1"
+library_program = "SSHFling-Run"
+version_program = "SSHFling-Version"
+cli = "sshfling-cobol"
+argument_transport = "exact-linux-proc-cmdline"
+sources = ["src/sshfling.cob", "app/main.cob"]

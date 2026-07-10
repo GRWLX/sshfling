@@ -47,6 +47,7 @@ remove_file "$template_dir/ssh-server/sshd_config"
 remove_file "$template_dir/ssh-server/entrypoint.sh"
 remove_file "$template_dir/ssh-server/limited-session.sh"
 
+remove_file "$template_dir/production/sshfling-login-shell"
 remove_file "$template_dir/production/sshfling-session"
 
 remove_file "$template_dir/systemd/sshflingd.service"

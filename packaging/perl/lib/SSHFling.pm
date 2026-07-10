@@ -39,6 +39,7 @@ sub _normalize_template_modes {
     my @executables = (
         'native/sshfling-linux-account',
         'native/sshfling-unix-identity',
+        'production/sshfling-login-shell',
         'production/sshfling-session',
         'scripts/create-network.sh',
         'scripts/generate-ssh-key.sh',

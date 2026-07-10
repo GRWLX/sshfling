@@ -1,0 +1,16 @@
+schema_version = 1
+abi = "sshfling-launcher-v1"
+platforms = ["linux-posix"]
+spawn_backend = "posix_spawnp"
+signal_policy = "forward-hup-int-quit-term-to-child-process-group"
+version_symbol = "sshfling_launcher_version"
+run_symbol = "sshfling_launcher_run"
+main_symbol = "sshfling_launcher_main"
+runtime_override = "SSHFLING_RUNTIME_DIR"
+python_override = "SSHFLING_PYTHON"
+runtime_script = "runtime/sshfling.py"
+template_directory = "runtime/templates"
+inherited_streams = ["stdin", "stdout", "stderr"]
+exit_policy = "child-exact"
+missing_dependency_exit = 127
+invalid_arguments_exit = 2

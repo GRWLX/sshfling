@@ -12,6 +12,46 @@ owner="${OWNER:-${repository%%/*}}"
 require_repo_signatures="${REQUIRE_REPO_SIGNATURES:-}"
 pkg_identifier="${SSHFLING_PKG_IDENTIFIER:-io.sshfling.cli}"
 
+scripting_download_files=(
+  "sshfling-tcl-${version}.tar.gz"
+  "sshfling-awk-${version}.tar.gz"
+  "sshfling-sed-${version}.tar.gz"
+  "sshfling-lua-${version}.tar.gz"
+  "sshfling-zsh-${version}.tar.gz"
+  "sshfling-fish-${version}.tar.gz"
+  "sshfling-elvish-${version}.tar.gz"
+  "sshfling-nushell-${version}.tar.gz"
+  "sshfling-powershell-${version}.tar.gz"
+  "sshfling-guix-scheme-${version}.tar.gz"
+  "sshfling-${version}-1.all.rock"
+  "sshfling-scripting-languages-${version}-validation.tsv"
+)
+mapfile -t catalog_download_files < <(
+  bash "$repo_root/packaging/list-language-release-artifacts.sh" "$version" catalog
+)
+direct_download_files=(
+  "sshfling-${version}.tar.gz"
+  "SSHFling.Tool.${version}.nupkg"
+  "SSHFling.${version}.nupkg"
+  "sshfling-cli-${version}.jar"
+  "sshfling-cli-${version}-javadoc.jar"
+  "sshfling-cli-${version}-sources.jar"
+  "sshfling-cli-${version}.pom"
+  "sshfling-${version}.tgz"
+  "sshfling-${version}-py3-none-any.whl"
+  "sshfling-go-${version}.zip"
+  "sshfling-cli-${version}.crate"
+  "sshfling-php-${version}.zip"
+  "sshfling-${version}.gem"
+  "sshfling-native-${version}.tar.gz"
+  "sshfling-perl-${version}.tar.gz"
+  "${scripting_download_files[@]}"
+  "${catalog_download_files[@]}"
+  "sshfling-${version}.pkg"
+  "sshfling-${version}.msi"
+  "sshfling-${version}-windows.zip"
+)
+
 missing=0
 verify_gpg_home=""
 
@@ -55,11 +95,75 @@ require_dir() {
   fi
 }
 
+require_exact_directory_files() {
+  local directory="$1"
+  shift
+  local expected_listing
+  local actual_listing
+  local file
+
+  require_dir "$directory"
+  if [[ ! -d "$public_dir/$directory" ]]; then
+    return
+  fi
+  expected_listing="$(printf '%s\n' "$@" | sort)"
+  actual_listing="$(find "$public_dir/$directory" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)"
+  if [[ "$actual_listing" != "$expected_listing" ]]; then
+    echo "unexpected file set in $directory" >&2
+    diff -u \
+      <(printf '%s\n' "$expected_listing") \
+      <(printf '%s\n' "$actual_listing") >&2 || true
+    missing=1
+  fi
+  for file in "$@"; do
+    if [[ -L "$public_dir/$directory/$file" || ! -f "$public_dir/$directory/$file" || ! -s "$public_dir/$directory/$file" ]]; then
+      echo "missing, empty, or non-regular file in $directory: $file" >&2
+      missing=1
+    fi
+  done
+}
+
+require_checksum_manifest() {
+  local directory="$1"
+  local manifest="$2"
+  shift 2
+  local manifest_path="$public_dir/$directory/$manifest"
+  local expected_entries
+  local actual_entries
+
+  require_file "$directory/$manifest"
+  if [[ ! -f "$manifest_path" || -L "$manifest_path" ]]; then
+    return
+  fi
+  if ! actual_entries="$(awk '
+    length($1) == 64 && $1 !~ /[^0-9A-Fa-f]/ && NF == 2 { print $2; next }
+    { exit 1 }
+  ' "$manifest_path")"; then
+    echo "invalid checksum manifest format: $directory/$manifest" >&2
+    missing=1
+    return
+  fi
+  expected_entries="$(printf '%s\n' "$@" | sort)"
+  actual_entries="$(printf '%s\n' "$actual_entries" | sort)"
+  if [[ "$actual_entries" != "$expected_entries" ]]; then
+    echo "checksum manifest file set mismatch: $directory/$manifest" >&2
+    diff -u \
+      <(printf '%s\n' "$expected_entries") \
+      <(printf '%s\n' "$actual_entries") >&2 || true
+    missing=1
+    return
+  fi
+  if ! (cd "$public_dir/$directory" && sha256sum -c -- "$manifest" >/dev/null); then
+    echo "checksum verification failed: $directory/$manifest" >&2
+    missing=1
+  fi
+}
+
 require_contains() {
   local path="$1"
   local pattern="$2"
   require_file "$path"
-  if [[ -f "$public_dir/$path" ]] && ! grep -q -- "$pattern" "$public_dir/$path"; then
+  if [[ -f "$public_dir/$path" ]] && ! grep -Fq -- "$pattern" "$public_dir/$path"; then
     echo "missing pattern in $path: $pattern" >&2
     missing=1
   fi
@@ -69,7 +173,7 @@ require_not_contains() {
   local path="$1"
   local pattern="$2"
   require_file "$path"
-  if [[ -f "$public_dir/$path" ]] && grep -q -- "$pattern" "$public_dir/$path"; then
+  if [[ -f "$public_dir/$path" ]] && grep -Fq -- "$pattern" "$public_dir/$path"; then
     echo "forbidden pattern in $path: $pattern" >&2
     missing=1
   fi
@@ -91,7 +195,7 @@ require_gzip_contains() {
   local path="$1"
   local pattern="$2"
   require_file "$path"
-  if [[ -f "$public_dir/$path" ]] && ! gunzip -c "$public_dir/$path" | grep -q -- "$pattern"; then
+  if [[ -f "$public_dir/$path" ]] && ! gunzip -c "$public_dir/$path" | grep -Fq -- "$pattern"; then
     echo "missing compressed pattern in $path: $pattern" >&2
     missing=1
   fi
@@ -280,24 +384,16 @@ require_contains "macos/install-pkg.sh" "shasum -a 256 -c -"
 require_contains "windows/install.ps1" "Get-FileHash -Algorithm SHA256"
 require_file "downloads/SHA256SUMS"
 require_file "downloads/index.html"
-require_file "downloads/sshfling-${version}.tar.gz"
-require_file "downloads/SSHFling.Tool.${version}.nupkg"
-require_file "downloads/SSHFling.${version}.nupkg"
-require_file "downloads/sshfling-cli-${version}.jar"
-require_file "downloads/sshfling-cli-${version}-javadoc.jar"
-require_file "downloads/sshfling-cli-${version}-sources.jar"
-require_file "downloads/sshfling-cli-${version}.pom"
-require_file "downloads/sshfling-${version}.tgz"
-require_file "downloads/sshfling-${version}-py3-none-any.whl"
-require_file "downloads/sshfling-go-${version}.zip"
-require_file "downloads/sshfling-cli-${version}.crate"
-require_file "downloads/sshfling-php-${version}.zip"
-require_file "downloads/sshfling-${version}.gem"
-require_file "downloads/sshfling-native-${version}.tar.gz"
-require_file "downloads/sshfling-perl-${version}.tar.gz"
-require_file "downloads/sshfling-${version}.pkg"
-require_file "downloads/sshfling-${version}.msi"
-require_file "downloads/sshfling-${version}-windows.zip"
+for file in "${direct_download_files[@]}"; do
+  require_file "downloads/$file"
+  require_contains "downloads/index.html" "$file"
+done
+require_exact_directory_files \
+  "downloads" \
+  "${direct_download_files[@]}" \
+  "SHA256SUMS" \
+  "index.html"
+require_checksum_manifest "downloads" "SHA256SUMS" "${direct_download_files[@]}"
 
 require_file "arch/PKGBUILD"
 require_file "arch/.SRCINFO"
@@ -354,6 +450,11 @@ require_contains "index.html" "sshfling-cli-${version}-javadoc.jar"
 require_contains "index.html" "sshfling-cli-${version}.pom"
 require_contains "index.html" "Maven library consumer"
 require_contains "index.html" "Gradle library consumer"
+require_contains "index.html" "Kotlin, Scala, and Groovy consumers"
+require_contains "index.html" "clean Maven and Gradle projects"
+require_contains "index.html" "arrayOf(\"--version\")"
+require_contains "index.html" "Array(\"--version\")"
+require_contains "index.html" "as String[]"
 require_contains "index.html" "Node.js npm package"
 require_contains "index.html" "npm install -g"
 require_contains "index.html" "npm uninstall -g sshfling"
@@ -387,6 +488,22 @@ require_contains "index.html" "Perl source distribution"
 require_contains "index.html" "sshfling-perl-${version}.tar.gz"
 require_contains "index.html" "perl Makefile.PL"
 require_contains "index.html" "perl -MSSHFling"
+require_contains "index.html" "Scripting language source packages"
+for file in "${scripting_download_files[@]}"; do
+  require_contains "index.html" "$file"
+done
+require_contains "index.html" "Runtime-gated: Nushell"
+require_contains "index.html" "Runtime-gated: PowerShell"
+require_contains "index.html" "Runtime-gated: Guix Scheme"
+require_contains "index.html" "publication and artifact-integrity evidence are separate from optional interpreter runtime status"
+require_contains "index.html" "Functional, scientific, BEAM, and systems language packages"
+require_contains "index.html" "distinguish archive publication from toolchain-gated runtime results"
+for file in "${catalog_download_files[@]}"; do
+  require_contains "index.html" "$file"
+done
+require_not_contains "index.html" "Nushell runtime PASS"
+require_not_contains "index.html" "PowerShell runtime PASS"
+require_not_contains "index.html" "Guix Scheme runtime PASS"
 require_contains "index.html" "sudo pkgutil --forget ${pkg_identifier}"
 require_contains "index.html" "Start-Process msiexec.exe -Wait -PassThru -ArgumentList"
 require_contains "index.html" "SSHFling Maintainers"
@@ -436,6 +553,7 @@ require_contains "community.html" "Trust model: review the generated manifest"
 require_gzip_contains "apt/Packages.gz" "Version: ${version}"
 
 require_contains "homebrew/sshfling.rb" "license :cannot_represent"
+require_contains "homebrew/sshfling.rb" 'depends_on "flock"'
 require_contains "arch/PKGBUILD" "LicenseRef-SSHFling-Commercial"
 require_contains "nix/flake.nix" "license = licenses.unfree;"
 require_contains "snap/snapcraft.yaml" "license: Proprietary"

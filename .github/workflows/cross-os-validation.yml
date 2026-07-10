@@ -162,12 +162,17 @@ jobs:
           set -euo pipefail
           docker run --rm -v "$PWD/tests/cross-os:/tests/cross-os:ro" opensuse/tumbleweed bash -lc 'set -euo pipefail
           zypper --non-interactive --gpg-auto-import-keys refresh >/dev/null
-          zypper --non-interactive --gpg-auto-import-keys install rpm-build curl tar gzip python3 openssh shadow procps util-linux >/dev/null
+          zypper --non-interactive --gpg-auto-import-keys install rpm-build curl tar gzip python3 jq openssh shadow procps util-linux >/dev/null
           mkdir -p /root/rpmbuild/SOURCES /root/rpmbuild/SPECS
           curl -fsSL https://grwlx.github.io/sshfling/downloads/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz -o /root/rpmbuild/SOURCES/sshfling-${{ needs.validate-version.outputs.version }}.tar.gz
           curl -fsSL https://grwlx.github.io/sshfling/opensuse/sshfling.spec -o /root/rpmbuild/SPECS/sshfling.spec
           rpmbuild --define "_topdir /root/rpmbuild" -ba /root/rpmbuild/SPECS/sshfling.spec >/tmp/opensuse-rpmbuild.log
           rpm -Uvh /root/rpmbuild/RPMS/noarch/sshfling-${{ needs.validate-version.outputs.version }}-1.noarch.rpm >/dev/null
+          test -x /usr/libexec/sshfling/sshfling-linux-account
+          test -x /usr/libexec/sshfling/sshfling-unix-identity
+          /usr/libexec/sshfling/sshfling-linux-account identity root | grep -Fq "status=present"
+          /usr/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq "uid=0"
+          bash /tests/cross-os/validate-native-session-policy.sh /usr/share/sshfling/templates/production/sshfling-session >/dev/null
           /tests/cross-os/validate-cli.sh sshfling "${{ needs.validate-version.outputs.version }}"'
 
   nix-flake:
@@ -188,7 +193,17 @@ jobs:
           docker run --rm -e NIX_CONFIG -v "$PWD/nix-test:/work" -v "$PWD/tests/cross-os:/tests/cross-os:ro" nixos/nix:2.24.9 sh -lc 'set -eu
           cd /work
           NIXPKGS_ALLOW_UNFREE=1 nix --extra-experimental-features "nix-command flakes" build --impure .#default -o result
-          nix --extra-experimental-features "nix-command flakes" shell nixpkgs#python3 nixpkgs#openssh -c /tests/cross-os/validate-cli.sh ./result/bin/sshfling "${{ needs.validate-version.outputs.version }}"'
+          runtime_path="$(nix-store -qR ./result | while IFS= read -r store_path; do
+            if [ -d "$store_path/bin" ]; then printf "%s:" "$store_path/bin"; fi
+          done)"
+          runtime_path=${runtime_path%:}
+          PATH="$runtime_path:$PATH"
+          export PATH
+          ./result/libexec/sshfling/sshfling-linux-account identity root | grep -Fq "status=present"
+          ./result/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq "uid=0"
+          bash /tests/cross-os/validate-native-login-shell.sh ./result/share/sshfling/templates/production/sshfling-login-shell >/dev/null
+          bash /tests/cross-os/validate-native-session-policy.sh ./result/share/sshfling/templates/production/sshfling-session >/dev/null
+          /tests/cross-os/validate-cli.sh ./result/bin/sshfling "${{ needs.validate-version.outputs.version }}"'
 
   slackware-slackbuild:
     name: Slackware SlackBuild runtime
@@ -211,6 +226,9 @@ jobs:
           if command -v update-ca-certificates >/dev/null 2>&1; then update-ca-certificates >/tmp/update-ca-certificates.log 2>&1 || true; fi
           ssl_ca=/etc/ssl/certs/ca-certificates.crt
           test -s "$ssl_ca"
+          wget --ca-certificate="$ssl_ca" -qO /tmp/jq https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64
+          printf '%s  %s\n' 020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d /tmp/jq | sha256sum -c -
+          install -m 0755 /tmp/jq /usr/local/bin/jq
           wget --ca-certificate="$ssl_ca" -qO /tmp/python3.txz "$slackware_https_mirror/slackware64/d/python3-3.9.10-x86_64-1.txz"
           installpkg /tmp/python3.txz >/tmp/install-python3.log
           mkdir -p /tmp/slacktest
@@ -447,7 +465,14 @@ jobs:
           sudo installer -pkg "$pkg" -target /
           tests/cross-os/validate-cli.sh /usr/local/bin/sshfling "$version"
           /usr/local/libexec/sshfling/sshfling-unix-identity identity root | grep -Fq 'uid=0'
-          brew install jq
+          cmp native/sshfling-unix-identity /usr/local/libexec/sshfling/sshfling-unix-identity
+          cmp production/sshfling-login-shell /usr/local/share/sshfling/templates/production/sshfling-login-shell
+          cmp production/sshfling-session /usr/local/share/sshfling/templates/production/sshfling-session
+          test "$(stat -f '%Lp' /usr/local/libexec/sshfling/sshfling-unix-identity)" = 755
+          test "$(stat -f '%Lp' /usr/local/share/sshfling/templates/production/sshfling-login-shell)" = 755
+          test "$(stat -f '%Lp' /usr/local/share/sshfling/templates/production/sshfling-session)" = 755
+          brew install jq flock
+          tests/cross-os/validate-native-login-shell.sh /usr/local/share/sshfling/templates/production/sshfling-login-shell
           tests/cross-os/validate-native-session-policy.sh /usr/local/share/sshfling/templates/production/sshfling-session
 
   macos-homebrew:
@@ -468,7 +493,12 @@ jobs:
           cp /tmp/sshfling.rb "$tap_dir/Formula/sshfling.rb"
           brew install grwlx/sshfling-cross-test/sshfling
           tests/cross-os/validate-cli.sh sshfling "${{ needs.validate-version.outputs.version }}"
-          "$(brew --prefix grwlx/sshfling-cross-test/sshfling)/libexec/sshfling/sshfling-unix-identity" identity root | grep -Fq 'uid=0'
+          formula_prefix="$(brew --prefix grwlx/sshfling-cross-test/sshfling)"
+          "$formula_prefix/libexec/sshfling/sshfling-unix-identity" identity root | grep -Fq 'uid=0'
+          cmp native/sshfling-unix-identity "$formula_prefix/libexec/sshfling/sshfling-unix-identity"
+          cmp production/sshfling-login-shell "$(brew --prefix)/share/sshfling/templates/production/sshfling-login-shell"
+          cmp production/sshfling-session "$(brew --prefix)/share/sshfling/templates/production/sshfling-session"
+          tests/cross-os/validate-native-login-shell.sh "$(brew --prefix)/share/sshfling/templates/production/sshfling-login-shell"
           tests/cross-os/validate-native-session-policy.sh "$(brew --prefix)/share/sshfling/templates/production/sshfling-session"
 
   windows-msi:
@@ -604,6 +634,7 @@ jobs:
           grep -Fq "jq:textproc/jq" public/freebsd/security/sshfling/Makefile
           grep -Fq 'REINPLACE_CMD' public/freebsd/security/sshfling/Makefile
           grep -Fq "libexec/sshfling/sshfling-unix-identity" public/openbsd/security/sshfling/pkg/PLIST
+          grep -Fq 'sysutils/flock' public/openbsd/security/sshfling/Makefile
           grep -Fxq '@sample ${SYSCONFDIR}/sshfling/' public/openbsd/security/sshfling/pkg/PLIST
           grep -A1 -Fx 'share/examples/sshfling/policy.json' public/openbsd/security/sshfling/pkg/PLIST | tail -n 1 | grep -Fxq '@sample ${SYSCONFDIR}/sshfling/policy.json'
           grep -Fq "../../devel/jq" public/pkgsrc/security/sshfling/Makefile

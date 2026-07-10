@@ -1,0 +1,85 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.sshfling.validation</groupId>
+  <artifactId>clojure-library-consumer</artifactId>
+  <version>1.0.0</version>
+  <name>Clojure Maven SSHFling Consumer</name>
+  <description>Validates SSHFling's Java library API from Clojure using Maven.</description>
+
+  <properties>
+    <clojure.version>1.12.5</clojure.version>
+    <sshfling.version>0.1.16</sshfling.version>
+    <maven.compiler.release>11</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.sshfling</groupId>
+      <artifactId>sshfling-cli</artifactId>
+      <version>${sshfling.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.clojure</groupId>
+      <artifactId>clojure</artifactId>
+      <version>${clojure.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <resources>
+      <resource>
+        <directory>${project.basedir}/src/main/clojure</directory>
+        <filtering>false</filtering>
+      </resource>
+    </resources>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.6.3</version>
+        <configuration>
+          <mainClass>clojure.main</mainClass>
+          <arguments>
+            <argument>-m</argument>
+            <argument>io.sshfling.validation.clojure-consumer</argument>
+          </arguments>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.2.0</version>
+        <executions>
+          <execution>
+            <id>verify-clojure-source-in-jar</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <condition property="clojure.source.in.jar">
+                  <resourceexists>
+                    <zipentry
+                        zipfile="${project.build.directory}/${project.build.finalName}.jar"
+                        name="io/sshfling/validation/clojure_consumer.clj" />
+                  </resourceexists>
+                </condition>
+                <fail unless="clojure.source.in.jar"
+                      message="Clojure consumer namespace is missing from the packaged JAR." />
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

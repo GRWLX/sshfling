@@ -52,6 +52,7 @@ install -m 0755 \
   "$repo_root/ssh-server/limited-session.sh" \
   "$template_dir/ssh-server/"
 
+install -m 0755 "$repo_root/production/sshfling-login-shell" "$template_dir/production/sshfling-login-shell"
 install -m 0755 "$repo_root/production/sshfling-session" "$template_dir/production/sshfling-session"
 install -m 0644 "$repo_root/systemd/sshflingd.service" "$template_dir/systemd/sshflingd.service"
 install -m 0644 "$repo_root/systemd/sshfling-prune.service" "$template_dir/systemd/sshfling-prune.service"

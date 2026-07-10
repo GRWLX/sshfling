@@ -29,6 +29,8 @@ TODO.txt
 packaging/dotnet/**/bin/
 packaging/dotnet/**/obj/
 packaging/java/**/target/
+packaging/functional-languages/**/dist-newstyle/
+packaging/functional-languages/validation-evidence.tsv
 secrets/*
 !secrets/.gitkeep
 build/

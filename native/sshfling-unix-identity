@@ -1,8 +1,10 @@
 #!/bin/sh
 set -eu
+set -f
 
 LC_ALL=C
-export LC_ALL
+PATH='/usr/sbin:/usr/bin:/sbin:/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/run/current-system/profile/bin:/var/guix/profiles/system/profile/bin'
+export LC_ALL PATH
 
 die() {
   message=$1
@@ -10,6 +12,109 @@ die() {
   printf 'sshfling-unix-identity: %s\n' "$message" >&2
   exit "$code"
 }
+
+stat_owner_mode() {
+  path=$1
+  if values=$(stat -c '%u %a' "$path" 2>/dev/null); then
+    :
+  elif values=$(stat -f '%u %Lp' "$path" 2>/dev/null); then
+    :
+  else
+    return 1
+  fi
+  owner=${values%% *}
+  mode=${values#* }
+  [ -n "$owner" ] && [ -n "$mode" ] && [ "$mode" = "${mode##* }" ] || return 1
+  printf '%s %s\n' "$owner" "$mode"
+}
+
+trusted_tool_directory() {
+  path=$1
+  case "$path" in
+    */|*//*|*/./*|*/../*|*/.|*/..) return 1 ;;
+    /*) ;;
+    *) return 1 ;;
+  esac
+  current=
+  old_ifs=$IFS
+  IFS=/
+  # Globbing is disabled before this intentional component split.
+  # shellcheck disable=SC2086
+  set -- ${path#/}
+  IFS=$old_ifs
+  [ "$path" != / ] && [ "$#" -gt 0 ] || return 1
+  current_uid=
+  for component do
+    [ -n "$component" ] || return 1
+    current=$current/$component
+    [ -d "$current" ] && [ ! -L "$current" ] || return 1
+    values=$(stat_owner_mode "$current") || return 1
+    owner=${values%% *}
+    mode=${values#* }
+    case "$owner" in ''|*[!0-9]*) return 1 ;; esac
+    case "$mode" in
+      ???|????) ;;
+      *) return 1 ;;
+    esac
+    case "$mode" in *[!0-7]*) return 1 ;; esac
+    if [ "$owner" != 0 ]; then
+      if [ -z "$current_uid" ]; then
+        current_uid=$(command -p id -u 2>/dev/null) || return 1
+      fi
+      [ "$current_uid" != 0 ] && [ "$owner" = "$current_uid" ] || return 1
+    fi
+    permissions=${mode#"${mode%???}"}
+    group_digit=$(printf '%s' "$permissions" | cut -c 2)
+    other_digit=$(printf '%s' "$permissions" | cut -c 3)
+    writable=0
+    case "$group_digit$other_digit" in
+      *[2367]*) writable=1 ;;
+    esac
+    if [ "$writable" -eq 1 ]; then
+      case "$mode" in
+        1???|3???|5???|7???) : ;;
+        *) return 1 ;;
+      esac
+    fi
+    if [ "$current" = "$path" ] && [ "$writable" -eq 1 ]; then
+      return 1
+    fi
+  done
+}
+
+native_tool_directory=${SSHFLING_NATIVE_TOOL_DIR:-}
+native_tool_path=${SSHFLING_NATIVE_TOOL_PATH:-}
+unset SSHFLING_NATIVE_TOOL_DIR SSHFLING_NATIVE_TOOL_PATH
+if [ -n "$native_tool_directory" ]; then
+  trusted_tool_directory "$native_tool_directory" \
+    || die "refusing unsafe native tool directory: $native_tool_directory" 77
+  PATH=$native_tool_directory:$PATH
+fi
+if [ -n "$native_tool_path" ]; then
+  case "$native_tool_path" in
+    :*|*:|*::* ) die "refusing an empty native tool path entry" 77 ;;
+  esac
+  remaining_tool_path=$native_tool_path
+  while [ -n "$remaining_tool_path" ]; do
+    case "$remaining_tool_path" in
+      *:*)
+        native_tool_directory=${remaining_tool_path%%:*}
+        remaining_tool_path=${remaining_tool_path#*:}
+        ;;
+      *)
+        native_tool_directory=$remaining_tool_path
+        remaining_tool_path=
+        ;;
+    esac
+    [ -n "$native_tool_directory" ] \
+      || die "refusing an empty native tool path entry" 77
+    trusted_tool_directory "$native_tool_directory" \
+      || die "refusing unsafe native tool directory: $native_tool_directory" 77
+    PATH=$native_tool_directory:$PATH
+  done
+fi
+export PATH
+unset native_tool_directory native_tool_path remaining_tool_path
 
 validate_username() {
   username=$1
@@ -118,6 +223,93 @@ lookup_getent() {
   emit_present "$username" "$fields"
 }
 
+lookup_passwd_file() {
+  username=$1
+  passwd_directory=/etc
+  passwd_path=$passwd_directory/passwd
+
+  trusted_tool_directory "$passwd_directory" \
+    || die "refusing unsafe passwd directory: $passwd_directory" 77
+  if [ -L "$passwd_path" ]; then
+    values=$(stat_owner_mode "$passwd_path") \
+      || die "could not inspect passwd link: $passwd_path"
+    link_owner=${values%% *}
+    [ "$link_owner" = 0 ] \
+      || die "refusing non-root-owned passwd link: $passwd_path" 77
+    require_tool readlink
+    passwd_file=$(readlink -f "$passwd_path" 2>/dev/null) \
+      || die "could not resolve passwd link: $passwd_path"
+    case "$passwd_file" in
+      /nix/store/*/etc/passwd) ;;
+      *) die "refusing passwd link outside the Nix store: $passwd_path" 77 ;;
+    esac
+    trusted_tool_directory "${passwd_file%/*}" \
+      || die "refusing unsafe passwd target directory: ${passwd_file%/*}" 77
+  else
+    passwd_file=$passwd_path
+  fi
+  if [ ! -f "$passwd_file" ] || [ -L "$passwd_file" ] || [ ! -r "$passwd_file" ]; then
+    die "refusing unsafe passwd file: $passwd_file" 77
+  fi
+
+  values=$(stat_owner_mode "$passwd_file") \
+    || die "could not inspect passwd file: $passwd_file"
+  owner=${values%% *}
+  mode=${values#* }
+  case "$owner" in ''|*[!0-9]*) die "invalid passwd file owner: $passwd_file" ;; esac
+  case "$mode" in
+    ???|????) ;;
+    *) die "invalid passwd file mode: $passwd_file" ;;
+  esac
+  [ "$owner" = 0 ] || die "refusing non-root-owned passwd file: $passwd_file" 77
+
+  permissions=${mode#"${mode%???}"}
+  group_digit=$(printf '%s' "$permissions" | cut -c 2)
+  other_digit=$(printf '%s' "$permissions" | cut -c 3)
+  case "$group_digit$other_digit" in
+    *[2367]*) die "refusing writable passwd file: $passwd_file" 77 ;;
+  esac
+
+  if lookup=$(awk -F: -v expected="$username" '
+    $1 == expected { matches++; entry = $0 }
+    END {
+      if (matches == 0) { print "missing"; exit }
+      if (matches > 1) { print "multiple"; exit }
+      printf "present\t%s\n", entry
+    }
+  ' "$passwd_file" 2>/dev/null); then
+    :
+  else
+    status=$?
+    die "passwd file lookup failed for $username (exit $status)"
+  fi
+
+  case "$lookup" in
+    missing)
+      emit_missing "$username"
+      return 0
+      ;;
+    multiple)
+      die "passwd file returned multiple records for $username"
+      ;;
+    present'	'*) entry=${lookup#present'	'} ;;
+    *) die "passwd file lookup returned an invalid result for $username" ;;
+  esac
+  if ! fields=$(parse_passwd_entry "$username" "$entry"); then
+    die "passwd file returned a malformed record for $username"
+  fi
+  emit_present "$username" "$fields"
+}
+
+lookup_unix() {
+  username=$1
+  if command -v getent >/dev/null 2>&1; then
+    lookup_getent "$username"
+  else
+    lookup_passwd_file "$username"
+  fi
+}
+
 lookup_dscacheutil() {
   username=$1
   if record=$(dscacheutil -q user -a name "$username" 2>/dev/null); then
@@ -190,7 +382,7 @@ operating_system=$(uname -s 2>/dev/null) \
   || die "could not identify the operating system"
 case "$operating_system" in
   Linux|FreeBSD|OpenBSD|NetBSD|DragonFly|SunOS)
-    lookup_getent "$2"
+    lookup_unix "$2"
     ;;
   Darwin)
     lookup_darwin "$2"

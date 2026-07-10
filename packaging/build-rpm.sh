@@ -55,6 +55,7 @@ assert_rpm_payload_assets() {
 644 usr/share/sshfling/templates/compose.server.yml
 755 usr/share/sshfling/templates/native/sshfling-linux-account
 755 usr/share/sshfling/templates/native/sshfling-unix-identity
+755 usr/share/sshfling/templates/production/sshfling-login-shell
 755 usr/share/sshfling/templates/production/sshfling-session
 755 usr/share/sshfling/templates/scripts/create-network.sh
 755 usr/share/sshfling/templates/scripts/generate-ssh-key.sh
@@ -391,7 +392,7 @@ restore_config() {
 
   rpmsave="\$dst.rpmsave"
   if [ -f "\$rpmsave" ]; then
-    if cmp -s "\$rpmsave" "\$src"; then
+    if [ "\$(cksum <"\$rpmsave")" = "\$(cksum <"\$src")" ]; then
       rm -f "\$rpmsave"
     else
       echo "sshfling: preserving existing \$rpmsave" >&2

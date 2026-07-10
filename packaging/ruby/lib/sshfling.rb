@@ -52,6 +52,7 @@ module SSHFling
       "sshfling.py",
       "templates/native/sshfling-linux-account",
       "templates/native/sshfling-unix-identity",
+      "templates/production/sshfling-login-shell",
       "templates/production/sshfling-session",
       "templates/scripts/create-network.sh",
       "templates/scripts/generate-ssh-key.sh",

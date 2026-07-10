@@ -19,6 +19,7 @@ const EXECUTABLE_FILES: &[&str] = &[
     "runtime/sshfling.py",
     "runtime/templates/native/sshfling-linux-account",
     "runtime/templates/native/sshfling-unix-identity",
+    "runtime/templates/production/sshfling-login-shell",
     "runtime/templates/production/sshfling-session",
     "runtime/templates/scripts/create-network.sh",
     "runtime/templates/scripts/generate-ssh-key.sh",

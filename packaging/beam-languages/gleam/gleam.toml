@@ -1,0 +1,11 @@
+name = "sshfling"
+version = "0.0.0"
+description = "Gleam launcher for the bundled SSHFling runtime"
+licences = ["Apache-2.0"]
+repository = { type = "github", user = "GRWLX", repo = "sshfling" }
+target = "erlang"
+gleam = ">= 1.6.0 and < 2.0.0"
+
+[dependencies]
+
+[dev-dependencies]

@@ -80,7 +80,8 @@ make test-containers
 
 - Confirm release assets include the expected `.deb`, `.rpm`, `.pkg`, `.msi`,
   Windows zip, `.NET` global-tool and library `.nupkg` files, Java executable,
-  source, and Javadocs JARs plus POM, Node.js npm `.tgz`, Python wheel, Go module zip, Rust `.crate`, PHP
+  source, and Javadocs JARs plus POM validated by Java, Kotlin, Scala, and
+  Groovy consumers, Node.js npm `.tgz`, Python wheel, Go module zip, Rust `.crate`, PHP
   Composer zip, Ruby `.gem`, C/C++ native source distribution, Perl source
   distribution, main source tarball, and `SHA256SUMS`.
 - Confirm the public package site has APT/RPM metadata, repository signing files when production signing is enabled, Homebrew and macOS installer scripts, Windows installer scripts, and generated community manifests.

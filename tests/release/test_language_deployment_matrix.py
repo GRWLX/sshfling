@@ -21,15 +21,144 @@ matrix = load_generator()
 
 
 class LanguageDeploymentMatrixTests(unittest.TestCase):
-    def test_matrix_has_at_least_192_verified_cells(self) -> None:
+    def test_matrix_has_at_least_400_verified_cells(self) -> None:
         cells = matrix.verification_cells()
 
-        self.assertGreaterEqual(len(cells), 192)
+        self.assertGreaterEqual(len(cells), 400)
         self.assertEqual({cell["status"] for cell in cells}, {"PASS"})
         self.assertEqual(len({cell["cell_id"] for cell in cells}), len(cells))
 
     def test_matrix_validation_accepts_current_surfaces(self) -> None:
         self.assertEqual(matrix.validate_matrix(), [])
+
+    def test_first_91_catalog_has_complete_explicit_coverage(self) -> None:
+        cells = matrix.catalog_cells()
+        expected = list(matrix.FIRST_91_CATALOG)
+        by_order: dict[int, list[dict[str, str]]] = {}
+        for cell in cells:
+            by_order.setdefault(int(cell["order"]), []).append(cell)
+
+        self.assertEqual(len(expected), 91)
+        self.assertEqual(len({language for language, _status in expected}), 91)
+        self.assertEqual(set(by_order), set(range(1, 92)))
+        todo = matrix.todo_first_91_catalog()
+        self.assertEqual(
+            [language for language, _status in todo],
+            [language for language, _status in expected],
+        )
+        self.assertEqual(len({cell["cell_id"] for cell in cells}), len(cells))
+        self.assertEqual(len({cell["surface_id"] for cell in cells}), len(cells))
+        for order, (language, expected_status) in enumerate(expected, start=1):
+            language_cells = by_order[order]
+            self.assertEqual({cell["language"] for cell in language_cells}, {language})
+            self.assertEqual(
+                matrix.derived_catalog_status(language_cells),
+                expected_status,
+                language,
+            )
+            for cell in language_cells:
+                for field in (
+                    "package_manager",
+                    "deployment_type",
+                    "interface_type",
+                    "artifact",
+                    "evidence",
+                ):
+                    self.assertTrue(cell[field].strip(), f"{cell['surface_id']}:{field}")
+
+    def test_pass_status_rejects_skip_blocked_or_failed_evidence(self) -> None:
+        skip = dict(matrix.DEPLOYMENTS[0])
+        skip["validation_evidence"] = "RESULT runtime SKIP tool-not-found"
+        blocked = dict(matrix.DEPLOYMENTS[0])
+        blocked["validation_status"] = "BLOCKED"
+        blocked["validation_evidence"] = "BLOCKED runtime-validation"
+
+        skip_errors = matrix.status_evidence_errors([skip], "fixture")
+        blocked_errors = matrix.status_evidence_errors([blocked], "fixture")
+        self.assertTrue(any("PASS evidence contains" in error for error in skip_errors))
+        self.assertTrue(any("disagrees" in error for error in blocked_errors))
+        self.assertTrue(any("PASS evidence contains" in error for error in blocked_errors))
+
+    def test_source_publication_pass_is_separate_from_blocked_runtime(self) -> None:
+        by_language: dict[str, list[dict[str, str]]] = {}
+        for cell in matrix.catalog_cells():
+            by_language.setdefault(cell["language"], []).append(cell)
+
+        for language in (
+            "Swift",
+            "Smalltalk",
+            "APL",
+            "Q/KDB+",
+            "Chapel",
+            "Ballerina",
+            "Roc",
+        ):
+            cells = by_language[language]
+            publications = [
+                cell
+                for cell in cells
+                if cell["deployment_type"] == "versioned source-archive publication"
+            ]
+            runtimes = [cell for cell in cells if cell["status"] == "BLOCKED"]
+            self.assertEqual(len(publications), 1, language)
+            self.assertEqual(publications[0]["status"], "PASS", language)
+            self.assertEqual(publications[0]["interface_type"], "source package", language)
+            self.assertNotRegex(
+                publications[0]["evidence"],
+                matrix.CONTRADICTORY_PASS_EVIDENCE,
+                language,
+            )
+            self.assertEqual(len(runtimes), 1, language)
+            self.assertEqual(matrix.derived_catalog_status(cells), "BLOCKED", language)
+
+    def test_new_runtime_passes_are_synchronized_with_todo_status(self) -> None:
+        by_language: dict[str, list[dict[str, str]]] = {}
+        for cell in matrix.catalog_cells():
+            by_language.setdefault(cell["language"], []).append(cell)
+
+        for language in (
+            "Dart",
+            "Julia",
+            "V",
+            "J",
+            "WebAssembly/WASI",
+            "Pony",
+            "Janet",
+            "Odin",
+        ):
+            cells = by_language[language]
+            self.assertEqual(matrix.derived_catalog_status(cells), "PASS", language)
+            self.assertTrue(
+                any(
+                    cell["status"] == "PASS"
+                    and "source-archive publication" not in cell["deployment_type"]
+                    for cell in cells
+                ),
+                language,
+            )
+            self.assertEqual({cell["catalog_status"] for cell in cells}, {"PASS"})
+            self.assertEqual({cell["todo_status"] for cell in cells}, {"PASS"})
+
+    def test_each_pass_catalog_language_has_library_or_cli_runtime(self) -> None:
+        by_language: dict[str, list[dict[str, str]]] = {}
+        for cell in matrix.catalog_cells():
+            by_language.setdefault(cell["language"], []).append(cell)
+
+        for language, status in matrix.FIRST_91_CATALOG:
+            if status != "PASS":
+                continue
+            self.assertTrue(
+                any(
+                    cell["status"] == "PASS"
+                    and any(
+                        token in cell["interface_type"].lower()
+                        for token in ("library", "cli", "command", "module")
+                    )
+                    for cell in by_language[language]
+                ),
+                language,
+            )
+        self.assertNotIn("NOT_APPLICABLE", matrix.render_library_index())
 
     def test_package_managers_and_library_surfaces_are_explicit(self) -> None:
         managers = {item["package_manager"] for item in matrix.DEPLOYMENTS}
@@ -42,7 +171,7 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
         self.assertIn("CMake", managers)
         self.assertIn("pkg-config", managers)
         self.assertIn("MakeMaker/CPAN", managers)
-        self.assertGreaterEqual(len(library_surfaces), 19)
+        self.assertGreaterEqual(len(library_surfaces), 50)
         for language in (
             "C#/.NET",
             "Java",
@@ -51,11 +180,118 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "Visual Basic/.NET",
             "F#",
             "Perl",
+            "Kotlin",
+            "Scala",
+            "Groovy",
+            "Clojure",
+            "Elm",
+            "PureScript",
+            "Reason/ReScript",
+            "React/JSX",
+            "Vue",
+            "Svelte",
+            "Angular",
+            "HTML/CSS",
+            "Tcl",
+            "AWK",
+            "Lua",
+            "PowerShell",
         ):
             self.assertTrue(
                 any(item["language"] == language for item in library_surfaces),
                 language,
             )
+
+    def test_jvm_language_consumers_use_the_java_package(self) -> None:
+        deployments = {item["id"]: item for item in matrix.DEPLOYMENTS}
+        build_script = (REPO_ROOT / "packaging/build-java.sh").read_text(encoding="utf-8")
+        published_workflow = (
+            REPO_ROOT / ".github/workflows/package-install-tests.yml"
+        ).read_text(encoding="utf-8")
+
+        for language in ("Java", "Kotlin", "Scala", "Groovy", "Clojure"):
+            managers = {
+                item["package_manager"]
+                for item in matrix.DEPLOYMENTS
+                if item["language"] == language
+            }
+            self.assertTrue({"Maven", "Gradle"}.issubset(managers), language)
+
+        for language in ("kotlin", "scala", "groovy"):
+            maven_item = deployments[f"{language}-maven-library"]
+            gradle_item = deployments[f"{language}-gradle-library"]
+            self.assertEqual(maven_item["package_manager"], "Maven")
+            self.assertEqual(gradle_item["package_manager"], "Gradle")
+            self.assertEqual(maven_item["build_target"], "package-java")
+            self.assertEqual(gradle_item["build_target"], "package-java")
+            self.assertIn(f"    {language} \\\n", build_script)
+            self.assertIn(f"consumers/$language", published_workflow)
+            self.assertIn(f"consumers/$language-gradle", published_workflow)
+
+        for deployment_id in ("clojure-maven-library", "clojure-gradle-library"):
+            self.assertEqual(deployments[deployment_id]["build_target"], "package-java")
+        self.assertIn("validate_clojure_maven_consumer", build_script)
+        self.assertIn("validate_clojure_gradle_consumer", build_script)
+        self.assertIn("consumers/clojure", published_workflow)
+        self.assertIn("consumers/clojure-gradle", published_workflow)
+
+    def test_web_language_consumers_use_the_packed_node_library(self) -> None:
+        deployments = {item["id"]: item for item in matrix.DEPLOYMENTS}
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        workflow = (REPO_ROOT / ".github/workflows/package-install-tests.yml").read_text(
+            encoding="utf-8"
+        )
+
+        for consumer in (
+            "react",
+            "vue",
+            "svelte",
+            "angular",
+            "elm",
+            "purescript",
+            "rescript",
+            "html-css",
+        ):
+            item = deployments[f"{consumer}-npm-consumer"]
+            self.assertEqual(item["build_target"], "package-web-language-consumers")
+            self.assertIn(f"packaging/node/consumers/{consumer}", str(item["required_paths"]))
+            self.assertIn(consumer, workflow)
+        dart = deployments["dart-native-cli-consumer"]
+        self.assertEqual(dart["build_target"], "package-web-language-consumers")
+        self.assertEqual(dart["interface_type"], "native CLI consumer")
+        self.assertIn("dart compile exe", dart["evidence"]["build"])
+        self.assertIn("packaging/node/consumers/dart", str(dart["required_paths"]))
+        self.assertIn("dart", workflow)
+        self.assertIn("package-web-language-consumers:", makefile)
+
+    def test_scripting_language_packages_use_the_batch_validator(self) -> None:
+        deployments = {item["id"]: item for item in matrix.DEPLOYMENTS}
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        build_script = (REPO_ROOT / "packaging/build-scripting-languages.sh").read_text(
+            encoding="utf-8"
+        )
+
+        for deployment_id in (
+            "tcl-package-library",
+            "awk-source-library",
+            "sed-command-package",
+            "lua-source-library",
+            "lua-luarocks-library",
+            "zsh-source-module",
+            "fish-source-module",
+            "elvish-source-module",
+            "nushell-source-module",
+            "powershell-module-package",
+        ):
+            self.assertEqual(
+                deployments[deployment_id]["build_target"],
+                "package-scripting-languages",
+            )
+        for builder in ("build_tcl", "build_awk", "build_sed", "build_lua"):
+            self.assertIn(builder, build_script)
+        for language in ("zsh", "fish"):
+            self.assertIn(f'  "{language}" "{language}"', build_script)
+        self.assertIn("package-scripting-languages:", makefile)
 
     def test_native_linkage_types_are_separate_consumers(self) -> None:
         deployments = {item["id"]: item for item in matrix.DEPLOYMENTS}
@@ -95,9 +331,22 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
 
     def test_generated_document_is_current(self) -> None:
         path = REPO_ROOT / "docs/language-deployment-support.md"
+        libraries_path = REPO_ROOT / "docs/libraries.md"
 
         self.assertTrue(path.is_file())
         self.assertEqual(path.read_text(encoding="utf-8"), matrix.render_markdown())
+        libraries = libraries_path.read_text(encoding="utf-8")
+        self.assertIn(matrix.LIBRARIES_BEGIN, libraries)
+        self.assertIn(matrix.LIBRARIES_END, libraries)
+        self.assertEqual(
+            libraries,
+            matrix.replace_between(
+                libraries,
+                matrix.LIBRARIES_BEGIN,
+                matrix.LIBRARIES_END,
+                matrix.render_library_index(),
+            ),
+        )
 
     def test_each_surface_has_all_eight_check_types(self) -> None:
         expected = {check_id for check_id, _name in matrix.CHECKS}

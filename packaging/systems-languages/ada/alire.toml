@@ -1,0 +1,8 @@
+name = "sshfling"
+description = "Ada launcher API and CLI for the bundled SSHFling runtime"
+version = "0.0.0"
+licenses = "LicenseRef-SSHFling-Commercial"
+authors = ["GRWLX"]
+maintainers = ["SSHFling Maintainers"]
+project-files = ["sshfling.gpr"]
+executables = ["sshfling-ada"]

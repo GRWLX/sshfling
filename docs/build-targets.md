@@ -23,7 +23,7 @@ These artifacts are built directly by GitHub Actions on every version tag.
 | Rocky Linux | `.rpm` plus RPM repo metadata | `dnf install sshfling` |
 | AlmaLinux | `.rpm` plus RPM repo metadata | `dnf install sshfling` |
 | Cross-platform .NET | `SSHFling.Tool.VERSION.nupkg`, `SSHFling.VERSION.nupkg` | Install the global tool or reference the `SSHFling` NuGet library from a verified package source |
-| Cross-platform Java | `sshfling-cli-VERSION.jar`, sources/Javadocs JARs, `sshfling-cli-VERSION.pom` | Run the JAR or consume `io.sshfling:sshfling-cli:VERSION` with Maven or Gradle |
+| Cross-platform JVM | `sshfling-cli-VERSION.jar`, sources/Javadocs JARs, `sshfling-cli-VERSION.pom` | Run the JAR or consume `io.sshfling:sshfling-cli:VERSION` from Java, Kotlin, Scala, or Groovy |
 | Cross-platform Node.js/npm | `sshfling-VERSION.tgz` | `npm install -g sshfling-VERSION.tgz` after checksum verification |
 | Cross-platform Python | `sshfling-VERSION-py3-none-any.whl` | `pipx install sshfling-VERSION-py3-none-any.whl` after checksum verification |
 | Cross-platform Go | `sshfling-go-VERSION.zip` | Extract, then `go install ./cmd/sshfling` |
@@ -83,7 +83,7 @@ Minimum platform coverage evidence:
 | --- | --- |
 | OS and distribution versions | Exact OS name, version, package format, install path, validation workflow run, and exception record for any advertised-but-untested version. |
 | Language and runtime dependencies | Python implementation/version, shell or PowerShell version where relevant, OpenSSH client/server versions, and account-management tool availability for password grants. |
-| OS-native command execution | Forced-session policy parsing uses Bash plus `jq`; Unix identity lookup uses POSIX shell with `getent` or macOS directory-service commands; Linux account mutation uses Bash with shadow tools; Windows package/install behavior uses PowerShell. Python remains the shared CLI/runtime and release-tooling language, not the privileged OS-operation backend. |
+| OS-native command execution | A root-owned POSIX login-shell dispatcher clears startup-file variables and untrusted interpreter paths before the Bash forced-session wrapper; policy parsing uses `jq`, with root-managed connection slots held by `flock` or BSD/macOS `lockf`; Unix identity lookup uses POSIX shell with `getent` or macOS directory-service commands; Linux account mutation uses Bash with shadow tools; Windows package/install behavior uses PowerShell. Python remains the shared CLI/runtime and release-tooling language, not the privileged OS-operation backend. |
 | CPU architecture | Architecture reported by the validation host or package metadata, with explicit status for `x86_64`/`amd64`, `arm64`/`aarch64`, and any 32-bit, `s390x`, `ppc64le`, or `riscv64` claims. |
 | Hardware class | Evidence that the release was validated on the claimed class, such as server VM, desktop workstation, container image, edge appliance, IoT gateway, or customer-managed embedded Linux host. |
 | ARM and IoT targets | For ARM, Raspberry Pi OS, OpenWrt, Yocto, Buildroot, or similar edge systems, record whether SSHFling was tested as client-only, certificate server, or password-grant server and which required host tools were present. |
@@ -137,7 +137,9 @@ workflow that installs or builds the published package outputs on:
 - macOS from the published `.pkg` and generated Homebrew formula.
 - Windows from the published MSI and portable zip.
 - .NET global tool and NuGet library from the published `SSHFling.Tool.VERSION.nupkg` and `SSHFling.VERSION.nupkg` packages.
-- Java executable and library consumers through direct JAR, Maven, and Gradle paths, including sources and Javadocs.
+- JVM executable and library consumers through direct JAR, Java Maven/Gradle,
+  Kotlin Maven/Gradle, Scala Maven/Gradle, and Groovy Maven/Gradle paths,
+  including sources and Javadocs.
 - Node.js/npm package from the published `sshfling-VERSION.tgz` package.
 - Python 3.10 through current supported CPython releases from the universal wheel.
 - Go module source archive through `go test`, `go vet`, and clean `go install`.

@@ -217,12 +217,24 @@ grep -Fq "jq is required" "$tmp/stderr" || fail "missing jq error was not action
 session_started="$tmp/session-started"
 session_rejected="$tmp/session-rejected"
 session_after="$tmp/session-after"
+mkdir -p "$tmp/untrusted-bin"
+cat >"$tmp/untrusted-bin/flock" <<'SH'
+#!/bin/sh
+exit 0
+SH
+cat >"$tmp/untrusted-bin/date" <<'SH'
+#!/bin/sh
+printf '1\n'
+SH
+chmod 0755 "$tmp/untrusted-bin/flock" "$tmp/untrusted-bin/date"
+untrusted_path="$tmp/untrusted-bin:/usr/local/bin:/usr/bin:/bin"
 unlock_attack="flock -u 10 >/dev/null 2>&1 || true; if command -v lockf >/dev/null 2>&1; then lockf -s -t 0 10 >/dev/null 2>&1 || true; fi;"
 if (( EUID != 0 )); then
   unlock_attack+=" rm -f $(printf '%q' "$lock_file") >/dev/null 2>&1 || true;"
 fi
 
-SSH_ORIGINAL_COMMAND="$unlock_attack printf started > $(printf '%q' "$session_started"); sleep 2" \
+PATH="$untrusted_path" \
+  SSH_ORIGINAL_COMMAND="$unlock_attack printf started > $(printf '%q' "$session_started"); sleep 2" \
   "$wrapper" \
     --lock-root "$lock_root" \
     --max-seconds 10 \
@@ -236,7 +248,8 @@ for _ in {1..50}; do
   [[ -e "$session_started" ]] && break
   sleep 0.1
 done
-[[ -e "$session_started" ]] || fail "root-managed connection-limit holder did not start"
+[[ -e "$session_started" ]] \
+  || fail "root-managed connection-limit holder did not start: $(cat "$tmp/session-first.err")"
 [[ -e "$lock_file" ]] || fail "session command unlinked its protected lock file"
 
 inode_before="$(inode_number "$lock_file")"
@@ -246,7 +259,8 @@ inode_after="$(inode_number "$lock_file")"
 [[ "$inode_before" == "$inode_after" ]] || fail "lock reprovisioning replaced an active slot inode"
 
 set +e
-SSH_ORIGINAL_COMMAND="printf rejected > $(printf '%q' "$session_rejected")" \
+PATH="$untrusted_path" \
+  SSH_ORIGINAL_COMMAND="printf rejected > $(printf '%q' "$session_rejected")" \
   "$wrapper" \
     --lock-root "$lock_root" \
     --max-seconds 10 \
@@ -262,7 +276,8 @@ set -e
 [[ ! -e "$session_rejected" ]] || fail "root-managed connection limit allowed a second session"
 grep -Fq "Maximum active sshfling sessions reached" "$tmp/session-second.err" \
   || fail "root-managed connection limit did not report the rejection"
-wait "$session_pid" || fail "root-managed connection-limit holder failed"
+wait "$session_pid" \
+  || fail "root-managed connection-limit holder failed: $(cat "$tmp/session-first.err")"
 
 SSH_ORIGINAL_COMMAND="printf after > $(printf '%q' "$session_after")" \
   "$wrapper" \

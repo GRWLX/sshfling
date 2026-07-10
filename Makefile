@@ -11,8 +11,10 @@ RELEASE_MATRIX_VALIDATE_FLAGS ?=
 RELEASE_SCANNER_BIN_DIR ?= $(if $(RUNNER_TEMP),$(RUNNER_TEMP),$(CURDIR)/build)/release-scanners/bin
 ENTERPRISE_RELEASE_OUTPUT_DIR ?= docs/release
 ENTERPRISE_RELEASE_EVIDENCE_DIR ?= docs/release/enterprise-release-evidence
+WEB_LANGUAGE_CONSUMERS ?= react vue svelte angular elm purescript rescript html-css
 
-.PHONY: install-local uninstall-local test test-containers test-release-security-scan language-deployment-matrix release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-readiness-artifacts release-readiness-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet package-java package-node package-python package-go package-rust package-php package-ruby package-native-libraries package-perl clean
+.PHONY: install-local uninstall-local test test-native test-containers test-release-security-scan language-deployment-matrix release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-readiness-artifacts release-readiness-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet package-java package-node package-python package-go package-rust package-php package-ruby package-native-libraries package-perl package-functional-languages package-systems-languages package-scripting-languages clean
+.PHONY: package-web-language-consumers package-dart-consumer package-language-catalog package-language-catalog-strict package-scripting-languages audit-domain-languages
 
 install-local:
 	install -d "$(PREFIX)/bin" "$(PREFIX)/libexec/sshfling" "$(TEMPLATE_DIR)/native" "$(TEMPLATE_DIR)/scripts" "$(TEMPLATE_DIR)/secrets" "$(TEMPLATE_DIR)/ssh-client" "$(TEMPLATE_DIR)/ssh-server" "$(TEMPLATE_DIR)/production" "$(TEMPLATE_DIR)/systemd"
@@ -26,14 +28,14 @@ install-local:
 	install -m 0755 ssh-client/entrypoint.sh "$(TEMPLATE_DIR)/ssh-client/entrypoint.sh"
 	install -m 0644 ssh-server/Dockerfile ssh-server/sshd_config "$(TEMPLATE_DIR)/ssh-server/"
 	install -m 0755 ssh-server/entrypoint.sh ssh-server/limited-session.sh "$(TEMPLATE_DIR)/ssh-server/"
-	install -m 0755 production/sshfling-session "$(TEMPLATE_DIR)/production/sshfling-session"
+	install -m 0755 production/sshfling-login-shell production/sshfling-session "$(TEMPLATE_DIR)/production/"
 	install -m 0644 systemd/sshflingd.service systemd/sshfling-prune.service systemd/sshfling-prune.timer systemd/sshflingd.env.example "$(TEMPLATE_DIR)/systemd/"
 
 uninstall-local:
 	PREFIX="$(PREFIX)" bash scripts/uninstall-local.sh
 
 test:
-	python3 -m py_compile bin/sshfling packaging/python/src/sshfling/__init__.py tools/release_matrix_validate.py tools/generate_release_evidence.py tools/generate_enterprise_release_readiness.py tools/generate_language_deployment_matrix.py tools/generate_language_support_matrix.py tools/release_security_scan.py tools/workflow_static_check.py
+	python3 -m py_compile bin/sshfling packaging/python/src/sshfling/__init__.py tools/release_matrix_validate.py tools/generate_release_evidence.py tools/generate_enterprise_release_readiness.py tools/generate_language_deployment_matrix.py tools/generate_language_support_matrix.py tools/release_security_scan.py tools/validate_promoted_language_evidence.py tools/workflow_static_check.py
 	python3 tools/generate_language_support_matrix.py --check
 	python3 tools/generate_language_deployment_matrix.py --check
 	python3 -m unittest discover -s tests/release -p 'test_*.py'
@@ -45,17 +47,23 @@ test:
 	@if command -v ruby >/dev/null 2>&1; then ruby -c packaging/ruby/lib/sshfling.rb >/dev/null && ruby -c packaging/ruby/bin/sshfling >/dev/null; fi
 	@if command -v perl >/dev/null 2>&1; then perl -c packaging/perl/Makefile.PL >/dev/null && perl -c packaging/perl/lib/SSHFling.pm >/dev/null && perl -Ipackaging/perl/lib -c packaging/perl/bin/sshfling >/dev/null; fi
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
-	bash -n native/sshfling-linux-account scripts/install-local.sh scripts/uninstall-local.sh scripts/create-network.sh scripts/generate-ssh-key.sh ssh-client/entrypoint.sh ssh-server/entrypoint.sh ssh-server/limited-session.sh production/sshfling-session packaging/*.sh tools/provision-release-scanners.sh tests/cross-os/validate-local-install.sh tests/cross-os/validate-native-linux-account.sh tests/cross-os/validate-native-session-policy.sh tests/cross-os/validate-native-unix-identity.sh tests/release/*.sh
-	sh -n native/sshfling-unix-identity
+	bash -n scripts/install-local.sh scripts/uninstall-local.sh scripts/create-network.sh scripts/generate-ssh-key.sh ssh-client/entrypoint.sh ssh-server/entrypoint.sh ssh-server/limited-session.sh packaging/*.sh tools/provision-release-scanners.sh tests/cross-os/validate-local-install.sh tests/release/*.sh
 	python3 tools/workflow_static_check.py --strict-timeouts
-	bash tests/cross-os/validate-native-linux-account.sh
-	bash tests/cross-os/validate-native-unix-identity.sh
+	bash packaging/build-domain-languages.sh audit
+	$(MAKE) test-native
 	bash tests/cross-os/validate-local-install.sh
-	bash tests/cross-os/validate-native-session-policy.sh
 	sh tests/cross-os/validate-cli.sh ./bin/sshfling "$(VERSION)"
 	bash tests/release/validate-release-matrix.sh
 	docker compose -f compose.server.yml config >/dev/null
 	docker compose -f compose.client.yml config >/dev/null
+
+test-native:
+	bash -n native/sshfling-linux-account production/sshfling-session tests/cross-os/validate-native-linux-account.sh tests/cross-os/validate-native-unix-identity.sh tests/cross-os/validate-native-login-shell.sh tests/cross-os/validate-native-session-policy.sh
+	sh -n native/sshfling-unix-identity production/sshfling-login-shell
+	bash tests/cross-os/validate-native-linux-account.sh
+	bash tests/cross-os/validate-native-unix-identity.sh
+	bash tests/cross-os/validate-native-login-shell.sh
+	bash tests/cross-os/validate-native-session-policy.sh
 
 test-containers:
 	SSHFLING_VERSION="$(VERSION)" bash tests/docker/run-container-image-tests.sh
@@ -102,7 +110,7 @@ release-matrix-validate:
 check-package-version:
 	@bash -c 'source packaging/version.sh; assert_sshfling_version_matches_source "$$1" "$$2" >/dev/null' _ "$(VERSION)" "$(CURDIR)"
 
-package: package-deb package-rpm package-msi package-pkg package-dotnet package-java package-node package-python package-go package-rust package-php package-ruby package-native-libraries package-perl
+package: package-deb package-rpm package-msi package-pkg package-dotnet package-java package-node package-python package-go package-rust package-php package-ruby package-native-libraries package-perl package-language-catalog
 
 package-deb: check-package-version
 	SSHFLING_VERSION="$(VERSION)" bash packaging/build-deb.sh
@@ -124,6 +132,35 @@ package-java: check-package-version
 
 package-node: check-package-version
 	SSHFLING_VERSION="$(VERSION)" bash packaging/build-node.sh
+
+package-web-language-consumers: package-node
+	SSHFLING_NPM_PACKAGE="$(CURDIR)/dist/sshfling-$(VERSION).tgz" bash packaging/build-web-language-consumers.sh $(WEB_LANGUAGE_CONSUMERS)
+
+package-dart-consumer: package-node
+	SSHFLING_NPM_PACKAGE="$(CURDIR)/dist/sshfling-$(VERSION).tgz" bash packaging/build-web-language-consumers.sh dart
+
+package-language-catalog: check-package-version
+	$(MAKE) package-scripting-languages VERSION="$(VERSION)"
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-functional-languages.sh --allow-blocked
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-systems-languages.sh --allow-blocked
+
+package-language-catalog-strict: package-language-catalog package-dart-consumer
+	python3 tools/validate_promoted_language_evidence.py \
+		--version "$(VERSION)" \
+		--functional "dist/sshfling-functional-languages-$(VERSION)-validation.tsv" \
+		--systems "dist/sshfling-systems-languages-$(VERSION)-validation.tsv"
+
+package-functional-languages: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-functional-languages.sh
+
+package-systems-languages: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-systems-languages.sh
+
+package-scripting-languages: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/build-scripting-languages.sh
+
+audit-domain-languages:
+	bash packaging/build-domain-languages.sh audit
 
 package-python: check-package-version
 	SSHFLING_VERSION="$(VERSION)" bash packaging/build-python.sh

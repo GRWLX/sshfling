@@ -1,0 +1,19 @@
+{
+  "name": "sshfling-nushell",
+  "version": "0.0.0",
+  "surface": "nushell-module-and-cli",
+  "library": false,
+  "runtime_requirement": "Nushell 0.90 or newer and Python 3",
+  "interfaces": {
+    "module": "Set SSHFLING_PACKAGE_ROOT, then use /prefix/share/sshfling/nushell/sshfling.nu *",
+    "version": "sshfling-version",
+    "runtime_path": "sshfling-runtime-path",
+    "template_dir": "sshfling-template-dir",
+    "launch": "sshfling-run ?arg ...?",
+    "cli": "/prefix/bin/sshfling ?arg ...?"
+  },
+  "bundles": [
+    "canonical Python runtime",
+    "canonical deployment templates"
+  ]
+}

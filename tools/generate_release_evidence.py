@@ -156,10 +156,59 @@ def collect_files(root: Path) -> list[Path]:
     return files
 
 
-def release_asset_requirements(version: str) -> list[str]:
+def require_exact_file_set(root: Path, files: list[Path], expected: list[str], label: str) -> None:
+    actual = {path.relative_to(root).as_posix() for path in files}
+    expected_set = set(expected)
+    missing = sorted(expected_set - actual)
+    unexpected = sorted(actual - expected_set)
+    if not missing and not unexpected:
+        return
+
+    details: list[str] = []
+    if missing:
+        details.append("missing files:\n  - " + "\n  - ".join(missing))
+    if unexpected:
+        details.append("unexpected files:\n  - " + "\n  - ".join(unexpected))
+    raise SystemExit(f"{label} file set must exactly match requirements:\n" + "\n".join(details))
+
+
+def scripting_language_requirements(version: str) -> list[str]:
     return [
-        f"sshfling_{version}_all.deb",
-        f"sshfling-{version}-1.noarch.rpm",
+        f"sshfling-tcl-{version}.tar.gz",
+        f"sshfling-awk-{version}.tar.gz",
+        f"sshfling-sed-{version}.tar.gz",
+        f"sshfling-lua-{version}.tar.gz",
+        f"sshfling-zsh-{version}.tar.gz",
+        f"sshfling-fish-{version}.tar.gz",
+        f"sshfling-elvish-{version}.tar.gz",
+        f"sshfling-nushell-{version}.tar.gz",
+        f"sshfling-powershell-{version}.tar.gz",
+        f"sshfling-guix-scheme-{version}.tar.gz",
+        f"sshfling-{version}-1.all.rock",
+        f"sshfling-scripting-languages-{version}-validation.tsv",
+    ]
+
+
+def catalog_language_requirements(version: str, repo_root: Path) -> list[str]:
+    inventory = repo_root / "packaging" / "list-language-release-artifacts.sh"
+    completed = subprocess.run(
+        ["bash", str(inventory), version, "catalog"],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+        raise SystemExit(f"language release artifact inventory failed: {detail}")
+    files = [line for line in completed.stdout.splitlines() if line]
+    if not files or len(files) != len(set(files)):
+        raise SystemExit("language release artifact inventory must be non-empty and unique")
+    return files
+
+
+def direct_download_requirements(version: str, repo_root: Path) -> list[str]:
+    return [
         f"sshfling-{version}.tar.gz",
         f"SSHFling.Tool.{version}.nupkg",
         f"SSHFling.{version}.nupkg",
@@ -175,15 +224,31 @@ def release_asset_requirements(version: str) -> list[str]:
         f"sshfling-{version}.gem",
         f"sshfling-native-{version}.tar.gz",
         f"sshfling-perl-{version}.tar.gz",
+        *scripting_language_requirements(version),
+        *catalog_language_requirements(version, repo_root),
         f"sshfling-{version}.pkg",
         f"sshfling-{version}.msi",
         f"sshfling-{version}-windows.zip",
+    ]
+
+
+def release_asset_requirements(version: str, repo_root: Path) -> list[str]:
+    return [
+        f"sshfling_{version}_all.deb",
+        f"sshfling-{version}-1.noarch.rpm",
+        *direct_download_requirements(version, repo_root),
         "SHA256SUMS",
         "RELEASE-EVIDENCE.md",
     ]
 
 
-def package_site_requirements(version: str, owner: str, require_repo_signatures: bool, public_dir: Path) -> list[str]:
+def package_site_requirements(
+    version: str,
+    owner: str,
+    require_repo_signatures: bool,
+    public_dir: Path,
+    repo_root: Path,
+) -> list[str]:
     base = [
         ".nojekyll",
         "index.html",
@@ -204,24 +269,7 @@ def package_site_requirements(version: str, owner: str, require_repo_signatures:
         "windows/uninstall.ps1",
         "downloads/SHA256SUMS",
         "downloads/index.html",
-        f"downloads/sshfling-{version}.tar.gz",
-        f"downloads/SSHFling.Tool.{version}.nupkg",
-        f"downloads/SSHFling.{version}.nupkg",
-        f"downloads/sshfling-cli-{version}.jar",
-        f"downloads/sshfling-cli-{version}-javadoc.jar",
-        f"downloads/sshfling-cli-{version}-sources.jar",
-        f"downloads/sshfling-cli-{version}.pom",
-        f"downloads/sshfling-{version}.tgz",
-        f"downloads/sshfling-{version}-py3-none-any.whl",
-        f"downloads/sshfling-go-{version}.zip",
-        f"downloads/sshfling-cli-{version}.crate",
-        f"downloads/sshfling-php-{version}.zip",
-        f"downloads/sshfling-{version}.gem",
-        f"downloads/sshfling-native-{version}.tar.gz",
-        f"downloads/sshfling-perl-{version}.tar.gz",
-        f"downloads/sshfling-{version}.pkg",
-        f"downloads/sshfling-{version}.msi",
-        f"downloads/sshfling-{version}-windows.zip",
+        *(f"downloads/{name}" for name in direct_download_requirements(version, repo_root)),
         "arch/PKGBUILD",
         "arch/.SRCINFO",
         "alpine/APKBUILD",
@@ -316,6 +364,21 @@ def workflow_run_url() -> str:
     return "NOT_APPLICABLE"
 
 
+def artifact_integrity_note(relative_path: str) -> str:
+    name = Path(relative_path).name
+    if name.startswith(("sshfling-nushell-", "sshfling-powershell-", "sshfling-guix-scheme-")):
+        return (
+            "Artifact-integrity PASS only. This source archive is runtime-gated; publication does not assert "
+            "interpreter runtime PASS. Consult the scripting-language validation TSV for per-check status."
+        )
+    if name.startswith("sshfling-scripting-languages-") and name.endswith("-validation.tsv"):
+        return (
+            "Artifact-integrity PASS only. The TSV records environment-specific PASS/SKIP rows and is not "
+            "interpreted as a blanket runtime PASS."
+        )
+    return "Generated after package artifacts were built or downloaded."
+
+
 def make_rows(
     *,
     mode: str,
@@ -365,7 +428,7 @@ def make_rows(
                 "blocker_reason": "NONE",
                 "reviewer": "release-evidence-generator",
                 "reviewed_at_utc": generated_at,
-                "notes": "Generated after package artifacts were built or downloaded.",
+                "notes": artifact_integrity_note(str(record["relative_path"])),
             }
         )
     return rows
@@ -404,17 +467,34 @@ def generate(args: argparse.Namespace) -> int:
 
     if args.mode == "release-assets":
         artifact_root = require_repo_path(repo_root / args.artifacts_dir, repo_root, "artifact directory")
-        required = release_asset_requirements(args.version)
+        required = release_asset_requirements(args.version, repo_root)
         signer_fingerprint = "NOT_APPLICABLE"
     else:
         artifact_root = require_repo_path(repo_root / args.public_dir, repo_root, "public directory")
-        required = package_site_requirements(args.version, owner, require_repo_signatures, artifact_root)
+        required = package_site_requirements(
+            args.version,
+            owner,
+            require_repo_signatures,
+            artifact_root,
+            repo_root,
+        )
         signer_fingerprint = fingerprint_from_site(artifact_root)
 
     require_files(artifact_root, required, args.mode)
     files = collect_files(artifact_root)
     if not files:
         raise SystemExit(f"no artifact files found under {artifact_root}")
+    if args.mode == "release-assets":
+        require_exact_file_set(artifact_root, files, required, "release-assets")
+    else:
+        downloads_root = artifact_root / "downloads"
+        downloads = collect_files(downloads_root)
+        expected_downloads = [
+            "SHA256SUMS",
+            "index.html",
+            *direct_download_requirements(args.version, repo_root),
+        ]
+        require_exact_file_set(downloads_root, downloads, expected_downloads, "package-site downloads")
 
     generated_at = utc_now()
     evidence_path = output_dir / f"{args.mode}-evidence.json"

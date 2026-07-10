@@ -116,6 +116,7 @@ static void NormalizeTemplateModes(string templateDir)
     {
         "native/sshfling-linux-account",
         "native/sshfling-unix-identity",
+        "production/sshfling-login-shell",
         "production/sshfling-session",
         "scripts/create-network.sh",
         "scripts/generate-ssh-key.sh",

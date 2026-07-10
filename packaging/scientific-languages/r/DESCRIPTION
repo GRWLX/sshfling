@@ -1,0 +1,15 @@
+Package: sshfling
+Type: Package
+Title: Launcher for the Bundled SSHFling Runtime
+Version: 0.0.0
+Authors@R: person("GRWLX", role = c("aut", "cre"), email = "maintainers@sshfling.invalid")
+Description: Runs the canonical bundled SSHFling command-line runtime and
+    exposes its integer process status to R consumers.
+License: file LICENSE
+URL: https://github.com/GRWLX/sshfling
+BugReports: https://github.com/GRWLX/sshfling/issues
+Depends: R (>= 4.3.0)
+Suggests: testthat (>= 3.0.0)
+Encoding: UTF-8
+NeedsCompilation: no
+Config/testthat/edition: 3

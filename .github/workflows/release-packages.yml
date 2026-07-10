@@ -19,6 +19,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  language-catalog:
+    name: Validated language catalog
+    uses: ./.github/workflows/language-runtime-validation.yml
+    with:
+      version: ${{ github.event.inputs.version || '' }}
+
   linux:
     name: Linux packages
     runs-on: ubuntu-latest
@@ -41,8 +47,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cargo cmake composer dpkg-dev file g++ make maven ninja-build php-cli \
-            php-zip pkg-config rpm ruby ruby-dev rust-clippy rustfmt zip
+            cargo cmake composer dpkg-dev elvish file fish g++ guile-3.0 \
+            liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 luarocks make mawk maven \
+            ninja-build php-cli php-zip pkg-config rpm ruby ruby-dev rust-clippy \
+            rustfmt sed tcl zip zsh
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -68,7 +76,10 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-          cache-dependency-path: packaging/java/pom.xml
+          cache-dependency-path: |
+            packaging/java/pom.xml
+            packaging/java/consumers/*/pom.xml
+            packaging/java/consumers/*/build.gradle.kts
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -118,6 +129,8 @@ jobs:
             dist/*.whl
             dist/*.crate
             dist/*.gem
+            dist/sshfling-${{ steps.version.outputs.version }}-1.all.rock
+            dist/*.tsv
             dist/*.zip
             dist/*.tar.gz
           if-no-files-found: error
@@ -374,6 +387,7 @@ jobs:
       attestations: write
       artifact-metadata: write
     needs:
+      - language-catalog
       - linux
       - macos
       - windows
@@ -402,6 +416,13 @@ jobs:
             echo "Release tag '${GITHUB_REF_NAME}' does not match resolved package version '${version}'." >&2
             exit 1
           fi
+          python3 tools/validate_promoted_language_evidence.py \
+            --version "$version" \
+            --functional "release-dist/sshfling-functional-languages-${version}-validation.tsv" \
+            --systems "release-dist/sshfling-systems-languages-${version}-validation.tsv"
+          mapfile -t catalog_files < <(
+            bash packaging/list-language-release-artifacts.sh "$version" catalog
+          )
           cd release-dist
           required_files=(
             "sshfling_${version}_all.deb"
@@ -421,6 +442,19 @@ jobs:
             "sshfling-${version}.gem"
             "sshfling-native-${version}.tar.gz"
             "sshfling-perl-${version}.tar.gz"
+            "sshfling-tcl-${version}.tar.gz"
+            "sshfling-awk-${version}.tar.gz"
+            "sshfling-sed-${version}.tar.gz"
+            "sshfling-lua-${version}.tar.gz"
+            "sshfling-zsh-${version}.tar.gz"
+            "sshfling-fish-${version}.tar.gz"
+            "sshfling-elvish-${version}.tar.gz"
+            "sshfling-nushell-${version}.tar.gz"
+            "sshfling-powershell-${version}.tar.gz"
+            "sshfling-guix-scheme-${version}.tar.gz"
+            "sshfling-${version}-1.all.rock"
+            "sshfling-scripting-languages-${version}-validation.tsv"
+            "${catalog_files[@]}"
             "sshfling-${version}.pkg"
             "sshfling-${version}.msi"
             "sshfling-${version}-windows.zip"
@@ -448,6 +482,9 @@ jobs:
           VERSION: ${{ needs.linux.outputs.version }}
         run: |
           set -euo pipefail
+          mapfile -t catalog_files < <(
+            bash packaging/list-language-release-artifacts.sh "$VERSION" catalog
+          )
           cd release-dist
           required_files=(
             "sshfling_${VERSION}_all.deb"
@@ -467,6 +504,19 @@ jobs:
             "sshfling-${VERSION}.gem"
             "sshfling-native-${VERSION}.tar.gz"
             "sshfling-perl-${VERSION}.tar.gz"
+            "sshfling-tcl-${VERSION}.tar.gz"
+            "sshfling-awk-${VERSION}.tar.gz"
+            "sshfling-sed-${VERSION}.tar.gz"
+            "sshfling-lua-${VERSION}.tar.gz"
+            "sshfling-zsh-${VERSION}.tar.gz"
+            "sshfling-fish-${VERSION}.tar.gz"
+            "sshfling-elvish-${VERSION}.tar.gz"
+            "sshfling-nushell-${VERSION}.tar.gz"
+            "sshfling-powershell-${VERSION}.tar.gz"
+            "sshfling-guix-scheme-${VERSION}.tar.gz"
+            "sshfling-${VERSION}-1.all.rock"
+            "sshfling-scripting-languages-${VERSION}-validation.tsv"
+            "${catalog_files[@]}"
             "sshfling-${VERSION}.pkg"
             "sshfling-${VERSION}.msi"
             "sshfling-${VERSION}-windows.zip"
@@ -487,6 +537,7 @@ jobs:
             echo "Commit: ${GITHUB_SHA}"
             echo "Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "Expected release artifacts: ${#required_files[@]}"
+            echo "PowerShell, Nushell, and Guix Scheme source archives are runtime-gated; their publication does not assert runtime PASS. Per-check status is recorded in sshfling-scripting-languages-${VERSION}-validation.tsv."
             echo
             echo "| File | Bytes | SHA-256 |"
             echo "| --- | ---: | --- |"

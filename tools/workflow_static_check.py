@@ -57,6 +57,7 @@ class Job:
     line: int
     text: str
     name: str = ""
+    uses: str = ""
     timeout: str = ""
     if_condition: str = ""
     needs: list[str] = field(default_factory=list)
@@ -234,6 +235,7 @@ def parse_jobs(lines: list[str]) -> dict[str, Job]:
             line=start + 1,
             text="\n".join(job_lines),
             name=extract_key(job_lines, "name", 4),
+            uses=extract_key(job_lines, "uses", 4),
             timeout=extract_key(job_lines, "timeout-minutes", 4),
             if_condition=extract_key(job_lines, "if", 4),
             needs=parse_needs(job_lines),
@@ -367,6 +369,10 @@ def check_timeouts(workflow: Workflow, strict_timeouts: bool) -> tuple[list[str]
     errors: list[str] = []
     warnings: list[str] = []
     for job in workflow.jobs.values():
+        # GitHub does not allow timeout-minutes on reusable-workflow call jobs;
+        # the called workflow owns the timeout on its executable jobs.
+        if job.uses:
+            continue
         if not job.timeout:
             message = f"{job_ref(workflow, job)}: missing timeout-minutes"
             if strict_timeouts:
@@ -480,7 +486,7 @@ def check_release_packages_gate(workflow: Workflow) -> list[str]:
         errors.append(f"{workflow_ref(workflow)}: release workflow must run on v* tag pushes")
     errors.extend(require_text(workflow, workflow.text, "workflow_dispatch:", "release workflow must allow manual dispatch"))
 
-    for required_job in ("linux", "macos", "windows", "release"):
+    for required_job in ("language-catalog", "linux", "macos", "windows", "release"):
         if required_job not in workflow.jobs:
             errors.append(f"{workflow_ref(workflow)}: release workflow is missing job: {required_job}")
     release = workflow.jobs.get("release")
@@ -489,7 +495,7 @@ def check_release_packages_gate(workflow: Workflow) -> list[str]:
 
     if "github.ref_type == 'tag'" not in release.if_condition and 'github.ref_type == "tag"' not in release.if_condition:
         errors.append(f"{job_ref(workflow, release)}: release job must run only for tag refs")
-    for dependency in ("linux", "macos", "windows"):
+    for dependency in ("language-catalog", "linux", "macos", "windows"):
         if not re.search(rf"^\s+-\s+{re.escape(dependency)}\s*$", release.text, re.MULTILINE):
             errors.append(f"{job_ref(workflow, release)}: release job must need {dependency}")
     for signing_job_id in ("macos", "windows"):
@@ -527,6 +533,7 @@ def check_release_packages_gate(workflow: Workflow) -> list[str]:
         "exact release artifact set gate": "Release artifact set must exactly match",
         "flattened artifact gate": "Release artifacts must be flattened",
         "non-empty artifact gate": "Release artifact is missing or empty",
+        "promoted language runtime evidence gate": "validate_promoted_language_evidence.py",
         "checksum verification": "sha256sum -c SHA256SUMS",
         "release security scan": "make release-security-scan",
         "optional release security tools": 'RELEASE_SECURITY_RUN_OPTIONAL_TOOLS: "1"',
@@ -566,8 +573,11 @@ def check_public_package_gate(workflow: Workflow) -> list[str]:
         return errors
     if not deploy_pages:
         errors.append(f"{workflow_ref(workflow)}: public package workflow is missing deploy-pages job")
-    if set(package_web.needs) != {"linux", "macos", "windows"}:
-        errors.append(f"{job_ref(workflow, package_web)}: package-web job must need exactly linux, macos, and windows")
+    if set(package_web.needs) != {"language-catalog", "linux", "macos", "windows"}:
+        errors.append(
+            f"{job_ref(workflow, package_web)}: package-web job must need exactly "
+            "language-catalog, linux, macos, and windows"
+        )
     for signing_job_id in ("macos", "windows", "package-web"):
         signing_job = workflow.jobs.get(signing_job_id)
         if signing_job and "name: release-signing" not in signing_job.text:
@@ -599,6 +609,7 @@ def check_public_package_gate(workflow: Workflow) -> list[str]:
     package_checks = {
         "publish output": "publish: ${{ steps.package_site_mode.outputs.publish }}",
         "public package verification": "packaging/verify-public-web.sh",
+        "promoted language runtime evidence gate": "validate_promoted_language_evidence.py",
         "release security scan": "make release-security-scan",
         "optional package-site security tools": 'RELEASE_SECURITY_RUN_OPTIONAL_TOOLS: "1"',
         "publish-gated strict package-site security scan": "RELEASE_SECURITY_STRICT_OPTIONAL_TOOLS: ${{ steps.package_site_mode.outputs.publish == 'true' && '1' || '' }}",

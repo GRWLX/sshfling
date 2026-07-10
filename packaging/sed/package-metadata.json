@@ -1,0 +1,16 @@
+{
+  "name": "sshfling-sed",
+  "version": "0.0.0",
+  "surface": "cli-and-source-filter",
+  "library": false,
+  "runtime_requirement": "POSIX sed, a POSIX shell, and Python 3",
+  "interfaces": {
+    "cli": "/prefix/bin/sshfling ?arg ...?",
+    "version_filter": "sshfling --version | sed -n -f /prefix/share/sshfling/sed/sshfling-version.sed"
+  },
+  "classification_note": "sed cannot import modules or launch subprocesses. The package therefore exposes a validated CLI plus a composable sed command file, and does not claim a library API.",
+  "bundles": [
+    "canonical Python runtime",
+    "canonical deployment templates"
+  ]
+}

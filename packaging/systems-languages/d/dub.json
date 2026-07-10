@@ -1,0 +1,24 @@
+{
+  "name": "sshfling",
+  "description": "D launcher API and CLI for the bundled SSHFling runtime",
+  "authors": ["GRWLX"],
+  "homepage": "https://github.com/GRWLX/sshfling",
+  "license": "LicenseRef-SSHFling-Commercial",
+  "targetType": "library",
+  "targetName": "sshfling",
+  "sourcePaths": ["source"],
+  "libs": ["sshfling_launcher"],
+  "configurations": [
+    {
+      "name": "library",
+      "targetType": "library"
+    },
+    {
+      "name": "application",
+      "targetType": "executable",
+      "targetName": "sshfling-d",
+      "mainSourceFile": "app/main.d",
+      "sourcePaths": ["source", "app"]
+    }
+  ]
+}

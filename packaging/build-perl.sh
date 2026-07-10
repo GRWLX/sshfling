@@ -73,6 +73,7 @@ build_distribution() {
   tar -tzf "$archive_path" | grep -Fx "SSHFling-$version/lib/SSHFling.pm" >/dev/null
   tar -tzf "$archive_path" | grep -Fx "SSHFling-$version/lib/SSHFling/runtime/sshfling.py" >/dev/null
   tar -tzf "$archive_path" | grep -Fx "SSHFling-$version/lib/SSHFling/runtime/templates/native/sshfling-linux-account" >/dev/null
+  tar -tzf "$archive_path" | grep -Fx "SSHFling-$version/lib/SSHFling/runtime/templates/production/sshfling-login-shell" >/dev/null
 }
 
 validate_install() {
@@ -91,6 +92,7 @@ validate_install() {
   PERL5LIB="$perl_lib" "$installed_cli" init "$smoke_project" --force --session-seconds 60 >/dev/null
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
 
   rm -rf "$install_prefix"
   test ! -e "$installed_cli"

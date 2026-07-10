@@ -1,0 +1,19 @@
+name = "sshfling"
+version = "0.0.0"
+license = "LicenseRef-SSHFling-Commercial"
+author = "GRWLX"
+maintainer = "SSHFling Maintainers"
+description = "Fortran launcher API and CLI for the bundled SSHFling runtime"
+
+[build]
+auto-executables = false
+auto-tests = false
+auto-examples = false
+
+[library]
+source-dir = "src"
+
+[[executable]]
+name = "sshfling-fortran"
+source-dir = "app"
+main = "main.f90"

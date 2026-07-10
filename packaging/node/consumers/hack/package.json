@@ -1,0 +1,17 @@
+{
+  "name": "sshfling-hack-server-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Hack server process invoking a Node bridge to the SSHFling npm API.",
+  "scripts": {
+    "test:node": "node test-bridge.cjs",
+    "test:hack": "hhvm src/main.hack",
+    "test": "npm run test:node && npm run test:hack"
+  },
+  "dependencies": {
+    "sshfling": "file:../.."
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

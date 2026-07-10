@@ -1,0 +1,11 @@
+(rule
+ (targets runtime_config.ml)
+ (action
+  (with-stdout-to %{targets}
+   (echo "let resource_root = \"%{env:SSHFLING_OCAML_RESOURCE_DIR=runtime}\""))))
+
+(library
+ (name sshfling)
+ (public_name sshfling)
+ (modules sshfling runtime_config)
+ (libraries unix))

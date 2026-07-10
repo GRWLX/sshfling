@@ -1,0 +1,5 @@
+#!/usr/bin/env janet
+(import sshfling)
+
+(defn main [& arguments]
+  (os/exit (sshfling/run (slice arguments 1))))

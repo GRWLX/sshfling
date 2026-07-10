@@ -1,0 +1,57 @@
+#!/usr/bin/env lua
+
+local function normalize_path(path)
+  return (path:gsub("\\", "/"))
+end
+
+local function dirname(path)
+  path = normalize_path(path):gsub("/+$", "")
+  return path:match("^(.*)/[^/]+$") or "."
+end
+
+local function shell_quote(value)
+  value = tostring(value)
+  return "'" .. value:gsub("'", "'\\''") .. "'"
+end
+
+local function resolve_script_path(path)
+  for _ = 1, 40 do
+    local pipe = io.popen("readlink " .. shell_quote(path) .. " 2>/dev/null", "r")
+    if not pipe then
+      return path
+    end
+    local target = pipe:read("*l")
+    pipe:close()
+    if not target or target == "" then
+      return path
+    end
+    if target:sub(1, 1) == "/" then
+      path = target
+    else
+      path = dirname(path) .. "/" .. target
+    end
+  end
+  io.stderr:write("sshfling: too many symbolic links while resolving launcher\n")
+  os.exit(127)
+end
+
+local script_path = resolve_script_path(arg[0] or "bin/sshfling")
+local package_root = dirname(dirname(script_path))
+package.path = package_root .. "/lua/?.lua;" .. package_root .. "/lua/?/init.lua;" .. package.path
+
+local normalized_script = normalize_path(script_path)
+local rock_tree, lua_abi = normalized_script:match(
+  "^(.-)/lib/luarocks/rocks%-([0-9]+%.[0-9]+)/sshfling/[^/]+/bin/sshfling$"
+)
+if rock_tree and lua_abi then
+  package.path = rock_tree .. "/share/lua/" .. lua_abi .. "/?.lua;"
+    .. rock_tree .. "/share/lua/" .. lua_abi .. "/?/init.lua;"
+    .. package.path
+end
+
+local sshfling = require("sshfling")
+local arguments = {}
+for index = 1, #arg do
+  arguments[index] = arg[index]
+end
+os.exit(sshfling.run(arguments))

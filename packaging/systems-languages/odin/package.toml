@@ -1,0 +1,9 @@
+schema_version = 1
+name = "sshfling-odin"
+version = "0.0.0"
+language = "Odin"
+minimum_compiler = "dev-2024-01"
+abi = "sshfling-launcher-v1"
+library_package = "sshfling"
+cli = "sshfling-odin"
+sources = ["sshfling/sshfling.odin", "cmd/sshfling/main.odin"]

@@ -1,0 +1,54 @@
+#!/bin/sh
+set -eu
+
+prefix=/usr/local
+guile=${GUILE-}
+for argument in "$@"; do
+    case "$argument" in
+        --prefix=*) prefix=${argument#--prefix=} ;;
+        --help)
+            printf '%s\n' 'usage: ./configure [--prefix=PATH]'
+            exit 0
+            ;;
+        *)
+            printf 'configure: unsupported option: %s\n' "$argument" >&2
+            exit 2
+            ;;
+    esac
+done
+if [ -z "$guile" ]; then
+    guile=$(command -v guile || true)
+fi
+if [ -z "$guile" ]; then
+    printf '%s\n' 'configure: Guile 3.0 is required' >&2
+    exit 1
+fi
+case $("$guile" -c '(display (major-version))') in
+    3) ;;
+    *) printf '%s\n' 'configure: Guile 3.x is required' >&2; exit 1 ;;
+esac
+
+version=0.0.0
+datadir=$prefix/share
+libdir=$prefix/lib
+pkgdatadir=$datadir/sshfling-guile
+guilemoduledir=$datadir/guile/site/3.0
+guileobjectdir=$libdir/guile/3.0/site-ccache
+
+substitute() {
+    sed \
+      -e "s|@prefix@|$prefix|g" \
+      -e "s|@VERSION@|$version|g" \
+      -e "s|@GUILE@|$guile|g" \
+      -e "s|@pkgdatadir@|$pkgdatadir|g" \
+      -e "s|@guilemoduledir@|$guilemoduledir|g" \
+      -e "s|@guileobjectdir@|$guileobjectdir|g" \
+      "$1" >"$2"
+}
+
+mkdir -p bin module
+substitute Makefile.in Makefile
+substitute module/sshfling.scm.in module/sshfling.scm
+substitute bin/sshfling-guile.in bin/sshfling-guile
+chmod 755 bin/sshfling-guile
+printf 'configured sshfling-guile %s for %s\n' "$version" "$prefix"

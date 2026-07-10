@@ -1,0 +1,86 @@
+name: Language runtime validation
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to validate. Defaults to the tag or source version."
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to validate. Defaults to the tag or source version."
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: language-runtime-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  catalog:
+    name: Strict language catalog
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version || '' }}
+        run: |
+          set -euo pipefail
+          version="$(bash packaging/resolve-version.sh "$INPUT_VERSION")"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.12.2"
+
+      - name: Install catalog dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang curl fish guile-3.0 liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 \
+            luarocks mawk sed tcl unzip xz-utils zsh
+
+      - name: Provision pinned promoted-language runtimes
+        run: |
+          set -euo pipefail
+          runtime_path="$(bash tools/provision-promoted-language-runtimes.sh \
+            "$RUNNER_TEMP/promoted-language-runtimes")"
+          echo "$runtime_path" >>"$GITHUB_PATH"
+
+      - name: Build catalog and require promoted runtime evidence
+        env:
+          SSHFLING_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          make package-language-catalog-strict VERSION="$SSHFLING_VERSION"
+          while IFS= read -r artifact; do
+            test -s "dist/$artifact"
+          done < <(bash packaging/list-language-release-artifacts.sh \
+            "$SSHFLING_VERSION" all)
+
+      - name: Upload validated language catalog
+        uses: actions/upload-artifact@v7
+        with:
+          name: language-catalog-packages
+          path: |
+            dist/*.tar.gz
+            dist/sshfling-*-languages-*-validation.tsv
+            dist/sshfling-${{ steps.version.outputs.version }}-1.all.rock
+          if-no-files-found: error

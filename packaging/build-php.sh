@@ -91,6 +91,7 @@ build_archive() {
   unzip -Z1 "$archive_path" | grep -Eq '(^|/)runtime/templates/systemd/sshfling-prune\.timer$'
   unzip -Z1 "$archive_path" | grep -Eq '(^|/)runtime/templates/native/sshfling-linux-account$'
   unzip -Z1 "$archive_path" | grep -Eq '(^|/)runtime/templates/native/sshfling-unix-identity$'
+  unzip -Z1 "$archive_path" | grep -Eq '(^|/)runtime/templates/production/sshfling-login-shell$'
   unzip -Z1 "$archive_path" | grep -Eq '(^|/)runtime/templates/secrets/\.gitkeep$'
 }
 
@@ -132,6 +133,7 @@ exit(
   test -x "$smoke_project/scripts/uninstall-local.sh"
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
   test -x "$smoke_project/production/sshfling-session"
   test -f "$smoke_project/secrets/.gitkeep"
 

@@ -42,6 +42,7 @@
     <EmbeddedResource Include="../../../ssh-server/entrypoint.sh" LogicalName="SSHFling.Resources.templates.ssh-server.entrypoint.sh" />
     <EmbeddedResource Include="../../../ssh-server/limited-session.sh" LogicalName="SSHFling.Resources.templates.ssh-server.limited-session.sh" />
     <EmbeddedResource Include="../../../ssh-server/sshd_config" LogicalName="SSHFling.Resources.templates.ssh-server.sshd_config" />
+    <EmbeddedResource Include="../../../production/sshfling-login-shell" LogicalName="SSHFling.Resources.templates.production.sshfling-login-shell" />
     <EmbeddedResource Include="../../../production/sshfling-session" LogicalName="SSHFling.Resources.templates.production.sshfling-session" />
     <EmbeddedResource Include="../../../systemd/sshflingd.service" LogicalName="SSHFling.Resources.templates.systemd.sshflingd.service" />
     <EmbeddedResource Include="../../../systemd/sshfling-prune.service" LogicalName="SSHFling.Resources.templates.systemd.sshfling-prune.service" />

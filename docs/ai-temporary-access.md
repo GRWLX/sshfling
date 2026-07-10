@@ -91,7 +91,10 @@ The enterprise threat model for this workflow is in [SSHFling threat model](thre
 
 - Treat the temporary username, detached job name, ticket ID, wrapper PID, child PID, stdout/stderr paths, and validation workflow links as required breadcrumbs for review and rollback.
 - A named temporary account is attribution, not sandboxing. The AI tool receives the normal privileges of the Unix account it logs in as, including any `sudo`, scheduler, service-manager, filesystem, or network permissions that account already has.
-- The session wrapper enforces wall-clock expiry for the SSH session it launches, but hard containment of every descendant process depends on host controls such as systemd scopes, cgroups, and account policy.
+- The session wrapper applies wall-clock expiry to the SSH session it launches,
+  but the command runs as the same UID and can signal that monitor. Hard
+  containment of the command and every descendant requires host controls such
+  as a privileged supervisor, systemd scope, cgroup, and account policy.
 - Expired password grants should be pruned by an operator or fleet job. `sshfling password prune --all --delete-users` removes expired SSHFling-created users after managed sshd config removal is verified; existing break-glass users are locked/expired, not deleted.
 - Certificate mode depends on protecting the user CA private key and issuer token. Keep the issuer loopback-only unless it is behind approved TLS, mTLS, VPN, or equivalent access controls.
 - Password mode refuses root-equivalent Unix users and refuses to reset any other existing Unix user by default; use `--allow-existing-user` only for a documented non-root break-glass case.

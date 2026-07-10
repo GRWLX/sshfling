@@ -120,7 +120,8 @@ Runtime dependencies:
 - The macOS pkg does not bundle Python, OpenSSH, or jq.
 - Client commands require python3 and OpenSSH client tools on PATH.
 - Server-side host setup requires the target host's OpenSSH server tooling and
-  jq for native forced-session policy parsing.
+  jq for native forced-session policy parsing; root-managed connection slots
+  use the macOS lockf command.
 - UID, GID, and home-directory checks use the packaged native Unix identity
   backend with macOS directory-service commands rather than Python's pwd API.
 

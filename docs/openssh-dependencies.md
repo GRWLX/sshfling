@@ -35,18 +35,56 @@ own that package.
 
 Server-side certificate grants need OpenSSH server tooling on the target host.
 The CLI validates managed sshd configuration with `sshd -t` and can inspect
-effective configuration with `sshd -T`. The native forced-session wrapper uses
-`jq` to parse policy JSON strictly and fail closed without invoking Python.
+effective per-user configuration with `sshd -T`. Validated password and host
+installs require effective `PermitUserEnvironment no` and reject `AcceptEnv`
+patterns that can pass loader, interpreter-startup, command-search, or locale
+loader variables such as `LD_PRELOAD`, `BASH_ENV`, `ENV`, `PATH`, or
+`GCONV_PATH`, as well as exported Bash functions. Validation scans every
+included `sshd` configuration file so a dangerous address-, host-, or
+local-address-specific `Match` block cannot hide behind the localhost effective
+configuration query. SSHFling reports the unsafe policy instead of rewriting it.
+`--no-validate` is only for a staged install and does not establish this safety
+condition. The native forced-session wrapper uses `jq` to parse policy JSON
+strictly and `flock` (or BSD/macOS `lockf`) against root-managed per-UID slot
+files. The BSD/macOS path uses the broadly available `lockf file command` form,
+not the newer descriptor-only syntax. Missing policy or lock tooling fails
+closed without invoking Python.
 
 Server-side password grants are Linux-oriented. They require OpenSSH server
 tooling, including `sshd`, plus local account management tools such as
-`useradd` and `chpasswd`; `usermod` and `chage` are used when present to
-unlock, lock, or expire temporary users. Mutations run through the packaged
+`useradd`, `chpasswd`, `usermod`, and `chage`. Mutations run through the packaged
 `sshfling-linux-account` Bash backend. UID/GID/home inspection is separated
 into the read-only `sshfling-unix-identity` POSIX shell backend, which uses
 `getent` on Linux/BSD and macOS directory-service commands on Darwin. Session
 enforcement uses the packaged `sshfling-session` wrapper, `jq`, and standard
-process utilities. None of these OS-sensitive paths invokes Python.
+process utilities. The mutation helper starts Bash in privileged mode before it
+can read `BASH_ENV`; both native backends replace caller `PATH` and accept only
+absolute, validated, non-writable package tool directories. Linux validation
+also checks the canonical ancestry behind trusted symlinks. None of these
+OS-sensitive paths invokes Python.
+
+Accounts created by SSHFling use the root-owned `sshfling-login-shell` POSIX
+dispatcher as their login shell. OpenSSH starts the account shell before
+executing `ForceCommand`; using Bash there would allow a user-owned `.bashrc`,
+`BASH_ENV`, or injected interpreter `PATH` to run before the wrapper. The
+dispatcher clears those inputs, binds itself to the root-selected session
+wrapper and policy path, parses only the exact CLI-generated certificate and
+password command forms, verifies the actual login user, and executes the
+wrapper with a root-selected Bash in privileged mode without shell
+re-evaluation. Options such as `--jq-bin`,
+`--allow-detached-start`, `--provision-locks`, and `--lock-root` are not accepted
+through the login shell. The dispatcher is intentionally not added to
+`/etc/shells`. Existing accounts keep their administrator-selected shell, so
+administrators must audit its non-interactive startup behavior before treating
+`ForceCommand` as the first executed command.
+Hosts that require `pam_shells` for SSH must add an explicit fleet exception or
+register the dispatcher and separately prohibit managed users from changing
+their shell; the default unregistered path is what prevents ordinary `chsh`
+selection on common Linux PAM configurations.
+The shell wrapper and granted command run as the same UID, so timeout and
+connection limits are operational controls rather than a privilege boundary
+against deliberately hostile commands. Use a privileged OS session supervisor
+or cgroup when hard containment is required.
 
 The main SSHFling command and its cross-platform orchestration remain Python.
 This native boundary is deliberate: policy enforcement and privileged OS
@@ -64,8 +102,8 @@ modes are:
 | Mode | What it checks |
 | --- | --- |
 | `client` | OpenSSH client tools (`ssh`, `ssh-keygen`, `ssh-keyscan`) plus optional `scp` and `rsync`. |
-| `password-server` | Linux password-grant prerequisites such as `sshd`, native policy/identity/account backends, `jq`, `useradd`, `chpasswd`, and optional lock/expiry/process tools. |
-| `certificate-host` | Certificate-host prerequisites such as `sshd`, the native identity backend, `jq`, `ssh-keygen`, optional Linux account tools and OpenSSL used by `--create-user`, and process tools. |
+| `password-server` | Linux password-grant prerequisites such as `sshd`, native policy/identity/account backends, `jq`, `flock` or `lockf`, `useradd`, `chpasswd`, `usermod`, and `chage`, plus optional process tools. |
+| `certificate-host` | Certificate-host prerequisites such as `sshd`, the native identity backend, `jq`, `flock` or `lockf`, `ssh-keygen`, optional Linux account tools and OpenSSL used by `--create-user`, and process tools. |
 | `all` | Every dependency mode above. |
 
 The dependency inventory is evidence only. It reports whether tools are present
@@ -99,13 +137,23 @@ The platform owns OpenSSH and other shared runtime packages:
 | RHEL / Fedora / Rocky / Alma RPM | `.rpm` requires `bash`, `python3`, `openssh-clients`, `openssl`, `shadow-utils`, `procps-ng`, `util-linux`, and `jq`; it installs both native backends and recommends `openssh-server` and `rsync`. |
 | Arch / AUR, Alpine, openSUSE / OBS | Generated manifests declare Bash, Python, OpenSSH, OpenSSL, account/process tools, `jq`, and both native backends. |
 | Void, Gentoo, Guix, Nix, Slackware, Snap, AppImage | Generated manifests install both native backends and declare the closest ecosystem packages for Bash, Python, OpenSSH, OpenSSL, `jq`, account tools, and process tools. Versions come from the ecosystem input channel or build environment. |
-| FreeBSD Ports, OpenBSD Ports, pkgsrc | Generated BSD manifests install the portable native identity backend and declare Bash, Python, and `jq`; they do not install the Linux mutation backend as an executable host tool or claim ownership of the host's OpenSSH service configuration. |
+| FreeBSD Ports, OpenBSD Ports, pkgsrc | Generated BSD manifests install the portable native identity backend and declare Bash, Python, and `jq`; FreeBSD uses base `lockf`, OpenBSD declares `sysutils/flock`, and pkgsrc host setup requires an externally supplied compatible lock tool. They do not install the Linux mutation backend as an executable host tool or claim ownership of the host's OpenSSH service configuration. |
 | Termux | The generated manifest declares Python, OpenSSH, `jq`, and process tools. Android does not expose the Linux shadow-account model required by password grants. |
-| macOS pkg | The pkg installs SSHFling, the native identity backend, and `/etc/sshfling/policy.json`; it does not bundle Python, OpenSSH, or `jq`. Client use needs Python/OpenSSH; native server-host policy enforcement additionally needs fleet-provided `jq`. |
-| Homebrew | Generated formula depends on `python@3` and `jq` and installs the native identity backend; OpenSSH client/server availability remains host or fleet policy. |
+| macOS pkg | The pkg installs SSHFling, the native identity backend, and `/etc/sshfling/policy.json`; it does not bundle Python, OpenSSH, or `jq`. Client use needs Python/OpenSSH; native server-host policy enforcement additionally needs fleet-provided `jq` and uses base `lockf`. |
+| Homebrew | Generated formula depends on `python@3`, `jq`, and `flock` and installs the native identity backend; OpenSSH client/server availability remains host or fleet policy. |
 | Windows MSI | MSI installs under `Program Files\SSHFling`, adds that directory to machine `PATH`, and records dependency scope in `HKLM\Software\SSHFling`; it does not bundle Python, OpenSSH, or Windows OpenSSH Server. |
 | Windows portable zip, Scoop, winget, Chocolatey | Portable zip and generated Windows manifests use the packaged zip or MSI. They do not add independent Python or OpenSSH ownership. |
 | Containers | Test images install their own OpenSSH packages inside the image. The host's OpenSSH install is unaffected. |
+
+The Nix CLI wrapper passes its immutable dependency `bin` directories to the
+native helpers through a validated tool path, while persistent templates retain
+generic OS shebangs instead of garbage-collectable store paths. Server-side
+`bash`, `jq`, and `flock` must still be available from the NixOS system or global
+profile paths used by `sshd` after the live session wrapper is copied to
+`/usr/local`. The same rule applies to Guix: privileged server operations need a
+system/global profile, not only a user profile. A client-only per-user profile
+is not evidence that forced-session dependencies are available to the SSH
+daemon.
 
 ## Uninstall Ownership
 

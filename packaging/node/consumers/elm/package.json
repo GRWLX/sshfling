@@ -1,0 +1,19 @@
+{
+  "name": "sshfling-elm-node-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Elm worker hosted by Node with SSHFling calls handled through ports.",
+  "scripts": {
+    "build": "elm make src/Main.elm --output=build/elm.js",
+    "test": "npm run build && node test.cjs"
+  },
+  "dependencies": {
+    "sshfling": "file:../.."
+  },
+  "devDependencies": {
+    "elm": "0.19.1-6"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

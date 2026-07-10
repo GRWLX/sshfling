@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
 
 die() {
@@ -7,6 +7,71 @@ die() {
   echo "sshfling-linux-account: $message" >&2
   exit "$code"
 }
+
+trusted_tool_directory() {
+  local path="$1"
+  local require_nonwritable_leaf="${2:-0}"
+  local current="" component owner mode mode_value link_owner resolved_path
+  local -a components=()
+
+  [[ "$path" == /* && -d "$path" ]] || return 1
+  case "$path" in
+    */|*//*|*/./*|*/../*|*/.|*/..) return 1 ;;
+  esac
+  IFS=/ read -r -a components <<<"${path#/}"
+  for component in "${components[@]}"; do
+    [[ -n "$component" ]] || return 1
+    current="${current}/${component}"
+    [[ -d "$current" ]] || return 1
+    if [[ -L "$current" ]]; then
+      link_owner="$(stat -c %u "$current" 2>/dev/null)" || return 1
+      [[ "$link_owner" == 0 || ( "$EUID" != 0 && "$link_owner" == "$EUID" ) ]] || return 1
+    fi
+    owner="$(stat -Lc %u "$current" 2>/dev/null)" || return 1
+    mode="$(stat -Lc %a "$current" 2>/dev/null)" || return 1
+    [[ "$owner" == 0 || ( "$EUID" != 0 && "$owner" == "$EUID" ) ]] || return 1
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+    mode_value=$(( 8#$mode ))
+    if (( (mode_value & 0022) != 0 && (mode_value & 01000) == 0 )); then
+      return 1
+    fi
+    if [[ "$require_nonwritable_leaf" == 1 && "$current" == "$path" ]] \
+      && (( (mode_value & 0022) != 0 )); then
+      return 1
+    fi
+  done
+  resolved_path="$(readlink -f "$path" 2>/dev/null)" || return 1
+  if [[ "$resolved_path" != "$path" ]]; then
+    trusted_tool_directory "$resolved_path" "$require_nonwritable_leaf" || return 1
+  fi
+}
+
+native_tool_directory="${SSHFLING_NATIVE_TOOL_DIR:-}"
+native_tool_path="${SSHFLING_NATIVE_TOOL_PATH:-}"
+PATH="/usr/sbin:/usr/bin:/sbin:/bin:/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/run/current-system/profile/bin:/var/guix/profiles/system/profile/bin"
+export PATH
+unset SSHFLING_NATIVE_TOOL_DIR SSHFLING_NATIVE_TOOL_PATH
+if [[ -n "$native_tool_directory" ]]; then
+  trusted_tool_directory "$native_tool_directory" 1 \
+    || die "refusing unsafe native tool directory: $native_tool_directory" 77
+  PATH="$native_tool_directory:$PATH"
+  export PATH
+fi
+if [[ -n "$native_tool_path" ]]; then
+  case "$native_tool_path" in
+    :*|*:|*::*) die "refusing an empty native tool path entry" 77 ;;
+  esac
+  IFS=: read -r -a native_tool_directories <<<"$native_tool_path"
+  for native_tool_directory in "${native_tool_directories[@]}"; do
+    [[ -n "$native_tool_directory" ]] \
+      || die "refusing an empty native tool path entry" 77
+    trusted_tool_directory "$native_tool_directory" 1 \
+      || die "refusing unsafe native tool directory: $native_tool_directory" 77
+    PATH="$native_tool_directory:$PATH"
+  done
+  export PATH
+fi
+unset native_tool_directory native_tool_directories native_tool_path
 
 validate_username() {
   [[ "${1:-}" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
@@ -35,7 +100,7 @@ passwd_entry() {
         return 3
       fi
       echo "sshfling-linux-account: getent passwd lookup failed for $username (exit $status)" >&2
-      return "$status"
+      return 70
     fi
   elif [[ -r /etc/passwd ]]; then
     if entry="$(awk -F: -v user="$username" '$1 == user { print; exit }' /etc/passwd)"; then
@@ -43,7 +108,7 @@ passwd_entry() {
     else
       status="$?"
       echo "sshfling-linux-account: passwd file lookup failed for $username (exit $status)" >&2
-      return "$status"
+      return 70
     fi
   else
     echo "sshfling-linux-account: no passwd lookup backend is available" >&2
@@ -74,18 +139,35 @@ identity_fields() {
   local username="$1"
   local entry
   local account_name uid gid home
+  local separators
 
   if entry="$(passwd_entry "$username")"; then
     :
   else
     return "$?"
   fi
+  separators="${entry//[^:]/}"
+  [[ "${#separators}" -eq 6 ]] || die "invalid passwd entry for $username" 1
   IFS=: read -r account_name _ uid gid _ home _ <<<"$entry"
   [[ "$account_name" == "$username" && "$uid" =~ ^(0|[1-9][0-9]*)$ && "$gid" =~ ^(0|[1-9][0-9]*)$ ]] \
     || die "invalid passwd entry for $username" 1
   [[ -n "$home" && "$home" != *$'\t'* && "$home" != *$'\n'* && "$home" != *$'\r'* ]] \
     || die "unsupported control character in home directory for $username" 1
   printf '%s\t%s\t%s\n' "$uid" "$gid" "$home"
+}
+
+account_login_shell() {
+  local username="$1"
+  local entry account_name shell_path separators
+
+  entry="$(passwd_entry "$username")" || return $?
+  separators="${entry//[^:]/}"
+  [[ "${#separators}" -eq 6 ]] || die "invalid passwd entry for $username" 1
+  IFS=: read -r account_name _ _ _ _ _ shell_path <<<"$entry"
+  [[ "$account_name" == "$username" && "$shell_path" == /* \
+    && "$shell_path" != *$'\t'* && "$shell_path" != *$'\n'* && "$shell_path" != *$'\r'* ]] \
+    || die "invalid login shell in passwd entry for $username" 1
+  printf '%s\n' "$shell_path"
 }
 
 emit_identity() {
@@ -124,14 +206,58 @@ reject_root_equivalent() {
 
 validate_shell() {
   local shell_path="$1"
-  [[ "$shell_path" == /* && -x "$shell_path" ]] \
+  local owner mode mode_value link_owner resolved_shell
+
+  [[ "$shell_path" == /* && "$shell_path" != *$'\t'* \
+    && "$shell_path" != *$'\n'* && "$shell_path" != *$'\r'* && -x "$shell_path" ]] \
     || die "login shell must be an executable absolute path: $shell_path" 2
+  trusted_tool_directory "${shell_path%/*}" \
+    || die "login shell parent directories must be root-managed: $shell_path" 2
+  require_tool stat
+  require_tool readlink
+  resolved_shell="$(readlink -f "$shell_path" 2>/dev/null)" \
+    || die "could not resolve login shell: $shell_path" 2
+  [[ "$resolved_shell" == /* && -x "$resolved_shell" ]] \
+    || die "resolved login shell must be an executable absolute path: $shell_path" 2
+  trusted_tool_directory "${resolved_shell%/*}" \
+    || die "resolved login shell parent directories must be root-managed: $shell_path" 2
+  if [[ -L "$shell_path" ]]; then
+    link_owner="$(stat -c %u "$shell_path" 2>/dev/null)" \
+      || die "could not inspect login shell symlink ownership: $shell_path" 2
+    [[ "$link_owner" == 0 ]] \
+      || die "login shell symlink must be root-owned: $shell_path" 2
+  fi
+  owner="$(stat -Lc %u "$shell_path" 2>/dev/null)" \
+    || die "could not inspect login shell ownership: $shell_path" 2
+  mode="$(stat -Lc %a "$shell_path" 2>/dev/null)" \
+    || die "could not inspect login shell mode: $shell_path" 2
+  [[ "$owner" == 0 && "$mode" =~ ^[0-7]{3,4}$ ]] \
+    || die "login shell must be root-owned: $shell_path" 2
+  mode_value=$(( 8#$mode ))
+  (( (mode_value & 0022) == 0 )) \
+    || die "login shell must not be group- or world-writable: $shell_path" 2
+}
+
+cleanup_created_user() {
+  local username="$1"
+  local status
+
+  userdel --remove "$username" >/dev/null 2>&1 || userdel "$username" >/dev/null 2>&1 || true
+  if account_exists "$username"; then
+    status=0
+  else
+    status="$?"
+    [[ "$status" -eq 1 ]] && return 0
+  fi
+  printf 'result\tstatus=cleanup-failed\tuser=%s\tcreated=true\tcleanup_confirmed=false\n' \
+    "$username"
+  return 1
 }
 
 create_user() {
   local username="$1"
   local shell_path="$2"
-  local status
+  local status created_shell created_identity uid gid home
 
   if account_exists "$username"; then
     printf 'result\tstatus=present\tuser=%s\tcreated=false\n' "$username"
@@ -147,11 +273,28 @@ create_user() {
     :
   else
     status="$?"
-    userdel --remove "$username" >/dev/null 2>&1 || userdel "$username" >/dev/null 2>&1 || true
+    cleanup_created_user "$username" \
+      || die "could not confirm cleanup after account creation failed: $username" 1
     [[ "$status" -eq 1 ]] || exit "$status"
     die "useradd completed but account is not visible: $username" 1
   fi
-  printf 'result\tstatus=created\tuser=%s\tcreated=true\n' "$username"
+  created_shell="$(account_login_shell "$username")" || status="$?"
+  if [[ -z "${created_shell:-}" || "$created_shell" != "$shell_path" ]]; then
+    cleanup_created_user "$username" \
+      || die "could not confirm cleanup of account with an unexpected login shell: $username" 1
+    [[ -n "${created_shell:-}" ]] || exit "${status:-1}"
+    die "created account has an unexpected login shell: $username" 1
+  fi
+  if created_identity="$(identity_fields "$username")"; then
+    IFS=$'\t' read -r uid gid home <<<"$created_identity"
+  else
+    status="$?"
+    cleanup_created_user "$username" \
+      || die "could not confirm cleanup of account with an invalid identity: $username" 1
+    exit "$status"
+  fi
+  printf 'result\tstatus=created\tuser=%s\tcreated=true\tshell=%s\tuid=%s\tgid=%s\thome=%s\n' \
+    "$username" "$created_shell" "$uid" "$gid" "$home"
 }
 
 attempt() {
@@ -299,11 +442,28 @@ case "$command_name" in
       :
     else
       status="$?"
-      userdel --remove "$1" >/dev/null 2>&1 || userdel "$1" >/dev/null 2>&1 || true
+      cleanup_created_user "$1" \
+        || die "could not confirm cleanup after certificate account creation failed: $1" 1
       [[ "$status" -eq 1 ]] || exit "$status"
       die "useradd completed but account is not visible: $1" 1
     fi
-    printf 'result\tstatus=created\tuser=%s\tcreated=true\tunlocked=true\n' "$1"
+    created_shell="$(account_login_shell "$1")" || status="$?"
+    if [[ -z "${created_shell:-}" || "$created_shell" != "$2" ]]; then
+      cleanup_created_user "$1" \
+        || die "could not confirm cleanup of certificate account with an unexpected login shell: $1" 1
+      [[ -n "${created_shell:-}" ]] || exit "${status:-1}"
+      die "created account has an unexpected login shell: $1" 1
+    fi
+    if created_identity="$(identity_fields "$1")"; then
+      IFS=$'\t' read -r uid gid home <<<"$created_identity"
+    else
+      status="$?"
+      cleanup_created_user "$1" \
+        || die "could not confirm cleanup of certificate account with an invalid identity: $1" 1
+      exit "$status"
+    fi
+    printf 'result\tstatus=created\tuser=%s\tcreated=true\tunlocked=true\tshell=%s\tuid=%s\tgid=%s\thome=%s\n' \
+      "$1" "$created_shell" "$uid" "$gid" "$home"
     ;;
   *)
     die "usage: {identity|exists|create|set-password|lock|delete|create-certificate-user} ..." 2

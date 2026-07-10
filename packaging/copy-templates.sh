@@ -27,6 +27,7 @@ copy_sshfling_templates() {
   install -m 0755 "$src_root/ssh-server/limited-session.sh" "$dest/ssh-server/limited-session.sh"
   install -m 0644 "$src_root/ssh-server/sshd_config" "$dest/ssh-server/sshd_config"
 
+  install -m 0755 "$src_root/production/sshfling-login-shell" "$dest/production/sshfling-login-shell"
   install -m 0755 "$src_root/production/sshfling-session" "$dest/production/sshfling-session"
   install -m 0755 "$src_root/native/sshfling-linux-account" "$dest/native/sshfling-linux-account"
   install -m 0755 "$src_root/native/sshfling-unix-identity" "$dest/native/sshfling-unix-identity"

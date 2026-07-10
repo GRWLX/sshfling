@@ -1,0 +1,6 @@
+name: sshfling_node_consumer
+description: Server-side Dart adapter for the SSHFling npm library.
+version: 0.0.0
+publish_to: none
+environment:
+  sdk: ">=3.3.0 <4.0.0"

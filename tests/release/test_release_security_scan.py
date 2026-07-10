@@ -98,6 +98,31 @@ class ReleaseSecurityScanTests(unittest.TestCase):
             self.assertIn("shell-secret-on-command-line", rule_ids)
             self.assertIn("shell-predictable-tmp-path", rule_ids)
 
+    def test_world_writable_fixture_marker_is_limited_to_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            marker = "release-security: intentional-world-writable-fixture"
+            test_script = write_file(
+                repo_root / "tests/unsafe-mode.sh",
+                f'chmod 0777 "$fixture" # {marker}\n',
+            )
+            production_script = write_file(
+                repo_root / "scripts/unsafe-mode.sh",
+                f'chmod 0777 "$target" # {marker}\n',
+            )
+
+            test_report = release_security_scan.scan_shell_static([test_script], repo_root)
+            production_report = release_security_scan.scan_shell_static(
+                [production_script], repo_root
+            )
+
+            self.assertEqual(test_report["status"], "pass")
+            self.assertEqual(production_report["status"], "fail")
+            self.assertEqual(
+                production_report["findings"][0]["rule_id"],
+                "shell-world-writable-mode",
+            )
+
     def test_python_static_scan_flags_unsafe_ast_patterns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)

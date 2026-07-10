@@ -51,7 +51,10 @@ bash -n \
   packaging/build-deb.sh \
   packaging/build-rpm.sh \
   packaging/build-pkg.sh
-sh -n native/sshfling-unix-identity
+sh -n native/sshfling-unix-identity production/sshfling-login-shell
+bash tests/cross-os/validate-native-login-shell.sh
+bash tests/cross-os/validate-native-linux-account.sh
+bash tests/cross-os/validate-native-unix-identity.sh
 bin/sshfling -h >"$work/help.out"
 grep -q -- "-t TIME, --time TIME" "$work/help.out"
 grep -q -- "-k \\[USERNAME\\], --kill \\[USERNAME\\]" "$work/help.out"
@@ -447,6 +450,66 @@ test -f /var/lib/sshfling/password-grants/s234.json
 grep -q '"created_user": true' /var/lib/sshfling/password-grants/s234.json
 grep -q '"user_uid":' /var/lib/sshfling/password-grants/s234.json
 grep -q '"user_gid":' /var/lib/sshfling/password-grants/s234.json
+grep -q '"managed_login_shell": "/usr/local/libexec/sshfling-login-shell"' \
+  /var/lib/sshfling/password-grants/s234.json
+login_shell=/usr/local/libexec/sshfling-login-shell
+test "$(getent passwd s234 | cut -d: -f7)" = "$login_shell"
+test "$(stat -c %u "$login_shell")" -eq 0
+test "$(stat -c %a "$login_shell")" = 755
+grep -Fxq 'expected_wrapper=/usr/local/libexec/sshfling-session' "$login_shell"
+grep -Fxq 'expected_policy=/etc/sshfling/policy.json' "$login_shell"
+if grep -Fxq "$login_shell" /etc/shells; then
+  fail "managed login dispatcher must not be registered as a user-selectable shell"
+fi
+set +e
+printf '%s\n' "$SSHPASS" | runuser -u s234 -- chsh -s /bin/bash \
+  >"$work/password-chsh.out" 2>"$work/password-chsh.err"
+password_chsh_code="$?"
+set -e
+if [[ "$password_chsh_code" -eq 0 ]]; then
+  fail "temporary user changed away from the managed login dispatcher"
+fi
+test "$(getent passwd s234 | cut -d: -f7)" = "$login_shell"
+s234_home="$(getent passwd s234 | cut -d: -f6)"
+cat >"$s234_home/jq-bypass" <<EOF
+#!/bin/sh
+printf '%s\n' bypass >"$s234_home/.sshfling-jq-bypass-ran"
+exec /usr/bin/jq "\$@"
+EOF
+chmod 0755 "$s234_home/jq-bypass"
+chown s234:s234 "$s234_home/jq-bypass"
+set +e
+runuser -u s234 -- "$login_shell" -c \
+  "/usr/local/libexec/sshfling-session --max-seconds 20 --username s234 --login-user s234 --policy-file /etc/sshfling/policy.json --jq-bin $s234_home/jq-bypass" \
+  >"$work/login-shell-bypass.out" 2>"$work/login-shell-bypass.err"
+login_shell_bypass_code="$?"
+set -e
+test "$login_shell_bypass_code" -eq 126
+test ! -e "$s234_home/.sshfling-jq-bypass-ran"
+cat >"$s234_home/.bashrc" <<EOF
+printf '%s\n' startup-file-ran >"$s234_home/.sshfling-bashrc-ran"
+EOF
+cat >"$s234_home/.bash_env" <<EOF
+printf '%s\n' bash-env-ran >"$s234_home/.sshfling-bash-env-ran"
+EOF
+cat >"$s234_home/.sh_env" <<EOF
+printf '%s\n' sh-env-ran >"$s234_home/.sshfling-sh-env-ran"
+EOF
+mkdir -p "$s234_home/untrusted-bin"
+cat >"$s234_home/untrusted-bin/bash" <<EOF
+#!/bin/sh
+printf '%s\n' path-interpreter-ran >"$s234_home/.sshfling-path-ran"
+exec /bin/bash "\$@"
+EOF
+chmod 0755 "$s234_home/untrusted-bin/bash"
+chown -R s234:s234 \
+  "$s234_home/.bashrc" \
+  "$s234_home/.bash_env" \
+  "$s234_home/.sh_env" \
+  "$s234_home/untrusted-bin"
+cat >>/etc/ssh/sshd_config.d/91-sshfling-password-s234.conf <<EOF
+    SetEnv BASH_ENV=$s234_home/.bash_env ENV=$s234_home/.sh_env PATH=$s234_home/untrusted-bin:/usr/bin:/bin
+EOF
 
 sshd -t
 kill "$sshd_pid"
@@ -462,6 +525,10 @@ SSHPASS="$SSHPASS" sshpass -e bin/sshfling \
   s234@127.0.0.1 \
   'whoami' >"$work/password-whoami.out"
 grep -q '^s234$' "$work/password-whoami.out"
+test ! -e "$s234_home/.sshfling-bashrc-ran"
+test ! -e "$s234_home/.sshfling-bash-env-ran"
+test ! -e "$s234_home/.sshfling-sh-env-ran"
+test ! -e "$s234_home/.sshfling-path-ran"
 
 for _ in $(seq 1 50); do
   if bin/sshfling --json list --username s234 | grep -Eq '"count"[[:space:]]*:[[:space:]]*0'; then
@@ -471,12 +538,18 @@ for _ in $(seq 1 50); do
 done
 bin/sshfling --json list --username s234 | grep -Eq '"count"[[:space:]]*:[[:space:]]*0'
 
+s234_uid="$(id -u s234)"
+password_lock_dir="/var/lib/sshfling/session-locks/$s234_uid"
+password_lock_file="$password_lock_dir/session-1.lock"
+test "$(stat -c %u "$password_lock_dir")" -eq 0
+test "$(stat -c %u "$password_lock_file")" -eq "$s234_uid"
+password_lock_attack="flock -u 10 >/dev/null 2>&1 || true; rm -f '$password_lock_file' >/dev/null 2>&1 || true; echo password-hold; sleep 5"
 SSHPASS="$SSHPASS" sshpass -e bin/sshfling \
   -p 2222 \
   -o "StrictHostKeyChecking=yes" \
   -o "UserKnownHostsFile=$work/known_hosts" \
   s234@127.0.0.1 \
-  'echo password-hold; sleep 5' >"$work/password-hold.out" 2>"$work/password-hold.err" &
+  "$password_lock_attack" >"$work/password-hold.out" 2>"$work/password-hold.err" &
 password_hold_pid="$!"
 for _ in $(seq 1 50); do
   if grep -q '^password-hold$' "$work/password-hold.out" 2>/dev/null; then
@@ -487,6 +560,7 @@ done
 if ! grep -q '^password-hold$' "$work/password-hold.out"; then
   fail "password hold session did not start"
 fi
+test -f "$password_lock_file"
 
 set +e
 SSHPASS="$SSHPASS" sshpass -e bin/sshfling \

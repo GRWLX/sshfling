@@ -1,0 +1,19 @@
+{
+  "name": "sshfling-rescript-node-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ReScript CommonJS consumer of the SSHFling Node API.",
+  "scripts": {
+    "build": "rescript build",
+    "test": "npm run build && node test.cjs"
+  },
+  "dependencies": {
+    "sshfling": "file:../.."
+  },
+  "devDependencies": {
+    "rescript": "11.1.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

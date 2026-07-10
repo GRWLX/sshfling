@@ -1,0 +1,17 @@
+{
+  "name": "sshfling-rescript-node-consumer",
+  "sources": [
+    {
+      "dir": "src",
+      "subdirs": false
+    }
+  ],
+  "package-specs": {
+    "module": "commonjs",
+    "in-source": true
+  },
+  "suffix": ".js",
+  "warnings": {
+    "error": "+101"
+  }
+}

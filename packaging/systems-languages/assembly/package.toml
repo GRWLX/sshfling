@@ -1,0 +1,13 @@
+schema_version = 1
+name = "sshfling-assembly"
+version = "0.0.0"
+language = "Assembly"
+target = "x86_64-linux-gnu"
+platforms = ["linux-posix"]
+abi = "sshfling-launcher-v1"
+library_symbol = "sshfling_assembly_run"
+version_symbol = "sshfling_assembly_version"
+cli = "sshfling-assembly"
+sources = ["src/sshfling.S", "src/main.S", "include/sshfling_assembly.h"]
+consumer = "consumers/c/main.c"
+shared_sources = ["common/sshfling_launcher.c", "common/sshfling_launcher.h"]

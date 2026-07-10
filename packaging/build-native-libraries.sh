@@ -112,6 +112,7 @@ validate_install() {
   "$install_prefix/bin/sshfling-c" init "$smoke_project" --force --session-seconds 60 >/dev/null
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
 
   cmake \
     -S "$project_dir/consumers/c" \
@@ -166,6 +167,7 @@ build_archive() {
   tar -tzf "$archive_path" | grep -Fx "$project_name/src/sshfling.c" >/dev/null
   tar -tzf "$archive_path" | grep -Fx "$project_name/runtime/sshfling.py" >/dev/null
   tar -tzf "$archive_path" | grep -Fx "$project_name/runtime/templates/native/sshfling-linux-account" >/dev/null
+  tar -tzf "$archive_path" | grep -Fx "$project_name/runtime/templates/production/sshfling-login-shell" >/dev/null
 }
 
 validate_removal() {

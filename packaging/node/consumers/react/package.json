@@ -1,0 +1,22 @@
+{
+  "name": "sshfling-react-server-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Server-rendered React consumer of the SSHFling Node API.",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/StatusPage.jsx --bundle --platform=node --format=esm --outfile=build/StatusPage.mjs --external:react --external:react-dom --external:sshfling",
+    "test": "npm run build && node test/render.mjs"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "sshfling": "file:../.."
+  },
+  "devDependencies": {
+    "esbuild": "0.25.6"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

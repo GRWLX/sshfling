@@ -96,12 +96,23 @@ PASS_WEB_CONSUMER_EVIDENCE = (
     "packed SSHFling artifact, language/framework compilation, trusted Node-side API execution, "
     "template discovery, and generated-output assertions"
 )
+PASS_DART_EVIDENCE = (
+    "make package-dart-consumer VERSION=0.1.16; Dart SDK 3.12.2 resolves the packed npm "
+    "library offline, compiles the typed adapter to a native executable, and validates the "
+    "trusted Node bridge execution"
+)
 BLOCKED_WEB_TOOLCHAIN_EVIDENCE = (
     "tracked package/source and a passing SSHFling Node bridge exist under packaging/node/consumers, "
     "but the required external language runtime is unavailable on the validation host"
 )
-PASS_FUNCTIONAL_LANGUAGES_EVIDENCE = "python3 packaging/build-functional-languages.py --allow-blocked"
-PASS_SYSTEM_LANGUAGES_EVIDENCE = "bash packaging/build-systems-languages.sh"
+PASS_FUNCTIONAL_LANGUAGES_EVIDENCE = (
+    "bash packaging/build-functional-languages.sh --allow-blocked; "
+    "dist/sshfling-functional-languages-0.1.16-validation.tsv"
+)
+PASS_SYSTEM_LANGUAGES_EVIDENCE = (
+    "bash packaging/build-systems-languages.sh --allow-blocked; "
+    "dist/sshfling-systems-languages-0.1.16-validation.tsv"
+)
 BLOCKED_TOOLCHAIN_EVIDENCE = (
     "tracked package/source and a validated SSHFling surface are present under the language directory, "
     "but the required external runtime/toolchain is unavailable on the validation host"
@@ -334,10 +345,10 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     ),
     row(
         "Dart",
-        "BLOCKED",
-        "A pubspec, Dart launcher source, and validated Node bridge are tracked under packaging/node/consumers/dart.",
-        BLOCKED_WEB_TOOLCHAIN_EVIDENCE,
-        "Promotion requires execution with the Dart SDK; the batch validator fails closed while dart is unavailable.",
+        "PASS",
+        "A Dart 3 pub project and typed launcher compile to a native server executable that consumes the packed SSHFling npm library through an explicit trusted Node bridge.",
+        PASS_DART_EVIDENCE,
+        "Dart SDK 3.12.2 completes offline dependency resolution, native compilation, and the packaged SSHFling runtime workflow.",
     ),
     row(
         "Lua",
@@ -368,7 +379,7 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         "The language consumes the shipped .NET library through a clean local NuGet restore and runtime workflow.",
     ),
     domain_blocked("MATLAB", "A ProcessBuilder-based MATLAB launcher candidate is tracked under packaging/domain-languages/matlab.", "A licensed MATLAB runtime and configured JVM are required for conformance and packaging evidence."),
-    row("Objective-C", "PASS", "Objective-C package metadata and runtime sources are tracked under packaging/systems-languages/objective-c.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "The Objective-C adapter compiles and validates install/runtime and exit workflows through systems validation."),
+    row("Objective-C", "PASS", "Objective-C package metadata and runtime sources are tracked under packaging/systems-languages/objective-c.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "The Objective-C shared library, external consumer, CLI runtime, and exit workflows compile and execute in an isolated build tree."),
     row(
         "Groovy",
         "PASS",
@@ -379,15 +390,15 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     domain_blocked("Delphi/Object Pascal", "A Free Pascal/Object Pascal launcher candidate is tracked under packaging/domain-languages/object-pascal.", "Free Pascal validation does not establish Delphi compiler compatibility; both toolchain matrices remain external."),
     row(
         "Julia",
-        "BLOCKED",
-        "Julia package/build metadata are tracked under packaging/scientific-languages/julia.",
-        BLOCKED_TOOLCHAIN_EVIDENCE,
-        "Validation requires a Julia runtime/toolchain on the host.",
+        "PASS",
+        "Julia Pkg metadata, command source, runtime assets, and an external consumer are tracked under packaging/scientific-languages/julia.",
+        PASS_FUNCTIONAL_LANGUAGES_EVIDENCE,
+        "Julia package installation, import, command execution, external consumption, and removal are validated.",
     ),
     domain_not_applicable("HCL/Terraform", "HCL is configuration data and local-exec would be an unsafe shell-string side effect, not a typed launcher.", "infrastructure DSL"),
-    row("Assembly", "PASS", "Assembly package metadata and runtime surface are tracked under packaging/systems-languages/assembly.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Assembly sources and runtime pass validator checks for install and exit contract."),
-    row("COBOL", "PASS", "COBOL package metadata and runtime surface are tracked under packaging/systems-languages/cobol.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "COBOL sources and runtime pass validator checks for install and exit contract."),
-    row("Fortran", "PASS", "Fortran package metadata and runtime surface are tracked under packaging/systems-languages/fortran.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Fortran sources and runtime pass validator checks for install and exit contract."),
+    row("Assembly", "PASS", "Assembly package metadata and runtime surface are tracked under packaging/systems-languages/assembly.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "The assembly shared library, C ABI consumer, CLI runtime, debug artifact, and exit contract are validated in an isolated build tree."),
+    row("COBOL", "PASS", "COBOL package metadata and runtime surface are tracked under packaging/systems-languages/cobol.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "The COBOL module, CLI runtime, and exit contract compile and execute in an isolated build tree."),
+    row("Fortran", "PASS", "Fortran package metadata and runtime surface are tracked under packaging/systems-languages/fortran.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "The Fortran module, CLI runtime, and exit contract compile and execute in an isolated build tree."),
     domain_blocked("SAS", "The audit specifies the SAS XCMD execution boundary but intentionally supplies no unsafe macro.", "A licensed, policy-approved XCMD-enabled SAS runtime is unavailable and string-based execution is not portable."),
     domain_blocked("ABAP", "The audit specifies SAP external-command prerequisites but intentionally supplies no unvalidated transport.", "A licensed SAP system, SM69 definition, authorization design, namespace, and transport validation are required."),
     domain_not_applicable("Apex", "Apex cannot start host processes; an HTTP relayer would be a separate privileged service and protocol."),
@@ -429,12 +440,12 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         "The language consumes the shipped .NET library through a clean local NuGet restore and runtime workflow.",
     ),
     row("OCaml", "PASS", "Dune/opam metadata and consumer validation are tracked under packaging/functional-languages/ocaml.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "OCaml package build/install and external-consumer validation are confirmed."),
-    row("Zig", "PASS", "Zig package/build metadata are tracked under packaging/systems-languages/zig.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Zig package/build/install and exit contract validation are confirmed."),
-    row("Nim", "PASS", "Nim package/build metadata are tracked under packaging/systems-languages/nim.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Nim package/build/install and exit contract validation are confirmed."),
-    row("Crystal", "PASS", "Crystal package/build metadata are tracked under packaging/systems-languages/crystal.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Crystal package/build/install and exit contract validation are confirmed."),
-    row("D", "PASS", "D package/build metadata are tracked under packaging/systems-languages/d.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "D package/build/install and exit contract validation are confirmed."),
-    row("V", "BLOCKED", "V package/build metadata are tracked under packaging/systems-languages/v.", BLOCKED_TOOLCHAIN_EVIDENCE, "V validation is gated until v toolchain is available."),
-    row("Ada", "PASS", "Ada package/build metadata are tracked under packaging/systems-languages/ada.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Ada package/build/install and exit contract validation are confirmed."),
+    row("Zig", "PASS", "Zig package/build metadata are tracked under packaging/systems-languages/zig.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "The Zig module and CLI are built into an isolated prefix and their runtime and exit contract are validated."),
+    row("Nim", "PASS", "Nim package/build metadata are tracked under packaging/systems-languages/nim.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Nimble metadata, the Nim module and CLI build, runtime, and exit contract are validated in isolated caches."),
+    row("Crystal", "PASS", "Crystal package/build metadata are tracked under packaging/systems-languages/crystal.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Crystal shard metadata, library-backed CLI build, runtime, and exit contract are validated in an isolated build tree."),
+    row("D", "PASS", "D package/build metadata are tracked under packaging/systems-languages/d.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "The D module, static library, CLI build, runtime, and exit contract are validated in an isolated build tree."),
+    row("V", "PASS", "V package/build metadata and an external consumer are tracked under packaging/systems-languages/v.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "V package build, install, runtime, external-consumer, exit-contract, and removal checks are validated."),
+    row("Ada", "PASS", "Ada package/build metadata are tracked under packaging/systems-languages/ada.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Ada package metadata, public unit and CLI build, runtime, and exit contract are validated in an isolated build tree."),
     row("Common Lisp", "PASS", "ASDF/Quicklisp package and source are tracked under packaging/functional-languages/common-lisp.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Common Lisp package/build and external-consumer validation are confirmed."),
     row("Scheme/Racket", "PASS", "Scheme (Guile) package/build metadata are tracked under packaging/functional-languages/scheme.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Guile package/build/install and external-consumer validation are confirmed."),
     row("Prolog", "PASS", "SWI-Prolog package/build metadata are tracked under packaging/functional-languages/prolog.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Prolog package/build/install and external-consumer validation are confirmed."),
@@ -457,17 +468,17 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     domain_not_applicable("Move", "Move modules execute inside a blockchain VM and cannot create host processes."),
     row(
         "WebAssembly/WASI",
-        "BLOCKED",
-        "WebAssembly/WASI package/build metadata are tracked under packaging/systems-languages/webassembly-wasi.",
-        BLOCKED_TOOLCHAIN_EVIDENCE,
-        "WASI validation is blocked until the toolchain and runtime are available.",
+        "PASS",
+        "WebAssembly/WASI source, build metadata, exported launcher functions, and a Node host adapter are tracked under packaging/systems-languages/webassembly-wasi.",
+        PASS_SYSTEM_LANGUAGES_EVIDENCE,
+        "The WASI module compiles, exports its typed launcher surface, and completes runtime and exit-contract checks through the host adapter.",
     ),
     row("Elm", "PASS", "Elm worker and Node-port consumer of the SSHFling npm library.", PASS_WEB_CONSUMER_EVIDENCE, "elm make and a complete Node port round trip are validated."),
     row("PureScript", "PASS", "PureScript module and Node FFI consumer of the SSHFling npm library.", PASS_WEB_CONSUMER_EVIDENCE, "The PureScript compiler and runtime FFI contract are validated."),
     row("Reason/ReScript", "PASS", "ReScript bindings and CommonJS consumer of the SSHFling npm library.", PASS_WEB_CONSUMER_EVIDENCE, "ReScript compilation and typed Node bindings are validated."),
-    row("Forth", "PASS", "Forth package/build metadata are tracked under packaging/systems-languages/forth.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Forth package/build/install and exit contract validation are confirmed."),
+    row("Forth", "PASS", "Forth package/build metadata are tracked under packaging/systems-languages/forth.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "The Forth words, native bridge, CLI workflow, runtime assets, and exit contract are validated in an isolated build tree."),
     row("APL", "BLOCKED", "APL package/build metadata are tracked under packaging/scientific-languages/apl.", BLOCKED_TOOLCHAIN_EVIDENCE, "APL validation is blocked until Dyalog runtime/toolchain is available."),
-    row("J", "BLOCKED", "J package/build metadata are tracked under packaging/scientific-languages/j.", BLOCKED_TOOLCHAIN_EVIDENCE, "J validation is blocked until IJConsole/JConsole toolchain is available."),
+    row("J", "PASS", "J package/build metadata, command source, runtime assets, and an external consumer are tracked under packaging/scientific-languages/j.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "J package installation, module loading, command execution, external consumption, and removal are validated."),
     domain_blocked("LabVIEW G", "The audit documents the System Exec VI candidate boundary without fabricating binary G source.", "A licensed LabVIEW version/OS matrix and genuine VI package are required for validation."),
     domain_not_applicable("Scratch", "Scratch projects are sandboxed; a privileged extension host would be a separate service, not a project launcher."),
     row("Q/KDB+", "BLOCKED", "Q/KDB+ package/build metadata are tracked under packaging/scientific-languages/q.", BLOCKED_TOOLCHAIN_EVIDENCE, "Q validation is blocked until q runtime/toolchain is available."),
@@ -495,9 +506,9 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     domain_not_applicable("HLSL", "Shader stages have no host process API."),
     domain_not_applicable("WGSL", "WebGPU shader stages have no host process API."),
     row("Chapel", "BLOCKED", "Chapel package/build metadata are tracked under packaging/systems-languages/chapel.", BLOCKED_TOOLCHAIN_EVIDENCE, "Chapel validation is blocked until chpl compiler/runtime is available."),
-    row("Pony", "BLOCKED", "Pony package/build metadata are tracked under packaging/systems-languages/pony.", BLOCKED_TOOLCHAIN_EVIDENCE, "Pony validation is blocked until ponyc is available."),
-    row("Janet", "BLOCKED", "Janet package/build metadata are tracked under packaging/functional-languages/janet.", BLOCKED_TOOLCHAIN_EVIDENCE, "Janet validation is blocked until Janet toolchain is available."),
-    row("Odin", "BLOCKED", "Odin package/build metadata are tracked under packaging/systems-languages/odin.", BLOCKED_TOOLCHAIN_EVIDENCE, "Odin validation is blocked until Odin toolchain is available."),
+    row("Pony", "PASS", "Pony package/build metadata and an external consumer are tracked under packaging/systems-languages/pony.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Pony package build, runtime, external-consumer, exit-contract, and removal checks are validated."),
+    row("Janet", "PASS", "Janet package/build metadata, command source, runtime assets, and an external consumer are tracked under packaging/functional-languages/janet.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Janet package installation, module import, command execution, external consumption, and removal are validated."),
+    row("Odin", "PASS", "Odin collection/build metadata and an external consumer are tracked under packaging/systems-languages/odin.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Odin package build, collection import, runtime, external-consumer, exit-contract, and removal checks are validated."),
     row("Ballerina", "BLOCKED", "Ballerina package/build metadata are tracked under packaging/functional-languages/ballerina.", BLOCKED_TOOLCHAIN_EVIDENCE, "Ballerina validation is blocked until bal toolchain is available."),
     row("Gleam", "PASS", "Gleam package/build metadata are tracked under packaging/beam-languages/gleam.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Gleam package/build and external-consumer validation are confirmed."),
     row("Roc", "BLOCKED", "Roc package/build metadata are tracked under packaging/functional-languages/roc.", BLOCKED_TOOLCHAIN_EVIDENCE, "Roc validation is blocked until Roc runtime/toolchain is available."),

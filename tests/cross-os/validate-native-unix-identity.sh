@@ -53,6 +53,10 @@ case "${FAKE_GETENT_MODE:-present}" in
   *) exit 64 ;;
 esac
 SH
+cat >"$minimalbin/getent" <<'SH'
+#!/bin/sh
+exit 127
+SH
 
 cat >"$fakebin/dscacheutil" <<'SH'
 #!/bin/sh
@@ -106,44 +110,123 @@ case "${2:-}" in
   *) exit 64 ;;
 esac
 SH
-chmod 0755 "$fakebin"/* "$minimalbin/uname"
+chmod 0755 "$fakebin"/* "$minimalbin/uname" "$minimalbin/getent"
 ln -s "$(command -v awk)" "$minimalbin/awk"
 
 export FAKE_COMMAND_LOG="$command_log"
 export FAKE_UNAME=Linux
 export FAKE_GETENT_MODE=present
-linux_identity="$(PATH="$fakebin:/usr/bin:/bin" "$helper" identity native)"
+poisonbin="$tmp/poison-bin"
+mkdir -p "$poisonbin"
+cat >"$poisonbin/uname" <<EOF
+#!/bin/sh
+printf '%s\n' poisoned >"$tmp/poisoned-uname"
+exit 70
+EOF
+cat >"$poisonbin/getent" <<EOF
+#!/bin/sh
+printf '%s\n' poisoned >"$tmp/poisoned-getent"
+exit 70
+EOF
+chmod 0755 "$poisonbin"/*
+PATH="$poisonbin:/usr/bin:/bin" "$helper" identity root >/dev/null
+[[ ! -e "$tmp/poisoned-uname" && ! -e "$tmp/poisoned-getent" ]] \
+  || fail "caller PATH selected an identity backend tool"
+
+relative_fakebin="${fakebin#/}"
+set +e
+SSHFLING_NATIVE_TOOL_DIR="$relative_fakebin" \
+  "$helper" identity native >"$tmp/relative-tool.out" 2>"$tmp/relative-tool.err"
+relative_tool_status="$?"
+SSHFLING_NATIVE_TOOL_DIR="$tmp/b*" \
+  "$helper" identity native >"$tmp/glob-tool.out" 2>"$tmp/glob-tool.err"
+glob_tool_status="$?"
+set -e
+[[ "$relative_tool_status" -eq 77 ]] \
+  || fail "relative native tool directory returned $relative_tool_status instead of 77"
+[[ "$glob_tool_status" -eq 77 ]] \
+  || fail "globbed native tool directory returned $glob_tool_status instead of 77"
+
+short_mode_bin="$tmp/short-mode-bin"
+mkdir -p "$short_mode_bin"
+chmod 0075 "$short_mode_bin" # release-security: intentional-world-writable-fixture
+set +e
+SSHFLING_NATIVE_TOOL_DIR="$short_mode_bin" \
+  "$helper" identity native >"$tmp/short-mode.out" 2>"$tmp/short-mode.err"
+short_mode_status="$?"
+set -e
+[[ "$short_mode_status" -eq 77 ]] \
+  || fail "short writable directory mode returned $short_mode_status instead of 77"
+
+sticky_tool_bin="$tmp/sticky-tool-bin"
+mkdir -p "$sticky_tool_bin"
+chmod 1777 "$sticky_tool_bin" # release-security: intentional-world-writable-fixture
+for unsafe_tool_path in \
+  "$sticky_tool_bin/" \
+  "${sticky_tool_bin%/*}//${sticky_tool_bin##*/}"; do
+  set +e
+  SSHFLING_NATIVE_TOOL_DIR="$unsafe_tool_path" \
+    "$helper" identity native >"$tmp/noncanonical.out" 2>"$tmp/noncanonical.err"
+  noncanonical_status="$?"
+  set -e
+  [[ "$noncanonical_status" -eq 77 ]] \
+    || fail "non-canonical writable directory returned $noncanonical_status instead of 77: $unsafe_tool_path"
+done
+
+native_env=(SSHFLING_NATIVE_TOOL_DIR="$fakebin")
+linux_identity="$(env "${native_env[@]}" "$helper" identity native)"
 [[ "$linux_identity" == $'result\tstatus=present\tuser=native\tuid=1201\tgid=1202\thome=/srv/native' ]] \
   || fail "Linux identity output was not stable: $linux_identity"
 
+extra_tool_bin="$tmp/extra-tool-bin"
+mkdir -p "$extra_tool_bin"
+linux_path_identity="$(SSHFLING_NATIVE_TOOL_PATH="$extra_tool_bin:$fakebin" \
+  "$helper" identity native)"
+[[ "$linux_path_identity" == "$linux_identity" ]] \
+  || fail "native tool path changed or discarded identity arguments: $linux_path_identity"
+expect_failure "empty native tool path entry" env \
+  SSHFLING_NATIVE_TOOL_PATH="$fakebin::$extra_tool_bin" "$helper" identity native
+
 export FAKE_GETENT_MODE=missing
-[[ "$(PATH="$fakebin:/usr/bin:/bin" "$helper" identity absent)" == \
+[[ "$(env "${native_env[@]}" "$helper" identity absent)" == \
   $'result\tstatus=missing\tuser=absent' ]] || fail "Linux missing result was not stable"
 
 for mode in empty malformed mismatch multiple error; do
   export FAKE_GETENT_MODE="$mode"
-  expect_failure "Linux $mode backend" env PATH="$fakebin:/usr/bin:/bin" \
+  expect_failure "Linux $mode backend" env "${native_env[@]}" \
     "$helper" identity native
 done
-expect_failure "invalid username" env PATH="$fakebin:/usr/bin:/bin" \
+expect_failure "invalid username" env "${native_env[@]}" \
   "$helper" identity 'Bad.User'
-expect_failure "missing getent" env FAKE_UNAME=Linux PATH="$minimalbin" \
+expect_failure "missing getent" env FAKE_UNAME=Linux SSHFLING_NATIVE_TOOL_DIR="$minimalbin" \
   "$helper" identity native
+
+# Exercise the file backend directly because the host running this test normally
+# provides getent. The production dispatcher reaches this function only when
+# getent is absent from its fixed trusted PATH.
+helper_library="$tmp/sshfling-unix-identity-library"
+awk '/^if \[ "\$#" -ne 2 \]/{ exit } { print }' "$helper" >"$helper_library"
+passwd_identity="$(sh -c '. "$1"; lookup_passwd_file root' sh "$helper_library")"
+[[ "$passwd_identity" == $'result\tstatus=present\tuser=root\tuid=0\t'* ]] \
+  || fail "passwd file identity output was not stable: $passwd_identity"
+passwd_missing="$(sh -c '. "$1"; lookup_passwd_file sshflingmissingidentity' sh "$helper_library")"
+[[ "$passwd_missing" == $'result\tstatus=missing\tuser=sshflingmissingidentity' ]] \
+  || fail "passwd file missing result was not stable: $passwd_missing"
 
 export FAKE_UNAME=Darwin
 export FAKE_DSCACHEUTIL_MODE=present
-darwin_identity="$(PATH="$fakebin:/usr/bin:/bin" "$helper" identity macuser)"
+darwin_identity="$(env "${native_env[@]}" "$helper" identity macuser)"
 [[ "$darwin_identity" == $'result\tstatus=present\tuser=macuser\tuid=501\tgid=20\thome=/Users/macuser' ]] \
   || fail "Darwin dscacheutil output was not stable: $darwin_identity"
 
 export FAKE_DSCACHEUTIL_MODE=missing
-[[ "$(PATH="$fakebin:/usr/bin:/bin" "$helper" identity absent)" == \
+[[ "$(env "${native_env[@]}" "$helper" identity absent)" == \
   $'result\tstatus=missing\tuser=absent' ]] || fail "Darwin missing result was not stable"
 
 for mode in malformed duplicate error; do
   export FAKE_DSCACHEUTIL_MODE="$mode"
   expect_failure "Darwin dscacheutil $mode backend" \
-    env PATH="$fakebin:/usr/bin:/bin" "$helper" identity macuser
+    env "${native_env[@]}" "$helper" identity macuser
 done
 
 dsclbin="$tmp/dscl-bin"
@@ -152,12 +235,12 @@ cp "$fakebin/uname" "$fakebin/dscl" "$dsclbin/"
 chmod 0755 "$dsclbin"/*
 export FAKE_DSCL_USER=directoryuser
 export FAKE_DSCL_MODE=present
-dscl_identity="$(PATH="$dsclbin:/usr/bin:/bin" "$helper" identity directoryuser)"
+dscl_identity="$(SSHFLING_NATIVE_TOOL_DIR="$dsclbin" "$helper" identity directoryuser)"
 [[ "$dscl_identity" == $'result\tstatus=present\tuser=directoryuser\tuid=502\tgid=20\thome=/Users/directoryuser' ]] \
   || fail "Darwin dscl output was not stable: $dscl_identity"
 
 export FAKE_DSCL_MODE=missing
-[[ "$(PATH="$dsclbin:/usr/bin:/bin" "$helper" identity absent)" == \
+[[ "$(SSHFLING_NATIVE_TOOL_DIR="$dsclbin" "$helper" identity absent)" == \
   $'result\tstatus=missing\tuser=absent' ]] || fail "dscl missing result was not stable"
 if grep -Fq 'dscl read absent' "$command_log"; then
   fail "dscl read ran for an account absent from the directory listing"
@@ -165,12 +248,12 @@ fi
 
 for mode in malformed list-error read-error; do
   export FAKE_DSCL_MODE="$mode"
-  expect_failure "Darwin dscl $mode backend" env PATH="$dsclbin:/usr/bin:/bin" \
+  expect_failure "Darwin dscl $mode backend" env SSHFLING_NATIVE_TOOL_DIR="$dsclbin" \
     "$helper" identity directoryuser
 done
 expect_failure "missing Darwin identity tools" \
-  env FAKE_UNAME=Darwin PATH="$minimalbin" "$helper" identity macuser
+  env FAKE_UNAME=Darwin SSHFLING_NATIVE_TOOL_DIR="$minimalbin" "$helper" identity macuser
 expect_failure "unsupported operating system" \
-  env FAKE_UNAME=Plan9 PATH="$fakebin:/usr/bin:/bin" "$helper" identity native
+  env FAKE_UNAME=Plan9 "${native_env[@]}" "$helper" identity native
 
 echo "native Unix identity validation ok"

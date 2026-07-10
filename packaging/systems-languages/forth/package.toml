@@ -1,0 +1,12 @@
+schema_version = 1
+name = "sshfling-forth"
+version = "0.0.0"
+language = "Forth"
+implementation = "gforth >= 0.7"
+contract = "sshfling-launcher-v1"
+platforms = ["linux-posix"]
+process_backend = "gforth-direct-native-bridge"
+bridge_source = "bridge.c"
+library_word = "sshfling-run"
+cli = "cli.fs"
+sources = ["sshfling.fs", "cli.fs", "bridge.c"]

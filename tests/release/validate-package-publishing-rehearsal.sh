@@ -10,6 +10,23 @@ repository="${REPOSITORY:-GRWLX/sshfling}"
 owner="${OWNER:-${repository%%/*}}"
 source_commit="${GITHUB_SHA:-release-rehearsal}"
 source_date_epoch="${SOURCE_DATE_EPOCH:-1700000000}"
+scripting_files=(
+  "sshfling-tcl-${version}.tar.gz"
+  "sshfling-awk-${version}.tar.gz"
+  "sshfling-sed-${version}.tar.gz"
+  "sshfling-lua-${version}.tar.gz"
+  "sshfling-zsh-${version}.tar.gz"
+  "sshfling-fish-${version}.tar.gz"
+  "sshfling-elvish-${version}.tar.gz"
+  "sshfling-nushell-${version}.tar.gz"
+  "sshfling-powershell-${version}.tar.gz"
+  "sshfling-guix-scheme-${version}.tar.gz"
+  "sshfling-${version}-1.all.rock"
+  "sshfling-scripting-languages-${version}-validation.tsv"
+)
+mapfile -t catalog_files < <(
+  bash "$repo_root/packaging/list-language-release-artifacts.sh" "$version" catalog
+)
 
 export LC_ALL=C
 export TZ=UTC
@@ -111,6 +128,7 @@ build_source_tarball() {
 
   install -d "$source_dir/bin" "$source_dir/production" "$source_dir/packaging"
   write_tiny_cli "$source_dir/bin/sshfling"
+  write_tiny_cli "$source_dir/production/sshfling-login-shell"
   write_tiny_cli "$source_dir/production/sshfling-session"
   printf 'SSHFling release rehearsal artifact\n' >"$source_dir/README.md"
   printf 'SSHFling commercial license placeholder for release rehearsal\n' >"$source_dir/LICENSE"
@@ -203,13 +221,25 @@ build_direct_downloads() {
   printf 'Ruby gem placeholder for release rehearsal\n' >"$package_dist/sshfling-$version.gem"
   printf 'C and C++ native libraries placeholder for release rehearsal\n' >"$package_dist/sshfling-native-$version.tar.gz"
   printf 'Perl source distribution placeholder for release rehearsal\n' >"$package_dist/sshfling-perl-$version.tar.gz"
+  for language in tcl awk sed lua zsh fish elvish nushell powershell guix-scheme; do
+    printf '%s source archive placeholder for release rehearsal\n' "$language" \
+      >"$package_dist/sshfling-$language-$version.tar.gz"
+  done
+  printf 'LuaRocks package placeholder for release rehearsal\n' \
+    >"$package_dist/sshfling-$version-1.all.rock"
+  {
+    printf 'RESULT\tbatch\tsource-version\tPASS\t%s\n' "$version"
+    printf 'RESULT\tnushell\tsource-runtime\tSKIP\trehearsal-runtime-not-installed\n'
+    printf 'RESULT\tpowershell\tsource-runtime\tSKIP\trehearsal-runtime-not-installed\n'
+    printf 'RESULT\tguix-scheme\tguix-definition\tSKIP\trehearsal-runtime-not-installed\n'
+  } >"$package_dist/sshfling-scripting-languages-$version-validation.tsv"
+  for catalog_file in "${catalog_files[@]}"; do
+    printf 'language catalog artifact placeholder for release rehearsal: %s\n' "$catalog_file" \
+      >"$package_dist/$catalog_file"
+  done
   printf 'macOS pkg placeholder for release rehearsal\n' >"$package_dist/sshfling-$version.pkg"
   printf 'Windows MSI placeholder for release rehearsal\n' >"$package_dist/sshfling-$version.msi"
   printf 'Windows zip placeholder for release rehearsal\n' >"$package_dist/sshfling-$version-windows.zip"
-  (
-    cd "$package_dist"
-    sha256sum -- * > SHA256SUMS
-  )
 }
 
 build_local_artifacts() {
@@ -279,6 +309,7 @@ write_package_site_evidence() {
     echo "Version: $version"
     echo "Repository: $repository"
     echo "Commit: $source_commit"
+    echo "PowerShell, Nushell, and Guix Scheme source archives are runtime-gated; their publication does not assert runtime PASS. Per-check status is recorded in sshfling-scripting-languages-$version-validation.tsv."
     if [[ -f "$public_dir/sshfling-repo-fingerprint.txt" ]]; then
       echo "Repository signing fingerprint: \`$(tr -d '[:space:]' <"$public_dir/sshfling-repo-fingerprint.txt")\`"
     fi
@@ -341,6 +372,30 @@ require_tools \
 build_local_artifacts
 create_signing_material
 
+unexpected_package="$package_dist/sshfling-unexpected-$version.tar.gz"
+printf 'unexpected package artifact\n' >"$unexpected_package"
+if run_build_public_web unexpected-package "$tmpdir/public-unexpected-package"; then
+  fail "expected public package build to reject an unexpected package artifact"
+fi
+grep -Fq "Package artifact set must exactly match" "$tmpdir/unexpected-package-build.log"
+rm -f "$unexpected_package"
+
+missing_package="$package_dist/sshfling-nushell-$version.tar.gz"
+mv "$missing_package" "$tmpdir/"
+if run_build_public_web missing-package "$tmpdir/public-missing-package"; then
+  fail "expected public package build to reject a missing scripting-language artifact"
+fi
+grep -Fq "Package artifact set must exactly match" "$tmpdir/missing-package-build.log"
+mv "$tmpdir/$(basename "$missing_package")" "$missing_package"
+
+missing_catalog_package="$package_dist/sshfling-haskell-$version.tar.gz"
+mv "$missing_catalog_package" "$tmpdir/"
+if run_build_public_web missing-catalog-package "$tmpdir/public-missing-catalog-package"; then
+  fail "expected public package build to reject a missing language-catalog artifact"
+fi
+grep -Fq "Package artifact set must exactly match" "$tmpdir/missing-catalog-package-build.log"
+mv "$tmpdir/$(basename "$missing_catalog_package")" "$missing_catalog_package"
+
 unsigned_public="$tmpdir/public-unsigned"
 run_build_public_web unsigned "$unsigned_public"
 unsigned_repeat_public="$tmpdir/public-unsigned-repeat"
@@ -349,6 +404,44 @@ if ! diff -qr "$unsigned_public" "$unsigned_repeat_public" >"$tmpdir/unsigned-re
   fail "expected unsigned package site builds to be byte-for-byte deterministic"
 fi
 run_verify_public_web unsigned "$unsigned_public"
+for file in "${scripting_files[@]}"; do
+  test -s "$unsigned_public/downloads/$file"
+  grep -Fq "  $file" "$unsigned_public/downloads/SHA256SUMS"
+  grep -Fq "$file" "$unsigned_public/downloads/index.html"
+  grep -Fq "$file" "$unsigned_public/index.html"
+done
+(cd "$unsigned_public/downloads" && sha256sum -c SHA256SUMS >/dev/null)
+grep -Fq "Runtime-gated: Nushell" "$unsigned_public/index.html"
+grep -Fq "Runtime-gated: PowerShell" "$unsigned_public/index.html"
+grep -Fq "Runtime-gated: Guix Scheme" "$unsigned_public/index.html"
+grep -Fq '(secure-wrap-program' "$unsigned_public/guix/sshfling.scm"
+grep -Fq 'unset BASH_ENV ENV CDPATH GLOBIGNORE' "$unsigned_public/guix/sshfling.scm"
+if grep -Fq '(wrap-program' "$unsigned_public/guix/sshfling.scm"; then
+  fail "Guix privileged entry points must not use non-privileged Bash wrappers"
+fi
+if command -v guile >/dev/null 2>&1; then
+  guile -c '
+    (call-with-input-file (cadr (command-line))
+      (lambda (port)
+        (let loop ((form (read port)))
+          (unless (eof-object? form)
+            (loop (read port))))))' \
+    "$unsigned_public/guix/sshfling.scm"
+fi
+guix_wrapper_probe="$tmpdir/guix-secure-wrapper-probe"
+guix_bash_env="$tmpdir/guix-malicious-bash-env"
+guix_bash_env_marker="$tmpdir/guix-bash-env-ran"
+printf ': >%q\n' "$guix_bash_env_marker" >"$guix_bash_env"
+{
+  printf '#!%s -p\n' "$(command -v bash)"
+  printf 'set -eu\n'
+  printf 'unset BASH_ENV ENV CDPATH GLOBIGNORE 2>/dev/null || :\n'
+  printf 'exit 0\n'
+} >"$guix_wrapper_probe"
+chmod 0755 "$guix_wrapper_probe"
+BASH_ENV="$guix_bash_env" "$guix_wrapper_probe"
+test ! -e "$guix_bash_env_marker" \
+  || fail "Guix privileged wrapper evaluated BASH_ENV before startup hardening"
 test ! -e "$unsigned_public/sshfling-repo.gpg"
 test ! -e "$unsigned_public/sshfling-repo.asc"
 test ! -e "$unsigned_public/apt/InRelease"
@@ -356,6 +449,14 @@ test ! -e "$unsigned_public/rpm/repodata/repomd.xml.asc"
 grep -Fq 'expected_repo_fingerprint=""' "$unsigned_public/install.sh"
 write_package_site_evidence "$unsigned_public"
 generate_and_validate_evidence unsigned "$unsigned_public" 0
+
+unexpected_download_public="$tmpdir/public-unexpected-download"
+cp -a "$unsigned_public" "$unexpected_download_public"
+printf 'unexpected direct download\n' >"$unexpected_download_public/downloads/unexpected-$version.tar.gz"
+if run_verify_public_web unexpected-download "$unexpected_download_public"; then
+  fail "expected public package verification to reject an unexpected direct download"
+fi
+grep -Fq "unexpected file set in downloads" "$tmpdir/unexpected-download-verify.log"
 
 if run_verify_public_web unsigned-require-signatures "$unsigned_public" \
   REQUIRE_REPO_SIGNATURES=1 \

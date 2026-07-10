@@ -1,0 +1,10 @@
+{application, sshfling, [
+    {description, "Erlang launcher for the bundled SSHFling runtime"},
+    {vsn, "0.0.0"},
+    {registered, []},
+    {applications, [kernel, stdlib]},
+    {env, []},
+    {modules, [sshfling]},
+    {licenses, ["LicenseRef-Proprietary"]},
+    {links, [{"GitHub", "https://github.com/GRWLX/sshfling"}]}
+]}.

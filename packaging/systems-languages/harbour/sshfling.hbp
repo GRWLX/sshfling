@@ -1,0 +1,5 @@
+-osshfling-harbour
+-Icommon
+src/sshfling.prg
+src/bridge.c
+common/sshfling_launcher.c

@@ -72,8 +72,10 @@ one selector: `--all` to scan tracked generated certificate sessions or
 `--username USER` for targeted cleanup. It does not remove operator-supplied
 keys or certificate files outside the managed session directory.
 
-DEB/RPM installs on systemd hosts ship and enable `sshfling-prune.timer`.
-The timer runs the guarded password and certificate prune commands periodically.
+The repository DEB and primary RHEL-family RPM artifacts ship and enable
+`sshfling-prune.timer` on systemd hosts. Generated RPM ecosystem packages do
+not all carry these scriptlets. The timer runs the guarded password and
+certificate prune commands periodically.
 Before release, capture `systemctl status sshfling-prune.timer` and
 `journalctl -u sshfling-prune.service` evidence from an actual target host.
 
@@ -81,6 +83,15 @@ Use `sshfling host uninstall --delete-user` only for Unix accounts created by
 `sshfling host install --create-user`. SSHFling requires its host-user marker
 before deleting the Unix account. Shared CA, wrapper, policy-user, and account
 removal are opt-in host cleanup actions, not package uninstall side effects.
+The live root-owned `sshfling-login-shell` dispatcher is preserved because a
+Unix passwd entry may still reference it. Remove it manually only after native
+account inspection proves that no remaining user has that login-shell path.
+If setup rollback cannot confirm deletion of a newly created account, SSHFling
+also preserves the installed wrapper and the account-specific enforcement
+config plus any ownership metadata or marker already written. This intentionally
+favors a forced, traceable login path over restoring files while a managed
+passwd entry survives; resolve the identity mismatch or deletion failure before
+removing those files.
 
 ## Linux DEB Package
 
@@ -388,7 +399,8 @@ intentionally preserves `/etc/sshfling` for policy, CA material, and
 operator-managed configuration, then forgets the package receipt. The pkg does
 not keep separate original-state records and does not bundle Python, OpenSSH,
 or `jq`. Client commands need Python and OpenSSH; server-host setup also needs
-`jq` for native forced-session policy parsing.
+`jq` for native forced-session policy parsing and uses macOS `lockf` for
+root-managed connection slots.
 
 ## .NET Global Tool
 
@@ -449,8 +461,8 @@ Python/OpenSSH dependencies. See [libraries.md](libraries.md) for the API.
 The Java package coordinates are `io.sshfling:sshfling-cli`. The direct
 download artifact is `sshfling-cli-VERSION.jar`; the package also publishes
 `sshfling-cli-VERSION-sources.jar`, `sshfling-cli-VERSION-javadoc.jar`, and
-`sshfling-cli-VERSION.pom`. Clean Maven and Gradle consumers are validated
-against the same coordinate.
+`sshfling-cli-VERSION.pom`. Clean Java, Kotlin, Scala, and Groovy consumers are
+validated with both Maven and Gradle against the same coordinate.
 
 Install from a downloaded release package after verifying the published
 checksum:

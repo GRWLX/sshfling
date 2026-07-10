@@ -296,10 +296,11 @@ The public package site publishes `downloads/sshfling-cli-VERSION.jar`,
 java -jar "$verified_download_dir/sshfling-cli-$VERSION.jar" --version
 ```
 
-The Maven coordinates are `io.sshfling:sshfling-cli:$VERSION`; both Maven and
-Gradle clean consumers invoke the public `SSHFling.run` API. GitHub Packages
-deployment is handled by the `Java package` workflow when a version tag is
-pushed or a manual workflow dispatch explicitly sets `publish=true`.
+The Maven coordinates are `io.sshfling:sshfling-cli:$VERSION`; clean Java,
+Kotlin, Scala, and Groovy consumers invoke the public `SSHFling.run` API through
+both Maven and Gradle. GitHub Packages deployment is handled by the `Java
+package` workflow when a version tag is pushed or a manual workflow dispatch
+explicitly sets `publish=true`.
 
 The Java package does not bundle Python, OpenSSH, Docker, host
 account-management tools, host SSH configuration, Java, Maven, or Gradle. Uninstall

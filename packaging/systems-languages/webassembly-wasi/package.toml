@@ -1,0 +1,18 @@
+schema_version = 1
+name = "sshfling-wasi"
+version = "0.0.0"
+language = "WebAssembly/WASI"
+target = "wasm32-wasi"
+abi_kind = "core-wasm-custom-host-import"
+process_backend = "required-host-import"
+host_import_module = "sshfling:launcher"
+host_runtime = "node:wasi-preview1"
+library_exports = ["sshfling_wasi_version", "sshfling_wasi_run"]
+cli = "bin/sshfling-wasi.mjs"
+sources = [
+  "src/main.c",
+  "wit/sshfling.wit",
+  "host/sshfling-wasi.mjs",
+  "bin/sshfling-wasi.mjs",
+  "consumers/node/main.mjs",
+]

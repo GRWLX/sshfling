@@ -33,6 +33,7 @@ public static class SSHFlingRunner
         new("templates.ssh-server.entrypoint.sh", "templates/ssh-server/entrypoint.sh", true),
         new("templates.ssh-server.limited-session.sh", "templates/ssh-server/limited-session.sh", true),
         new("templates.ssh-server.sshd_config", "templates/ssh-server/sshd_config", false),
+        new("templates.production.sshfling-login-shell", "templates/production/sshfling-login-shell", true),
         new("templates.production.sshfling-session", "templates/production/sshfling-session", true),
         new("templates.systemd.sshflingd.service", "templates/systemd/sshflingd.service", false),
         new("templates.systemd.sshfling-prune.service", "templates/systemd/sshfling-prune.service", false),

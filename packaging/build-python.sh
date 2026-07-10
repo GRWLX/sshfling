@@ -58,6 +58,7 @@ validate_wheel_contents() {
   grep -Eq 'sshfling/templates/systemd/sshfling-prune\.timer' "$listing"
   grep -Eq 'sshfling/templates/native/sshfling-linux-account' "$listing"
   grep -Eq 'sshfling/templates/native/sshfling-unix-identity' "$listing"
+  grep -Eq 'sshfling/templates/production/sshfling-login-shell' "$listing"
   grep -Eq 'sshfling/templates/\.env\.example' "$listing"
   grep -Eq 'sshfling/templates/secrets/\.gitkeep' "$listing"
   grep -Eq 'sshfling-.+\.dist-info/entry_points\.txt' "$listing"
@@ -83,6 +84,7 @@ validate_pip_install() {
   test -x "$smoke_project/scripts/uninstall-local.sh"
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
   test -x "$smoke_project/production/sshfling-session"
   test -f "$smoke_project/secrets/.gitkeep"
 
@@ -115,6 +117,7 @@ validate_pipx_install() {
   test -x "$smoke_project/scripts/install-local.sh"
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
   test -f "$smoke_project/secrets/.gitkeep"
   PIPX_HOME="$pipx_home" PIPX_BIN_DIR="$pipx_bin_dir" \
     "$pipx_cmd" uninstall sshfling >/dev/null

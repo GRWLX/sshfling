@@ -1,0 +1,97 @@
+cabal-version:      3.0
+name:               sshfling
+version:            0.0.0
+synopsis:           Haskell launcher for the bundled SSHFling runtime
+description:        Exposes run(args) and a CLI around the canonical SSHFling runtime.
+homepage:           https://github.com/GRWLX/sshfling
+bug-reports:        https://github.com/GRWLX/sshfling/issues
+license:            LicenseRef-Proprietary
+license-file:       LICENSE
+author:             GRWLX
+maintainer:         GRWLX
+category:           System
+build-type:         Simple
+extra-source-files:
+    runtime/sshfling.py
+    runtime/templates/.env.example
+    runtime/templates/LICENSE
+    runtime/templates/README.md
+    runtime/templates/compose.client.yml
+    runtime/templates/compose.server.yml
+    runtime/templates/native/sshfling-linux-account
+    runtime/templates/native/sshfling-unix-identity
+    runtime/templates/scripts/create-network.sh
+    runtime/templates/scripts/generate-ssh-key.sh
+    runtime/templates/scripts/install-local.sh
+    runtime/templates/scripts/uninstall-local.sh
+    runtime/templates/secrets/.gitkeep
+    runtime/templates/ssh-client/Dockerfile
+    runtime/templates/ssh-client/entrypoint.sh
+    runtime/templates/ssh-server/Dockerfile
+    runtime/templates/ssh-server/entrypoint.sh
+    runtime/templates/ssh-server/limited-session.sh
+    runtime/templates/ssh-server/sshd_config
+    runtime/templates/production/sshfling-login-shell
+    runtime/templates/production/sshfling-session
+    runtime/templates/systemd/sshfling-prune.service
+    runtime/templates/systemd/sshfling-prune.timer
+    runtime/templates/systemd/sshflingd.env.example
+    runtime/templates/systemd/sshflingd.service
+data-files:
+    runtime/sshfling.py
+    runtime/templates/.env.example
+    runtime/templates/LICENSE
+    runtime/templates/README.md
+    runtime/templates/compose.client.yml
+    runtime/templates/compose.server.yml
+    runtime/templates/native/sshfling-linux-account
+    runtime/templates/native/sshfling-unix-identity
+    runtime/templates/scripts/create-network.sh
+    runtime/templates/scripts/generate-ssh-key.sh
+    runtime/templates/scripts/install-local.sh
+    runtime/templates/scripts/uninstall-local.sh
+    runtime/templates/secrets/.gitkeep
+    runtime/templates/ssh-client/Dockerfile
+    runtime/templates/ssh-client/entrypoint.sh
+    runtime/templates/ssh-server/Dockerfile
+    runtime/templates/ssh-server/entrypoint.sh
+    runtime/templates/ssh-server/limited-session.sh
+    runtime/templates/ssh-server/sshd_config
+    runtime/templates/production/sshfling-login-shell
+    runtime/templates/production/sshfling-session
+    runtime/templates/systemd/sshfling-prune.service
+    runtime/templates/systemd/sshfling-prune.timer
+    runtime/templates/systemd/sshflingd.env.example
+    runtime/templates/systemd/sshflingd.service
+
+common warnings
+    default-language: Haskell2010
+    ghc-options:      -Wall -Wcompat -Werror
+    build-depends:
+        base >=4.14 && <5
+
+library
+    import:           warnings
+    hs-source-dirs:   src
+    exposed-modules:  SSHFling
+    other-modules:    Paths_sshfling
+    build-depends:
+        directory >=1.3 && <1.4,
+        filepath >=1.4 && <1.6,
+        process >=1.6 && <1.7
+
+executable sshfling
+    import:           warnings
+    hs-source-dirs:   app
+    main-is:          Main.hs
+    build-depends:
+        sshfling
+
+executable sshfling-consumer
+    import:           warnings
+    hs-source-dirs:   test
+    main-is:          Consumer.hs
+    build-depends:
+        directory >=1.3 && <1.4,
+        filepath >=1.4 && <1.6,
+        sshfling

@@ -1,0 +1,18 @@
+{
+  "name": "sshfling-vue-server-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Server-rendered Vue consumer of the SSHFling Node API.",
+  "type": "module",
+  "scripts": {
+    "test": "node test/render.mjs"
+  },
+  "dependencies": {
+    "@vue/server-renderer": "3.5.17",
+    "sshfling": "file:../..",
+    "vue": "3.5.17"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

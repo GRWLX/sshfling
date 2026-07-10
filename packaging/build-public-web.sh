@@ -5,6 +5,29 @@ package_dist="${1:-package-dist}"
 public_dir="${2:-public}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+package_dist="$(realpath -m -- "$package_dist")"
+public_dir="$(realpath -m -- "$public_dir")"
+tmp_root="$(realpath -m -- "${TMPDIR:-/tmp}")"
+home_root="$(realpath -m -- "${HOME:-/nonexistent}")"
+
+case "$public_dir" in
+  "$repo_root/public"|"$repo_root/build/"*|"$tmp_root/"*) ;;
+  *)
+    echo "Refusing public output outside repo public/build or TMPDIR: $public_dir" >&2
+    exit 2
+    ;;
+esac
+for forbidden in / "$repo_root" "$home_root" "$tmp_root" "$package_dist"; do
+  if [[ "$public_dir" == "$forbidden" ]]; then
+    echo "Refusing unsafe public output directory: $public_dir" >&2
+    exit 2
+  fi
+done
+if [[ "$package_dist" == "$public_dir/"* || "$public_dir" == "$package_dist/"* ]]; then
+  echo "Refusing overlapping package input and public output directories." >&2
+  exit 2
+fi
+
 export LC_ALL=C
 export TZ=UTC
 umask 022
@@ -34,6 +57,57 @@ if [[ ! "$build_epoch" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 
+scripting_download_files=(
+  "sshfling-tcl-${version}.tar.gz"
+  "sshfling-awk-${version}.tar.gz"
+  "sshfling-sed-${version}.tar.gz"
+  "sshfling-lua-${version}.tar.gz"
+  "sshfling-zsh-${version}.tar.gz"
+  "sshfling-fish-${version}.tar.gz"
+  "sshfling-elvish-${version}.tar.gz"
+  "sshfling-nushell-${version}.tar.gz"
+  "sshfling-powershell-${version}.tar.gz"
+  "sshfling-guix-scheme-${version}.tar.gz"
+  "sshfling-${version}-1.all.rock"
+  "sshfling-scripting-languages-${version}-validation.tsv"
+)
+mapfile -t catalog_download_files < <(
+  bash "$repo_root/packaging/list-language-release-artifacts.sh" "$version" catalog
+)
+catalog_download_html=""
+for catalog_file in "${catalog_download_files[@]}"; do
+  printf -v catalog_download_html \
+    '%s    <li><a href="%s/downloads/%s"><code>%s</code></a></li>\n' \
+    "$catalog_download_html" "$base_url" "$catalog_file" "$catalog_file"
+done
+direct_download_files=(
+  "sshfling-${version}.tar.gz"
+  "SSHFling.Tool.${version}.nupkg"
+  "SSHFling.${version}.nupkg"
+  "sshfling-cli-${version}.jar"
+  "sshfling-cli-${version}-javadoc.jar"
+  "sshfling-cli-${version}-sources.jar"
+  "sshfling-cli-${version}.pom"
+  "sshfling-${version}.tgz"
+  "sshfling-${version}-py3-none-any.whl"
+  "sshfling-go-${version}.zip"
+  "sshfling-cli-${version}.crate"
+  "sshfling-php-${version}.zip"
+  "sshfling-${version}.gem"
+  "sshfling-native-${version}.tar.gz"
+  "sshfling-perl-${version}.tar.gz"
+  "${scripting_download_files[@]}"
+  "${catalog_download_files[@]}"
+  "sshfling-${version}.pkg"
+  "sshfling-${version}.msi"
+  "sshfling-${version}-windows.zip"
+)
+package_files=(
+  "sshfling_${version}_all.deb"
+  "sshfling-${version}-1.noarch.rpm"
+  "${direct_download_files[@]}"
+)
+
 cleanup_signing() {
   if [[ -n "$gpg_home" && -d "$gpg_home" ]] && command -v gpgconf >/dev/null 2>&1; then
     GNUPGHOME="$gpg_home" gpgconf --kill all >/dev/null 2>&1 || true
@@ -47,17 +121,25 @@ cleanup_signing() {
 }
 trap cleanup_signing EXIT
 
-first_file() {
-  local dir="$1"
-  local pattern="$2"
-  local found
+validate_package_artifacts() {
+  local file
 
-  found="$(find "$dir" -maxdepth 1 -type f -name "$pattern" -print | sort | head -n 1)"
-  if [[ -z "$found" ]]; then
-    echo "Missing required package matching $pattern in $dir" >&2
+  if [[ ! -d "$package_dist" ]]; then
+    echo "Package artifact directory not found: $package_dist" >&2
     exit 1
   fi
-  printf '%s\n' "$found"
+  if ! diff -u \
+    <(printf '%s\n' "${package_files[@]}" | sort) \
+    <(find "$package_dist" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort); then
+    echo "Package artifact set must exactly match the expected versioned files." >&2
+    exit 1
+  fi
+  for file in "${package_files[@]}"; do
+    if [[ -L "$package_dist/$file" || ! -f "$package_dist/$file" || ! -s "$package_dist/$file" ]]; then
+      echo "Package artifact is missing, empty, or not a regular file: $file" >&2
+      exit 1
+    fi
+  done
 }
 
 is_truthy() {
@@ -188,46 +270,57 @@ normalize_public_tree_timestamps() {
 normalize_chocolatey_package() {
   local package_path="$public_dir/chocolatey/sshfling.${version}.nupkg"
   local install_script="$public_dir/chocolatey/install.ps1"
-  local package_sha
+  local package_sha zip_epoch package_dir package_path_absolute rewrite_tmp relative
 
   if [[ ! -f "$package_path" ]]; then
     return
   fi
 
-  python3 - "$public_dir/chocolatey" "$package_path" "$build_epoch" <<'PY'
-import sys
-import time
-import zipfile
-from pathlib import Path
-
-root = Path(sys.argv[1])
-output = Path(sys.argv[2])
-epoch = max(int(sys.argv[3]), 315532800)
-date_time = time.gmtime(epoch)[:6]
-
-with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
-    for relative in ["sshfling.nuspec", "tools/chocolateyinstall.ps1"]:
-        data = (root / relative).read_bytes()
-        info = zipfile.ZipInfo(relative, date_time=date_time)
-        info.compress_type = zipfile.ZIP_DEFLATED
-        info.external_attr = (0o644 & 0xFFFF) << 16
-        archive.writestr(info, data)
-PY
+  command -v zip >/dev/null 2>&1 || {
+    echo "zip is required to normalize the Chocolatey package." >&2
+    return 127
+  }
+  zip_epoch="$build_epoch"
+  if (( 10#$zip_epoch < 315532800 )); then
+    zip_epoch=315532800
+  fi
+  for relative in sshfling.nuspec tools/chocolateyinstall.ps1; do
+    [[ -f "$public_dir/chocolatey/$relative" && ! -L "$public_dir/chocolatey/$relative" ]] || {
+      echo "Missing Chocolatey package input: $public_dir/chocolatey/$relative" >&2
+      return 1
+    }
+    chmod 0644 "$public_dir/chocolatey/$relative"
+    touch -d "@$zip_epoch" "$public_dir/chocolatey/$relative"
+  done
+  package_dir="$(cd "$(dirname "$package_path")" && pwd)"
+  package_path_absolute="$package_dir/$(basename "$package_path")"
+  rm -f "$package_path_absolute"
+  (
+    cd "$public_dir/chocolatey"
+    zip -q -X "$package_path_absolute" sshfling.nuspec tools/chocolateyinstall.ps1
+  )
 
   package_sha="$(sha256sum "$package_path" | awk '{print $1}')"
-  python3 - "$install_script" "$package_sha" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-package_sha = sys.argv[2]
-lines = path.read_text(encoding="utf-8").splitlines()
-lines = [
-    f'$expectedSha256 = "{package_sha}"' if line.startswith("$expectedSha256 = ") else line
-    for line in lines
-]
-path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-PY
+  [[ "$package_sha" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "Invalid Chocolatey package SHA-256 digest: $package_sha" >&2
+    return 1
+  }
+  rewrite_tmp="$(mktemp "${install_script}.tmp.XXXXXXXX")"
+  if ! awk -v package_sha="$package_sha" '
+    /^\$expectedSha256 = / {
+      print "$expectedSha256 = \"" package_sha "\""
+      replacements++
+      next
+    }
+    { print }
+    END { if (replacements != 1) exit 1 }
+  ' "$install_script" >"$rewrite_tmp"; then
+    rm -f "$rewrite_tmp"
+    echo "Could not update the Chocolatey installer checksum." >&2
+    return 1
+  fi
+  chmod 0644 "$rewrite_tmp"
+  mv -f "$rewrite_tmp" "$install_script"
 }
 
 write_apt_release() {
@@ -278,6 +371,8 @@ sign_rpm_packages() {
   done < <(find "$public_dir/rpm" -maxdepth 1 -type f -name '*.rpm' -print0 | sort -z)
 }
 
+validate_package_artifacts
+
 rm -rf "$public_dir"
 install -d \
   "$public_dir/apt" \
@@ -288,35 +383,11 @@ install -d \
   "$public_dir/windows"
 touch "$public_dir/.nojekyll"
 
-cp "$package_dist"/*.deb "$public_dir/apt/"
-cp "$package_dist"/*.rpm "$public_dir/rpm/"
-cp "$package_dist"/*.tar.gz "$public_dir/downloads/"
-if compgen -G "$package_dist/*.nupkg" >/dev/null; then
-  cp "$package_dist"/*.nupkg "$public_dir/downloads/"
-fi
-if compgen -G "$package_dist/*.jar" >/dev/null; then
-  cp "$package_dist"/*.jar "$public_dir/downloads/"
-fi
-if compgen -G "$package_dist/*.pom" >/dev/null; then
-  cp "$package_dist"/*.pom "$public_dir/downloads/"
-fi
-if compgen -G "$package_dist/*.tgz" >/dev/null; then
-  cp "$package_dist"/*.tgz "$public_dir/downloads/"
-fi
-if compgen -G "$package_dist/*.whl" >/dev/null; then
-  cp "$package_dist"/*.whl "$public_dir/downloads/"
-fi
-if compgen -G "$package_dist/*.crate" >/dev/null; then
-  cp "$package_dist"/*.crate "$public_dir/downloads/"
-fi
-if compgen -G "$package_dist/*.gem" >/dev/null; then
-  cp "$package_dist"/*.gem "$public_dir/downloads/"
-fi
-cp "$package_dist"/*.pkg "$public_dir/downloads/"
-cp "$package_dist"/*.msi "$public_dir/downloads/"
-if compgen -G "$package_dist/*.zip" >/dev/null; then
-  cp "$package_dist"/*.zip "$public_dir/downloads/"
-fi
+cp -- "$package_dist/sshfling_${version}_all.deb" "$public_dir/apt/"
+cp -- "$package_dist/sshfling-${version}-1.noarch.rpm" "$public_dir/rpm/"
+for file in "${direct_download_files[@]}"; do
+  cp -- "$package_dist/$file" "$public_dir/downloads/"
+done
 normalize_public_file_mtimes
 
 setup_repo_signing
@@ -357,8 +428,8 @@ if [[ ! -s "$public_dir/downloads/$source_tar" ]]; then
   exit 1
 fi
 source_sha="$(sha256sum "$public_dir/downloads/$source_tar" | awk '{print $1}')"
-first_file "$public_dir/apt" "sshfling_*_all.deb" >/dev/null
-first_file "$public_dir/rpm" "sshfling-*.rpm" >/dev/null
+test -s "$public_dir/apt/sshfling_${version}_all.deb"
+test -s "$public_dir/rpm/sshfling-${version}-1.noarch.rpm"
 cat >"$public_dir/homebrew/sshfling.rb" <<RUBY
 class Sshfling < Formula
   desc "Temporary SSH access broker and CLI"
@@ -369,6 +440,7 @@ class Sshfling < Formula
 
   depends_on "python@3"
   depends_on "jq"
+  depends_on "flock"
 
   def install
     bin.install "bin/sshfling"
@@ -561,7 +633,7 @@ sed -i "s#__BASE_URL__#$base_url#g" "$public_dir/install.sh"
 sed -i "s#__REPO_GPG_FINGERPRINT__#$repo_signing_fingerprint#g" "$public_dir/install.sh"
 chmod 0755 "$public_dir/install.sh"
 
-pkg_name="$(basename "$(first_file "$public_dir/downloads" "sshfling-*.pkg")")"
+pkg_name="sshfling-${version}.pkg"
 pkg_sha="$(sha256sum "$public_dir/downloads/$pkg_name" | awk '{print $1}')"
 cat >"$public_dir/macos/install-pkg.sh" <<SH
 #!/usr/bin/env bash
@@ -592,7 +664,7 @@ echo "Left /etc/sshfling in place for local policy or CA material."
 SH
 chmod 0755 "$public_dir/macos/uninstall-pkg.sh"
 
-msi_name="$(basename "$(first_file "$public_dir/downloads" "sshfling-*.msi")")"
+msi_name="sshfling-${version}.msi"
 msi_sha="$(sha256sum "$public_dir/downloads/$msi_name" | awk '{print $1}')"
 cat >"$public_dir/windows/install.ps1" <<SH
 \$ErrorActionPreference = "Stop"
@@ -799,7 +871,17 @@ java -jar "\$tmp/sshfling-cli-$version.jar" --version</code></pre>
   <pre><code>dependencies {
     implementation("io.sshfling:sshfling-cli:$version")
 }</code></pre>
-  <p>Java callers invoke <code>SSHFling.run(new String[] { "--version" })</code>.</p>
+  <h3>Kotlin, Scala, and Groovy consumers</h3>
+  <p>Each language is validated from clean Maven and Gradle projects against the published Java coordinate.</p>
+  <pre><code>// Kotlin
+val kotlinStatus = SSHFling.run(arrayOf("--version"))
+
+// Scala
+val scalaStatus = SSHFling.run(Array("--version"))
+
+// Groovy
+int groovyStatus = SSHFling.run(["--version"] as String[])</code></pre>
+  <p>Java and JVM-language callers invoke the same public <code>SSHFling.run</code> API.</p>
   <p>Uninstall:</p>
   <pre><code>rm -f "\$tmp/sshfling-cli-$version.jar" "\$tmp/sshfling-cli-$version-javadoc.jar" "\$tmp/sshfling-cli-$version.pom"</code></pre>
   <h2>Node.js npm package</h2>
@@ -895,6 +977,26 @@ PERL5LIB="\$prefix/lib/perl5" "\$prefix/bin/sshfling" --version
 PERL5LIB="\$prefix/lib/perl5" perl -MSSHFling -e 'exit SSHFling::run("--version")'</code></pre>
   <p>Uninstall the isolated prefix:</p>
   <pre><code>rm -rf "\$prefix"</code></pre>
+  <h2>Scripting language source packages</h2>
+  <p>These versioned source archives, the LuaRocks package, and their per-check validation record are direct downloads covered by <code>downloads/SHA256SUMS</code>. Archive publication and artifact-integrity evidence are separate from optional interpreter runtime status.</p>
+  <ul>
+    <li><a href="$base_url/downloads/sshfling-tcl-$version.tar.gz"><code>sshfling-tcl-$version.tar.gz</code></a>: Tcl package and CLI source archive.</li>
+    <li><a href="$base_url/downloads/sshfling-awk-$version.tar.gz"><code>sshfling-awk-$version.tar.gz</code></a>: mawk-compatible AWK source and CLI archive.</li>
+    <li><a href="$base_url/downloads/sshfling-sed-$version.tar.gz"><code>sshfling-sed-$version.tar.gz</code></a>: sed command-file and CLI archive.</li>
+    <li><a href="$base_url/downloads/sshfling-lua-$version.tar.gz"><code>sshfling-lua-$version.tar.gz</code></a>: Lua source module and CLI archive.</li>
+    <li><a href="$base_url/downloads/sshfling-zsh-$version.tar.gz"><code>sshfling-zsh-$version.tar.gz</code></a>: Zsh source module and CLI archive.</li>
+    <li><a href="$base_url/downloads/sshfling-fish-$version.tar.gz"><code>sshfling-fish-$version.tar.gz</code></a>: Fish source module and CLI archive.</li>
+    <li><a href="$base_url/downloads/sshfling-elvish-$version.tar.gz"><code>sshfling-elvish-$version.tar.gz</code></a>: Elvish source module and CLI archive.</li>
+    <li><a href="$base_url/downloads/sshfling-nushell-$version.tar.gz"><code>sshfling-nushell-$version.tar.gz</code></a>: <strong>Runtime-gated: Nushell.</strong> Module execution requires a compatible <code>nu</code> runtime; publishing this source archive does not assert runtime PASS.</li>
+    <li><a href="$base_url/downloads/sshfling-powershell-$version.tar.gz"><code>sshfling-powershell-$version.tar.gz</code></a>: <strong>Runtime-gated: PowerShell.</strong> Module execution requires PowerShell 7.2 or newer; publishing this source archive does not assert runtime PASS.</li>
+    <li><a href="$base_url/downloads/sshfling-guix-scheme-$version.tar.gz"><code>sshfling-guix-scheme-$version.tar.gz</code></a>: <strong>Runtime-gated: Guix Scheme.</strong> Guile module and Guix definition checks require their corresponding runtimes; publishing this source archive does not assert runtime PASS.</li>
+    <li><a href="$base_url/downloads/sshfling-$version-1.all.rock"><code>sshfling-$version-1.all.rock</code></a>: all-platform LuaRocks package.</li>
+    <li><a href="$base_url/downloads/sshfling-scripting-languages-$version-validation.tsv"><code>sshfling-scripting-languages-$version-validation.tsv</code></a>: environment-specific PASS/SKIP validation rows for the package build.</li>
+  </ul>
+  <h2>Functional, scientific, BEAM, and systems language packages</h2>
+  <p>Each versioned source archive contains package metadata, a public library or module surface, a CLI where the language permits one, the canonical runtime assets, and an external consumer. The validation TSV files distinguish archive publication from toolchain-gated runtime results.</p>
+  <ul>
+$catalog_download_html  </ul>
   <h2>macOS pkg</h2>
   <p>Enterprise macOS distribution should use signed and notarized packages. This helper is a convenience wrapper around the published package artifact.</p>
   <pre><code>tmp="\$(mktemp -d)"

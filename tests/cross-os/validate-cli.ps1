@@ -207,7 +207,18 @@ try {
   $passwordDepsCode = $LASTEXITCODE
   $passwordDeps = $passwordDepsJson | ConvertFrom-Json
   $passwordRequired = @($passwordDeps.dependencies | Where-Object { $_.required } | ForEach-Object { $_.name })
-  foreach ($requiredTool in @("sshd", "jq", "useradd", "userdel", "chpasswd", "id")) {
+  foreach ($requiredTool in @(
+      "sshd",
+      "jq",
+      "sshfling-unix-identity",
+      "sshfling-linux-account",
+      "useradd",
+      "userdel",
+      "chpasswd",
+      "usermod",
+      "chage",
+      "flock-or-lockf"
+    )) {
     if ($passwordRequired -notcontains $requiredTool) {
       Fail "password-server dependency inventory missing required tool $requiredTool"
     }
@@ -967,6 +978,8 @@ with tempfile.TemporaryDirectory() as tmpdir:
         "set_user_password": sshfling.set_user_password,
         "resource_file": sshfling.resource_file,
         "install_file": sshfling.install_file,
+        "install_managed_login_shell": sshfling.install_managed_login_shell,
+        "provision_session_locks": sshfling.provision_session_locks,
         "write_if_changed": sshfling.write_if_changed,
         "write_password_grant_metadata": sshfling.write_password_grant_metadata,
         "reload_sshd": sshfling.reload_sshd,
@@ -981,13 +994,20 @@ with tempfile.TemporaryDirectory() as tmpdir:
         sshfling.require_root = lambda action: None
         sshfling.require_password_host_tools = lambda: None
         sshfling.unix_user_exists = lambda username: True
-        sshfling.ensure_unix_user = lambda username: {"user": username, "created": False}
+        sshfling.ensure_unix_user = lambda username, allow_existing=False, login_shell=None: {
+            "user": username,
+            "created": False,
+            "allow_existing": allow_existing,
+            "login_shell": login_shell,
+        }
         def capture_password(username, password):
             captured["password_user"] = username
             captured["password"] = password
         sshfling.set_user_password = capture_password
         sshfling.resource_file = lambda relative: command_path
         sshfling.install_file = lambda *args, **kwargs: {"installed": True}
+        sshfling.install_managed_login_shell = lambda *args, **kwargs: {"installed_login_shell": True}
+        sshfling.provision_session_locks = lambda *args, **kwargs: {"session_locks": "provisioned"}
         sshfling.write_if_changed = lambda *args, **kwargs: {"changed": True}
         def capture_metadata(grant_dir, username, metadata, dry_run=False):
             captured["metadata"] = metadata
@@ -1263,12 +1283,26 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
     originals = {
         "require_root": sshfling.require_root,
+        "require_native_policy_parser": sshfling.require_native_policy_parser,
+        "require_native_session_lock_tool": sshfling.require_native_session_lock_tool,
+        "require_native_identity_backend": sshfling.require_native_identity_backend,
         "resource_file": sshfling.resource_file,
+        "install_managed_login_shell": sshfling.install_managed_login_shell,
+        "unix_user_identity": sshfling.unix_user_identity,
+        "provision_session_locks": sshfling.provision_session_locks,
         "validate_sshd_effective": sshfling.validate_sshd_effective,
     }
     try:
         sshfling.require_root = lambda action: None
+        sshfling.require_native_policy_parser = lambda dry_run=False: None
+        sshfling.require_native_session_lock_tool = lambda dry_run=False: None
+        sshfling.require_native_identity_backend = lambda: None
         sshfling.resource_file = lambda relative: template
+        sshfling.install_managed_login_shell = lambda *args, **kwargs: {"installed_login_shell": True}
+        sshfling.unix_user_identity = lambda username: {
+            "username": username, "uid": 1234, "gid": 1234, "home": f"/home/{username}"
+        }
+        sshfling.provision_session_locks = lambda *args, **kwargs: {"session_locks": "provisioned"}
         def fail_validation(*args, **kwargs):
             raise sshfling.SSHFlingError("forced validation failure", 2)
         sshfling.validate_sshd_effective = fail_validation
@@ -1338,6 +1372,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
       "ssh-server\entrypoint.sh",
       "ssh-server\limited-session.sh",
       "ssh-server\sshd_config",
+      "production\sshfling-login-shell",
       "production\sshfling-session",
       "systemd\sshflingd.service",
       "systemd\sshfling-prune.service",
@@ -1373,6 +1408,13 @@ with tempfile.TemporaryDirectory() as tmpdir:
   }
   if ($productionWrapper.Contains("run_limited /bin/bash")) {
     Fail "production wrapper should use the active platform Bash path"
+  }
+  $loginShell = Get-Content -Raw -Path (Join-Path $project "production\sshfling-login-shell")
+  if (-not $loginShell.Contains("unset BASH_ENV ENV")) {
+    Fail "managed login shell did not clear startup-file environment variables"
+  }
+  if ($loginShell -match "\bpython(3)?\b") {
+    Fail "managed login shell should use native shell commands, not Python"
   }
   $dockerWrapper = Get-Content -Raw -Path (Join-Path $project "ssh-server\limited-session.sh")
   if (-not $dockerWrapper.Contains("max_allowed_seconds=86400")) {

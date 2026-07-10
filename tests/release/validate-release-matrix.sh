@@ -375,6 +375,9 @@ release_version="1.2.3"
 release_dist="$tmpdir/release-dist"
 generated_dir="$tmpdir/generated"
 mkdir -p "$release_dist"
+mapfile -t catalog_release_files < <(
+  bash "$repo_root/packaging/list-language-release-artifacts.sh" "$release_version" catalog
+)
 release_files=(
   "sshfling_${release_version}_all.deb"
   "sshfling-${release_version}-1.noarch.rpm"
@@ -393,6 +396,19 @@ release_files=(
   "sshfling-${release_version}.gem"
   "sshfling-native-${release_version}.tar.gz"
   "sshfling-perl-${release_version}.tar.gz"
+  "sshfling-tcl-${release_version}.tar.gz"
+  "sshfling-awk-${release_version}.tar.gz"
+  "sshfling-sed-${release_version}.tar.gz"
+  "sshfling-lua-${release_version}.tar.gz"
+  "sshfling-zsh-${release_version}.tar.gz"
+  "sshfling-fish-${release_version}.tar.gz"
+  "sshfling-elvish-${release_version}.tar.gz"
+  "sshfling-nushell-${release_version}.tar.gz"
+  "sshfling-powershell-${release_version}.tar.gz"
+  "sshfling-guix-scheme-${release_version}.tar.gz"
+  "sshfling-${release_version}-1.all.rock"
+  "sshfling-scripting-languages-${release_version}-validation.tsv"
+  "${catalog_release_files[@]}"
   "sshfling-${release_version}.pkg"
   "sshfling-${release_version}.msi"
   "sshfling-${release_version}-windows.zip"
@@ -416,6 +432,20 @@ python3 "$repo_root/tools/release_matrix_validate.py" \
   --matrix "$generated_dir/release-assets-matrix.csv" \
   --manifest "$generated_dir/release-assets-manifest.json" \
   --max-errors 5 >/tmp/sshfling-release-evidence-validate.log
+
+printf 'unexpected release artifact\n' >"$release_dist/sshfling-unexpected-${release_version}.tar.gz"
+if python3 "$repo_root/tools/generate_release_evidence.py" \
+  --repo-root "$repo_root" \
+  --mode release-assets \
+  --artifacts-dir "$release_dist" \
+  --version "$release_version" \
+  --source-commit abc123 \
+  --output-dir "$tmpdir/generated-unexpected" >/tmp/sshfling-release-evidence-unexpected.log 2>&1; then
+  echo "expected release evidence generation to reject unexpected package artifacts" >&2
+  exit 1
+fi
+grep -Fq "unexpected files" /tmp/sshfling-release-evidence-unexpected.log
+rm -f "$release_dist/sshfling-unexpected-${release_version}.tar.gz"
 
 rm -f "$release_dist/sshfling-${release_version}.msi"
 if python3 "$repo_root/tools/generate_release_evidence.py" \

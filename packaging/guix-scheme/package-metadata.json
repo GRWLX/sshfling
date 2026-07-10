@@ -1,0 +1,22 @@
+{
+  "name": "sshfling-guix-scheme",
+  "version": "0.0.0",
+  "surface": "guile-module-guix-definition-and-cli",
+  "library": true,
+  "runtime_requirement": "GNU Guile 3, GNU Guix for package builds, and Python 3",
+  "interfaces": {
+    "module": "GUILE_LOAD_PATH=/prefix/share/guile/site/3.0 guile -c '(use-modules (sshfling))'",
+    "module_configuration": "Set SSHFLING_PACKAGE_ROOT before loading runtime paths or launching",
+    "version": "(sshfling-version)",
+    "runtime_path": "(sshfling-runtime-path)",
+    "template_dir": "(sshfling-template-dir)",
+    "launch": "(sshfling-run (list arg ...))",
+    "guix_package": "guix build -f /prefix/sshfling-package.scm",
+    "cli": "/prefix/bin/sshfling ?arg ...?"
+  },
+  "validation_policy": "Guile module checks require guile; Guix package-definition checks require guix. Missing tools are reported as SKIP, never PASS.",
+  "bundles": [
+    "canonical Python runtime",
+    "canonical deployment templates"
+  ]
+}

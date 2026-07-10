@@ -86,6 +86,7 @@ copy_and_validate_gem() {
   tar -xOf "$gem_path" data.tar.gz | tar -tzf - | grep -Fx runtime/templates/systemd/sshfling-prune.timer >/dev/null
   tar -xOf "$gem_path" data.tar.gz | tar -tzf - | grep -Fx runtime/templates/native/sshfling-linux-account >/dev/null
   tar -xOf "$gem_path" data.tar.gz | tar -tzf - | grep -Fx runtime/templates/native/sshfling-unix-identity >/dev/null
+  tar -xOf "$gem_path" data.tar.gz | tar -tzf - | grep -Fx runtime/templates/production/sshfling-login-shell >/dev/null
   tar -xOf "$gem_path" data.tar.gz | tar -tzf - | grep -Fx runtime/templates/secrets/.gitkeep >/dev/null
 }
 
@@ -107,6 +108,7 @@ validate_gem_install() {
   test -x "$smoke_project/scripts/uninstall-local.sh"
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
   test -x "$smoke_project/production/sshfling-session"
   test -f "$smoke_project/secrets/.gitkeep"
 
@@ -140,6 +142,7 @@ File.write(ARGV[1], "source \"https://rubygems.org\"\n\ngem \"sshfling\", path: 
   test -x "$smoke_project/scripts/install-local.sh"
   test -x "$smoke_project/native/sshfling-linux-account"
   test -x "$smoke_project/native/sshfling-unix-identity"
+  test -x "$smoke_project/production/sshfling-login-shell"
   test -f "$smoke_project/secrets/.gitkeep"
 
   rm -rf "$bundle_path" "$app_dir/.bundle" "$app_dir/Gemfile.lock"

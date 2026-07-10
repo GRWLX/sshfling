@@ -455,7 +455,10 @@ def shell_files(files: list[Path], repo_root: Path) -> list[Path]:
     found: list[Path] = []
     for path in files:
         rel = repo_relative(path, repo_root)
-        if path.suffix == ".sh" or rel in {"production/sshfling-session"}:
+        if path.suffix == ".sh" or rel in {
+            "production/sshfling-login-shell",
+            "production/sshfling-session",
+        }:
             found.append(path)
             continue
         if path.stat().st_size <= TEXT_SCAN_MAX_BYTES:
@@ -669,6 +672,11 @@ def shell_chmod_is_world_writable(command: str) -> bool:
     return False
 
 
+def is_intentional_world_writable_test_fixture(path: Path, repo_root: Path, command: str) -> bool:
+    marker = "release-security: intentional-world-writable-fixture"
+    return repo_relative(path, repo_root).startswith("tests/") and marker in command
+
+
 def add_static_finding(
     findings: list[dict[str, Any]],
     *,
@@ -749,7 +757,9 @@ def scan_shell_static(files: list[Path], repo_root: Path) -> dict[str, Any]:
                     severity="medium",
                     line=line,
                 )
-            if shell_chmod_is_world_writable(line):
+            if shell_chmod_is_world_writable(line) and not is_intentional_world_writable_test_fixture(
+                path, repo_root, line
+            ):
                 add_static_finding(
                     findings,
                     path=path,

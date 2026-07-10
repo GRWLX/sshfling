@@ -1,0 +1,6 @@
+id	label	tools	runner	root	metadata	api	consumer	bundle
+apl	APL	dyalog	apl	apl	apl-package.json	src/SSHFling.dyalog	test/consumer.dyalog	runtime
+j	J	jconsole	j	j	manifest.ijs	src/sshfling.ijs	test/consumer.ijs	runtime
+julia	Julia	julia	julia	julia	Project.toml	src/SSHFling.jl	test/runtests.jl	runtime
+r	R	R+Rscript	r	r	DESCRIPTION,NAMESPACE	R/sshfling.R	tests/check-api.R	inst/runtime
+q	Q_KDB	q	q	q	manifest.yaml	src/sshfling.q	test/consumer.q	runtime

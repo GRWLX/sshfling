@@ -21,17 +21,18 @@ const Version = "0.0.0"
 var bundledRuntime embed.FS
 
 var executableRuntimeFiles = map[string]bool{
-	"runtime/sshfling.py":                             true,
-	"runtime/templates/native/sshfling-linux-account": true,
-	"runtime/templates/native/sshfling-unix-identity": true,
-	"runtime/templates/production/sshfling-session":   true,
-	"runtime/templates/scripts/create-network.sh":     true,
-	"runtime/templates/scripts/generate-ssh-key.sh":   true,
-	"runtime/templates/scripts/install-local.sh":      true,
-	"runtime/templates/scripts/uninstall-local.sh":    true,
-	"runtime/templates/ssh-client/entrypoint.sh":      true,
-	"runtime/templates/ssh-server/entrypoint.sh":      true,
-	"runtime/templates/ssh-server/limited-session.sh": true,
+	"runtime/sshfling.py":                               true,
+	"runtime/templates/native/sshfling-linux-account":   true,
+	"runtime/templates/native/sshfling-unix-identity":   true,
+	"runtime/templates/production/sshfling-login-shell": true,
+	"runtime/templates/production/sshfling-session":     true,
+	"runtime/templates/scripts/create-network.sh":       true,
+	"runtime/templates/scripts/generate-ssh-key.sh":     true,
+	"runtime/templates/scripts/install-local.sh":        true,
+	"runtime/templates/scripts/uninstall-local.sh":      true,
+	"runtime/templates/ssh-client/entrypoint.sh":        true,
+	"runtime/templates/ssh-server/entrypoint.sh":        true,
+	"runtime/templates/ssh-server/limited-session.sh":   true,
 }
 
 // PythonCandidate is an executable and any fixed arguments used to start Python.

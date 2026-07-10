@@ -19,6 +19,7 @@ for path in \
   libexec/sshfling/sshfling-unix-identity \
   share/sshfling/templates/native/sshfling-linux-account \
   share/sshfling/templates/native/sshfling-unix-identity \
+  share/sshfling/templates/production/sshfling-login-shell \
   share/sshfling/templates/systemd/sshfling-prune.service \
   share/sshfling/templates/systemd/sshfling-prune.timer
 do
@@ -36,6 +37,7 @@ for path in \
   libexec/sshfling/sshfling-unix-identity \
   share/sshfling/templates/native/sshfling-linux-account \
   share/sshfling/templates/native/sshfling-unix-identity \
+  share/sshfling/templates/production/sshfling-login-shell \
   share/sshfling/templates/systemd/sshfling-prune.service \
   share/sshfling/templates/systemd/sshfling-prune.timer
 do

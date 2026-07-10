@@ -1,0 +1,10 @@
+[brick]
+name = "sshfling"
+version = "0.0.0"
+chplVersion = "2.0.0"
+authors = ["GRWLX"]
+source = "https://github.com/GRWLX/sshfling"
+license = "LicenseRef-SSHFling-Commercial"
+type = "application"
+
+[dependencies]

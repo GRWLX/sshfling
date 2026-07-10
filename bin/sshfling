@@ -2,7 +2,9 @@
 import argparse
 import base64
 import datetime as dt
+import fnmatch
 import getpass
+import glob
 import hashlib
 import hmac
 import html
@@ -17,6 +19,7 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -69,6 +72,39 @@ ACCESS_LEVEL_DESCRIPTIONS = {
 ROOT_EQUIVALENT_USERS = {"root", "administrator"}
 FORCED_SESSION_WRAPPER = "sshfling-session"
 FORCED_SESSION_ALLOW_DETACHED_ARG = "--allow-detached-start"
+LOGIN_SHELL_WRAPPER_ASSIGNMENT = "expected_wrapper=@SSHFLING_SESSION_WRAPPER@"
+LOGIN_SHELL_POLICY_ASSIGNMENT = "expected_policy=@SSHFLING_POLICY_FILE@"
+LOGIN_SHELL_BASH_ASSIGNMENT = "expected_bash=@SSHFLING_BASH@"
+FORCED_COMMAND_PATH_PATTERN = re.compile(r"[A-Za-z0-9_./:@%+=,-]+")
+DANGEROUS_SSH_ENVIRONMENT_NAMES = (
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "LD_AUDIT",
+    "LD_DEBUG",
+    "LD_PROFILE",
+    "LD_ORIGIN_PATH",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "DYLD_FRAMEWORK_PATH",
+    "LIBPATH",
+    "SHLIB_PATH",
+    "LDR_PRELOAD",
+    "LDR_PRELOAD64",
+    "_RLD_LIST",
+    "BASH_ENV",
+    "BASH_FUNC_id%%",
+    "ENV",
+    "PATH",
+    "SHELLOPTS",
+    "BASHOPTS",
+    "PS4",
+    "PROMPT_COMMAND",
+    "CDPATH",
+    "GLOBIGNORE",
+    "LOCPATH",
+    "GCONV_PATH",
+    "NLSPATH",
+)
 MIN_BEARER_TOKEN_LENGTH = 32
 MAX_HTTP_BODY_BYTES = 16384
 ISSUER_POST_RATE_LIMIT = 20
@@ -107,12 +143,27 @@ TEMPLATE_ENTRIES = [
     "ssh-server/entrypoint.sh",
     "ssh-server/limited-session.sh",
     "ssh-server/sshd_config",
+    "production/sshfling-login-shell",
     "production/sshfling-session",
     "systemd/sshflingd.service",
     "systemd/sshfling-prune.service",
     "systemd/sshfling-prune.timer",
     "systemd/sshflingd.env.example",
 ]
+
+EXECUTABLE_TEMPLATE_ENTRIES = {
+    "native/sshfling-linux-account",
+    "native/sshfling-unix-identity",
+    "scripts/install-local.sh",
+    "scripts/uninstall-local.sh",
+    "scripts/create-network.sh",
+    "scripts/generate-ssh-key.sh",
+    "ssh-client/entrypoint.sh",
+    "ssh-server/entrypoint.sh",
+    "ssh-server/limited-session.sh",
+    "production/sshfling-login-shell",
+    "production/sshfling-session",
+}
 
 
 class SSHFlingError(Exception):
@@ -133,6 +184,63 @@ def emit_json(payload):
 
 def command_path(name):
     return shutil.which(name)
+
+
+def trusted_root_executable(name):
+    fixed_directories = (
+        "/bin",
+        "/usr/bin",
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        "/opt/local/bin",
+        "/usr/pkg/bin",
+        "/run/current-system/sw/bin",
+        "/nix/var/nix/profiles/default/bin",
+        "/run/current-system/profile/bin",
+        "/var/guix/profiles/system/profile/bin",
+    )
+    path_directories = tuple(filter(None, os.environ.get("PATH", "").split(os.pathsep)))
+    seen = set()
+    for directory in (*fixed_directories, *path_directories):
+        candidate = Path(directory) / name
+        try:
+            resolved = candidate.resolve(strict=True)
+            if resolved in seen or not resolved.is_file() or not os.access(resolved, os.X_OK):
+                continue
+            seen.add(resolved)
+            metadata = resolved.stat()
+            if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) & 0o022:
+                continue
+            parent = resolved.parent
+            safe_parent = True
+            while True:
+                parent_metadata = parent.stat()
+                mode = stat.S_IMODE(parent_metadata.st_mode)
+                writable = mode & 0o022
+                if (
+                    not stat.S_ISDIR(parent_metadata.st_mode)
+                    or parent_metadata.st_uid != 0
+                    or (writable and not mode & stat.S_ISVTX)
+                ):
+                    safe_parent = False
+                    break
+                if parent == parent.parent:
+                    break
+                parent = parent.parent
+            if safe_parent:
+                return resolved
+        except OSError:
+            continue
+    raise SSHFlingError(f"Could not find a trusted root-owned {name} executable.", 127, executable=name)
+
+
+def native_session_lock_tool_path():
+    flock_path = command_path("flock")
+    if flock_path:
+        return flock_path
+    if sys.platform == "darwin" or sys.platform.startswith(("freebsd", "dragonfly")):
+        return command_path("lockf")
+    return None
 
 
 def is_loopback_host(host):
@@ -410,27 +518,31 @@ def source_root():
 
 def native_helper_candidates(filename, override_env):
     candidates = []
+    privileged = is_admin()
     override = os.environ.get(override_env)
-    if override:
+    if override and not privileged:
         candidates.append(Path(override).expanduser())
     cli_prefix = Path(__file__).resolve().parent.parent
     template_dir = os.environ.get("SSHFLING_TEMPLATE_DIR")
     candidates.extend(
         [
             Path(__file__).resolve().parent / filename,
+            Path(__file__).resolve().parent / "templates/native" / filename,
             cli_prefix / "libexec/sshfling" / filename,
+            cli_prefix / "share/sshfling/templates/native" / filename,
             source_root() / "native" / filename,
         ]
     )
-    if template_dir:
+    if template_dir and not privileged:
         candidates.append(Path(template_dir).expanduser() / "native" / filename)
     candidates.extend(
         [
             Path("/usr/libexec/sshfling") / filename,
             Path("/usr/local/libexec/sshfling") / filename,
-            Path.home() / ".local/libexec/sshfling" / filename,
         ]
     )
+    if not privileged:
+        candidates.append(Path.home() / ".local/libexec/sshfling" / filename)
     return candidates
 
 
@@ -553,11 +665,26 @@ def native_result_flag(result, field, action):
     return value == "true"
 
 
+def native_created_user_cleanup_failure(exc, username, action):
+    if not isinstance(exc, SSHFlingError) or exc.details.get("action") != action:
+        return None
+    matches = [
+        record
+        for record in exc.details.get("records", [])
+        if record.get("record") == "result"
+        and record.get("status") == "cleanup-failed"
+        and record.get("user") == username
+        and record.get("created") == "true"
+        and record.get("cleanup_confirmed") == "false"
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
 def find_template_dir():
     candidates = []
 
     env_dir = os.environ.get("SSHFLING_TEMPLATE_DIR")
-    if env_dir:
+    if env_dir and not is_admin():
         candidates.append(Path(env_dir).expanduser())
 
     candidates.extend(
@@ -566,9 +693,10 @@ def find_template_dir():
             source_root(),
             Path(__file__).resolve().parents[1] / "share/sshfling/templates",
             Path("/usr/share/sshfling/templates"),
-            Path.home() / ".local/share/sshfling/templates",
         ]
     )
+    if not is_admin():
+        candidates.append(Path.home() / ".local/share/sshfling/templates")
 
     for candidate in candidates:
         candidate = candidate.resolve()
@@ -624,6 +752,44 @@ def reject_symlink_component(path, action="manage"):
             path=str(Path(path).expanduser()),
             symlink=str(link),
         )
+
+
+def prepare_root_managed_parent(path, action="install", dry_run=False):
+    if not is_admin():
+        return
+
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        candidate = (Path.cwd() / candidate).resolve()
+    parent = candidate.parent
+    current = Path(parent.anchor)
+    for component in parent.parts[1:]:
+        current = current / component
+        if not current.exists():
+            if dry_run:
+                return
+            current.mkdir(mode=0o755)
+        if current.is_symlink():
+            raise SSHFlingError(
+                f"Refusing to {action} below a symlinked directory: {current}",
+                2,
+                path=str(candidate),
+            )
+        try:
+            metadata = current.stat()
+        except OSError as exc:
+            raise SSHFlingError(f"Could not inspect managed directory: {current}", 2) from exc
+        mode = stat.S_IMODE(metadata.st_mode)
+        writable = mode & 0o022
+        sticky = mode & stat.S_ISVTX
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != 0 or (writable and not sticky):
+            raise SSHFlingError(
+                f"Refusing to {action} below a non-root-managed directory: {current}",
+                2,
+                path=str(candidate),
+                owner=metadata.st_uid,
+                mode=oct(mode),
+            )
 
 
 def chmod_open_file(fd, path, mode):
@@ -691,7 +857,7 @@ def write_bytes_atomic(path, content, mode=0o600, action="write"):
         raise
 
 
-def copy_template_file(src, dst, force):
+def copy_template_file(src, dst, force, mode=None):
     if dst.exists() and not force:
         return "exists"
 
@@ -700,6 +866,8 @@ def copy_template_file(src, dst, force):
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
+    if mode is not None:
+        dst.chmod(mode)
     return "copied"
 
 
@@ -785,9 +953,10 @@ DEPENDENCY_MODES = {
         {"name": "useradd", "required": True, "kind": "account-tools"},
         {"name": "userdel", "required": True, "kind": "account-tools"},
         {"name": "chpasswd", "required": True, "kind": "account-tools"},
-        {"name": "usermod", "required": False, "kind": "account-tools"},
+        {"name": "usermod", "required": True, "kind": "account-tools"},
         {"name": "passwd", "required": False, "kind": "account-tools"},
-        {"name": "chage", "required": False, "kind": "account-tools"},
+        {"name": "chage", "required": True, "kind": "account-tools"},
+        {"name": "flock-or-lockf", "required": True, "kind": "session-lock"},
         {"name": "ps", "required": False, "kind": "process-tools"},
     ],
     "certificate-host": [
@@ -796,6 +965,7 @@ DEPENDENCY_MODES = {
         {"name": "sshfling-unix-identity", "required": True, "kind": "native-backend"},
         {"name": "sshfling-linux-account", "required": False, "kind": "native-backend"},
         {"name": "ssh-keygen", "required": True, "kind": "openssh-client"},
+        {"name": "flock-or-lockf", "required": True, "kind": "session-lock"},
         {"name": "useradd", "required": False, "kind": "account-tools"},
         {"name": "userdel", "required": False, "kind": "account-tools"},
         {"name": "openssl", "required": False, "kind": "password-hash"},
@@ -845,6 +1015,8 @@ def dependency_inventory(mode="all"):
             elif item["name"] == "sshfling-linux-account":
                 helper = native_linux_account_helper(required=False)
                 path = str(helper) if helper else None
+            elif item["name"] == "flock-or-lockf":
+                path = native_session_lock_tool_path()
             else:
                 path = command_path(item["name"])
             result = {
@@ -972,7 +1144,8 @@ def cmd_init(args):
         dst = project_dir / rel
         if not src.exists():
             raise SSHFlingError(f"Template is missing: {src}", 2)
-        status = copy_template_file(src, dst, args.force)
+        mode = 0o755 if rel in EXECUTABLE_TEMPLATE_ENTRIES else None
+        status = copy_template_file(src, dst, args.force, mode=mode)
         results.append({"path": rel, "status": status})
 
     env_result = write_env(project_dir, args.force, args.session_seconds, args.host_port)
@@ -1138,15 +1311,26 @@ def unix_user_identity(username):
         return None
     if result.get("status") != "present":
         raise SSHFlingError("Native Unix identity backend returned an invalid identity result.", 1)
-    try:
-        return {
-            "username": username,
-            "uid": int(result["uid"]),
-            "gid": int(result["gid"]),
-            "home": result["home"],
-        }
-    except (KeyError, TypeError, ValueError) as exc:
-        raise SSHFlingError("Native Unix identity backend returned an invalid identity.", 1) from exc
+    return native_identity_from_result(result, username)
+
+
+def native_identity_from_result(result, username):
+    uid_text = result.get("uid", "")
+    gid_text = result.get("gid", "")
+    home = result.get("home", "")
+    if (
+        not re.fullmatch(r"0|[1-9][0-9]*", uid_text)
+        or not re.fullmatch(r"0|[1-9][0-9]*", gid_text)
+        or not home
+        or any(character in home for character in "\t\r\n")
+    ):
+        raise SSHFlingError("Native Unix identity backend returned an invalid identity.", 1)
+    return {
+        "username": username,
+        "uid": int(uid_text),
+        "gid": int(gid_text),
+        "home": home,
+    }
 
 
 def native_attempts(records, username):
@@ -1397,9 +1581,11 @@ def sign_user_certificate(
     access_level=None,
 ):
     principal = validate_certificate_principal(principal)
+    session_wrapper = validate_forced_command_path(session_wrapper, "Session wrapper")
     if login_user:
         validate_unix_username(login_user)
     policy = load_policy(policy_file)
+    policy_path = validate_forced_command_path(policy["path"], "Policy file")
     login_name = login_user or principal
     active_policy = effective_policy(policy, login_name)
     grant_access_level = enforce_policy_access_level(active_policy, login_name, access_level)
@@ -1417,7 +1603,7 @@ def sign_user_certificate(
     force_command = (
         f"{shlex.quote(session_wrapper)} --max-seconds {seconds} "
         f"--username {shlex.quote(principal)} --login-user {shlex.quote(login_user or principal)} "
-        f"--policy-file {shlex.quote(policy['path'])}"
+        f"--policy-file {shlex.quote(policy_path)}"
     )
 
     with tempfile.TemporaryDirectory(prefix="sshfling-cert-") as tmp:
@@ -1796,11 +1982,19 @@ def random_username(prefix=DEFAULT_TEMP_USERNAME_PREFIX):
     return f"{prefix}{secrets.randbelow(1000000):06d}"
 
 
-def default_login_shell():
-    for candidate in ["/bin/bash", "/bin/sh"]:
-        if Path(candidate).exists():
-            return candidate
-    return "/bin/sh"
+def managed_login_shell_path(session_wrapper):
+    return Path(session_wrapper).expanduser().resolve().with_name("sshfling-login-shell")
+
+
+def validate_forced_command_path(path, label):
+    value = str(path)
+    if not value.startswith("/") or not FORCED_COMMAND_PATH_PATTERN.fullmatch(value):
+        raise SSHFlingError(
+            f"{label} must be an absolute path containing only force-command-safe characters.",
+            2,
+            path=value,
+        )
+    return value
 
 
 def is_ssh_connect_target(value):
@@ -2091,6 +2285,8 @@ def require_password_host_tools():
         missing.append("sshfling-linux-account")
     if native_unix_identity_helper(required=False) is None:
         missing.append("sshfling-unix-identity")
+    if native_session_lock_tool_path() is None:
+        missing.append("flock-or-lockf")
     if missing:
         raise SSHFlingError(
             "Password grant setup requires Linux account tools and OpenSSH server tooling. Install shadow/passwd and openssh-server tooling, or use certificate mode.",
@@ -2105,6 +2301,15 @@ def require_native_policy_parser(dry_run=False):
             "jq is required for native forced-session policy enforcement. Install jq before configuring this SSH host.",
             127,
             missing=["jq"],
+        )
+
+
+def require_native_session_lock_tool(dry_run=False):
+    if not dry_run and native_session_lock_tool_path() is None:
+        raise SSHFlingError(
+            "flock or lockf is required for native forced-session connection limits.",
+            127,
+            missing=["flock-or-lockf"],
         )
 
 
@@ -2166,7 +2371,8 @@ def provision_session_locks(session_wrapper, username, expected_identity=None, d
             "dry_run": True,
         }
 
-    proc = run([str(wrapper), "--provision-locks", username], capture=True, check=False)
+    bash = trusted_root_executable("bash")
+    proc = run([str(bash), "-p", str(wrapper), "--provision-locks", username], capture=True, check=False)
     records = parse_native_backend_records(proc.stdout) if proc.stdout else []
     if proc.returncode != 0:
         message = (proc.stderr or "").strip() or f"Could not provision session locks for {username}."
@@ -2194,7 +2400,7 @@ def provision_session_locks(session_wrapper, username, expected_identity=None, d
     }
 
 
-def ensure_unix_user(username, allow_existing=False):
+def ensure_unix_user(username, login_shell, allow_existing=False):
     if unix_user_exists(username):
         if not allow_existing:
             raise SSHFlingError(
@@ -2203,22 +2409,28 @@ def ensure_unix_user(username, allow_existing=False):
                 username=username,
             )
         return {"user": username, "created": False, "identity": unix_user_identity(username)}
-    _, records = run_native_linux_account("create", username, default_login_shell())
+    requested_shell = str(login_shell)
+    _, records = run_native_linux_account("create", username, requested_shell)
     result = native_result_for_user(records, "create", username)
     created = native_result_flag(result, "created", "create")
     expected_status = "created" if created else "present"
     if result.get("status") != expected_status:
         raise SSHFlingError("Native Linux account backend returned an invalid create result.", 1)
+    if created and result.get("shell") != requested_shell:
+        raise SSHFlingError("Native Linux account backend created the user with the wrong login shell.", 1)
     if not created and not allow_existing:
         raise SSHFlingError(
             "Refusing to create a password grant because the Unix user appeared during setup.",
             2,
             username=username,
         )
-    return {"user": username, "created": created, "identity": unix_user_identity(username)}
+    identity = native_identity_from_result(result, username) if created else unix_user_identity(username)
+    return {"user": username, "created": created, "identity": identity}
 
 
 def password_force_command(username, seconds, expires_at, session_wrapper, policy_file):
+    session_wrapper = validate_forced_command_path(session_wrapper, "Session wrapper")
+    policy_file = validate_forced_command_path(policy_file, "Policy file")
     return (
         f"{shlex.quote(session_wrapper)} --max-seconds {seconds} --max-connections 1 "
         f"--username {shlex.quote(username)} --login-user {shlex.quote(username)} "
@@ -2295,6 +2507,7 @@ def cmd_setup_password(args):
     expires_at = int(time.time()) + seconds
     password = secrets.token_urlsafe(18)
     wrapper_path = Path(args.session_wrapper).expanduser().resolve()
+    login_shell_path = managed_login_shell_path(wrapper_path)
     config_dir = Path(args.password_sshd_config_dir).expanduser().resolve()
     config_path = config_dir / f"91-sshfling-password-{args.username}.conf"
     metadata_path = password_grant_metadata_path(args.password_grant_dir, args.username)
@@ -2313,7 +2526,8 @@ def cmd_setup_password(args):
         "permitlisten none",
     ]
 
-    rollback_paths = [wrapper_path, config_path, metadata_path]
+    prepare_root_managed_parent(wrapper_path, "install forced-session executables", args.dry_run)
+    rollback_paths = [wrapper_path, login_shell_path, config_path, metadata_path]
     for managed_path in rollback_paths:
         reject_symlink_component(managed_path, "manage password grant path")
     rollback_snapshots = [] if args.dry_run else [(path, snapshot_file(path)) for path in rollback_paths]
@@ -2325,14 +2539,26 @@ def cmd_setup_password(args):
 
     try:
         results.append(install_file(resource_file("production/sshfling-session"), wrapper_path, 0o755, args.dry_run))
+        results.append(install_managed_login_shell(wrapper_path, policy["path"], login_shell_path, args.dry_run))
         results.append(write_if_changed(config_path, config, 0o644, args.dry_run))
 
         if not args.dry_run and args.validate:
-            results.append(validate_sshd_effective(args.username, expected_lines, config_path))
+            results.append(
+                validate_sshd_effective(
+                    args.username,
+                    expected_lines,
+                    config_path,
+                    require_safe_environment=True,
+                )
+            )
 
         if not args.dry_run:
             results.append(reload_sshd())
-            user_result = ensure_unix_user(args.username, allow_existing=args.allow_existing_user)
+            user_result = ensure_unix_user(
+                args.username,
+                allow_existing=args.allow_existing_user,
+                login_shell=str(login_shell_path),
+            )
             created_user = bool(user_result.get("created"))
             created_user_for_rollback = created_user
             user_identity = user_result.get("identity") or unix_user_identity(args.username)
@@ -2355,6 +2581,7 @@ def cmd_setup_password(args):
             "expires_at": expires_at,
             "config_path": str(config_path),
             "session_wrapper": str(wrapper_path),
+            "managed_login_shell": str(login_shell_path) if user_result.get("created") else None,
             "policy_file": policy["path"],
             "access_level": grant_access_level,
             **unix_identity_metadata(user_identity),
@@ -2368,16 +2595,37 @@ def cmd_setup_password(args):
     except Exception as exc:
         rollback = []
         if not args.dry_run:
+            preserve_rollback_paths = set()
+            cleanup_failure = native_created_user_cleanup_failure(exc, args.username, "create")
+            if cleanup_failure:
+                preserve_rollback_paths.update({wrapper_path, login_shell_path, config_path})
+                rollback.append({
+                    "user": args.username,
+                    "status": "preserved",
+                    "reason": "native account helper could not confirm cleanup of the created user",
+                    "native_result": cleanup_failure,
+                })
+            elif created_user_for_rollback:
+                try:
+                    rollback.append(rollback_delete_created_user(args.username, user_identity))
+                except Exception as rollback_exc:
+                    preserve_rollback_paths.update(
+                        {wrapper_path, login_shell_path, config_path, metadata_path}
+                    )
+                    message = rollback_exc.message if isinstance(rollback_exc, SSHFlingError) else str(rollback_exc)
+                    rollback.append({"user": args.username, "rollback_error": message})
             for path, snapshot in reversed(rollback_snapshots):
+                if path in preserve_rollback_paths:
+                    rollback.append({
+                        "path": str(path),
+                        "status": "preserved",
+                        "reason": "created user could not be deleted",
+                    })
+                    continue
                 try:
                     rollback.append(restore_file_snapshot(path, snapshot))
                 except Exception as rollback_exc:
                     rollback.append({"path": str(path), "rollback_error": str(rollback_exc)})
-            if created_user_for_rollback:
-                try:
-                    rollback.append(delete_password_user(args.username, expected_identity=user_identity))
-                except SSHFlingError as rollback_exc:
-                    rollback.append({"user": args.username, "rollback_error": rollback_exc.message})
             try:
                 rollback.append(reload_sshd())
             except SSHFlingError as rollback_exc:
@@ -3450,6 +3698,36 @@ def install_file(src, dst, mode=0o755, dry_run=False):
     return {"path": str(dst), "source": str(src)}
 
 
+def install_managed_login_shell(session_wrapper, policy_file, destination, dry_run=False):
+    wrapper = validate_forced_command_path(session_wrapper, "Session wrapper")
+    policy = validate_forced_command_path(policy_file, "Policy file")
+    bash = validate_forced_command_path(trusted_root_executable("bash"), "Bash executable")
+    source = resource_file("production/sshfling-login-shell")
+    template = source.read_text()
+    assignments = (
+        LOGIN_SHELL_WRAPPER_ASSIGNMENT,
+        LOGIN_SHELL_POLICY_ASSIGNMENT,
+        LOGIN_SHELL_BASH_ASSIGNMENT,
+    )
+    if any(template.count(assignment) != 1 for assignment in assignments):
+        raise SSHFlingError("Managed login-shell template is missing a required assignment.", 2, path=str(source))
+    rendered = template.replace(
+        LOGIN_SHELL_WRAPPER_ASSIGNMENT,
+        f"expected_wrapper={shlex.quote(wrapper)}",
+    )
+    rendered = rendered.replace(
+        LOGIN_SHELL_POLICY_ASSIGNMENT,
+        f"expected_policy={shlex.quote(policy)}",
+    )
+    rendered = rendered.replace(
+        LOGIN_SHELL_BASH_ASSIGNMENT,
+        f"expected_bash={shlex.quote(bash)}",
+    )
+    result = write_if_changed(destination, rendered, 0o755, dry_run)
+    result["source"] = str(source)
+    return result
+
+
 def snapshot_file(path):
     path = Path(path)
     try:
@@ -3505,15 +3783,99 @@ def reload_sshd():
     raise SSHFlingError("Could not reload sshd automatically; reload sshd manually.", 127, attempts=attempts)
 
 
-def validate_sshd_effective(username=None, expected_lines=None, config_hint=None):
+def sshd_configuration_files(root=Path("/etc/ssh/sshd_config")):
+    root = Path(root)
+    if not root.exists():
+        return []
+    queue = [root]
+    files = []
+    seen = set()
+    while queue:
+        path = queue.pop(0)
+        try:
+            path = path.resolve(strict=True)
+        except OSError as exc:
+            raise SSHFlingError(f"Could not resolve sshd configuration file: {path}", 2) from exc
+        if path in seen:
+            continue
+        seen.add(path)
+        if not path.is_file():
+            continue
+        files.append(path)
+        try:
+            lines = path.read_text().splitlines()
+        except OSError as exc:
+            raise SSHFlingError(f"Could not read sshd configuration file: {path}", 2) from exc
+        for line_number, line in enumerate(lines, 1):
+            try:
+                fields = shlex.split(line, comments=True, posix=True)
+            except ValueError as exc:
+                raise SSHFlingError(
+                    f"Could not parse sshd configuration include at {path}:{line_number}.",
+                    2,
+                ) from exc
+            if not fields or fields[0].lower() != "include":
+                continue
+            for pattern in fields[1:]:
+                include_pattern = Path(pattern)
+                if not include_pattern.is_absolute():
+                    include_pattern = root.parent / include_pattern
+                queue.extend(Path(match) for match in sorted(glob.glob(str(include_pattern))))
+    return files
+
+
+def configured_accept_env_patterns():
+    patterns = []
+    for path in sshd_configuration_files():
+        for line_number, line in enumerate(path.read_text().splitlines(), 1):
+            fields = shlex.split(line, comments=True, posix=True)
+            if fields and fields[0].lower() == "acceptenv":
+                patterns.extend(
+                    {"pattern": pattern, "source": str(path), "line": line_number}
+                    for pattern in fields[1:]
+                )
+    return patterns
+
+
+def dangerous_accept_env_matches(pattern_records):
+    matches = []
+    seen = set()
+    for record in pattern_records:
+        pattern = record["pattern"]
+        variables = [
+            variable
+            for variable in DANGEROUS_SSH_ENVIRONMENT_NAMES
+            if fnmatch.fnmatchcase(variable, pattern)
+        ]
+        if pattern.startswith("BASH_FUNC_"):
+            variables.append("BASH_FUNC_*")
+        for variable in variables:
+            key = (pattern, variable, record.get("source"), record.get("line"))
+            if key in seen:
+                continue
+            seen.add(key)
+            matches.append({**record, "variable": variable})
+    return matches
+
+
+def validate_sshd_effective(
+    username=None,
+    expected_lines=None,
+    config_hint=None,
+    require_safe_environment=False,
+):
     run(["sshd", "-t"], capture=True)
     result = {"validated": "sshd -t"}
-    if not expected_lines:
+    if not expected_lines and not require_safe_environment:
         return result
 
     proc = run(["sshd", "-T", "-C", f"user={username},host=localhost,addr=127.0.0.1"], capture=True)
-    effective = "\n".join(line.strip().lower() for line in proc.stdout.splitlines())
-    missing = [line for line in expected_lines if line.strip().lower() not in effective]
+    effective_lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    effective_normalized = {" ".join(line.lower().split()) for line in effective_lines}
+    missing = [
+        line for line in (expected_lines or [])
+        if " ".join(line.strip().lower().split()) not in effective_normalized
+    ]
     if missing:
         raise SSHFlingError(
             "sshd syntax is valid, but the sshfling Match configuration is not active. Ensure sshd_config includes the managed config path.",
@@ -3521,6 +3883,34 @@ def validate_sshd_effective(username=None, expected_lines=None, config_hint=None
             missing=missing,
             config=str(config_hint) if config_hint else None,
         )
+
+    if require_safe_environment:
+        permit_values = []
+        accept_patterns = []
+        for line in effective_lines:
+            fields = line.split()
+            if not fields:
+                continue
+            directive = fields[0].lower()
+            if directive == "permituserenvironment":
+                permit_values.extend(value.lower() for value in fields[1:])
+            elif directive == "acceptenv":
+                accept_patterns.extend(fields[1:])
+        pattern_records = [
+            {"pattern": pattern, "source": "sshd -T", "line": None}
+            for pattern in accept_patterns
+        ]
+        pattern_records.extend(configured_accept_env_patterns())
+        dangerous_matches = dangerous_accept_env_matches(pattern_records)
+        if not permit_values or any(value != "no" for value in permit_values) or dangerous_matches:
+            raise SSHFlingError(
+                "Unsafe sshd environment policy for an SSHFling-managed session. Disable PermitUserEnvironment and remove dangerous AcceptEnv patterns before validating the install.",
+                2,
+                permit_user_environment=permit_values,
+                dangerous_accept_env=dangerous_matches,
+                config=str(config_hint) if config_hint else None,
+            )
+        result["validated_environment"] = "sshd -T"
     result["validated_effective"] = "sshd -T"
     return result
 
@@ -3747,6 +4137,17 @@ def delete_password_user(username, dry_run=False, expected_identity=None):
     return {"user": username, "deleted": deleted}
 
 
+def rollback_delete_created_user(username, expected_identity=None):
+    result = delete_password_user(username, expected_identity=expected_identity)
+    if result.get("deleted") is True or result.get("status") == "missing":
+        return result
+    raise SSHFlingError(
+        f"Rollback could not confirm deletion of created Unix user: {username}",
+        1,
+        delete_result=result,
+    )
+
+
 def cleanup_password_grant_sessions(username, dry_run=False):
     if not command_path("ps"):
         return {"username": username, "status": "unsupported", "reason": "ps is required to inspect active sessions"}
@@ -3929,6 +4330,7 @@ def cmd_password_prune(args):
 def cmd_host_install(args):
     require_root("host install")
     require_native_policy_parser(args.dry_run)
+    require_native_session_lock_tool(args.dry_run)
     require_native_identity_backend()
     if args.create_user:
         require_certificate_user_tools(args.dry_run)
@@ -3940,7 +4342,11 @@ def cmd_host_install(args):
     trusted_ca = Path(args.trusted_ca).expanduser()
     principals_dir = Path(args.principals_dir).expanduser()
     principals_file = principals_dir / args.user
-    wrapper_path = Path(args.session_wrapper).expanduser()
+    wrapper_path = Path(args.session_wrapper).expanduser().resolve()
+    validate_forced_command_path(wrapper_path, "Session wrapper")
+    login_shell_path = managed_login_shell_path(wrapper_path)
+    managed_policy_path = policy_file_path(args.policy_file)
+    validate_forced_command_path(managed_policy_path, "Policy file")
     sshd_config = Path(args.sshd_config).expanduser()
     host_user_marker_dir = getattr(args, "host_user_marker_dir", DEFAULT_HOST_USER_MARKER_DIR)
     marker_path = host_user_marker_path(host_user_marker_dir, args.user)
@@ -3966,11 +4372,12 @@ Match User {args.user}
     PermitTunnel no
 """
 
-    rollback_paths = [wrapper_path, trusted_ca, principals_file, sshd_config]
+    prepare_root_managed_parent(wrapper_path, "install forced-session executables", args.dry_run)
+    rollback_paths = [wrapper_path, login_shell_path, trusted_ca, principals_file, sshd_config]
     requested_access_level = getattr(args, "access_level", None)
     installed_access_level = None
     if args.max_time or args.max_connections or requested_access_level:
-        rollback_paths.append(policy_file_path(args.policy_file))
+        rollback_paths.append(managed_policy_path)
     if args.create_user:
         rollback_paths.append(marker_path)
     for managed_path in rollback_paths:
@@ -3983,6 +4390,14 @@ Match User {args.user}
     results = []
     try:
         results.append(install_file(resource_file("production/sshfling-session"), wrapper_path, 0o755, args.dry_run))
+        results.append(
+            install_managed_login_shell(
+                wrapper_path,
+                managed_policy_path,
+                login_shell_path,
+                args.dry_run,
+            )
+        )
         results.append(write_if_changed(trusted_ca, ca_pub.read_text(), 0o644, args.dry_run))
         results.append(write_if_changed(principals_file, principal_lines, 0o644, args.dry_run))
         results.append(write_if_changed(sshd_config, config, 0o644, args.dry_run))
@@ -4008,7 +4423,11 @@ Match User {args.user}
 
         if args.create_user and not args.dry_run:
             if not unix_user_exists(args.user):
-                _, records = run_native_linux_account("create-certificate-user", args.user, default_login_shell())
+                _, records = run_native_linux_account(
+                    "create-certificate-user",
+                    args.user,
+                    str(login_shell_path),
+                )
                 create_result = native_result_for_user(records, "create-certificate-user", args.user)
                 created_user_for_rollback = native_result_flag(
                     create_result,
@@ -4032,7 +4451,16 @@ Match User {args.user}
                             "Native Linux account backend did not unlock the created certificate user.",
                             1,
                         )
-                created_identity = unix_user_identity(args.user)
+                    if create_result.get("shell") != str(login_shell_path):
+                        raise SSHFlingError(
+                            "Native Linux account backend created the certificate user with the wrong login shell.",
+                            1,
+                        )
+                created_identity = (
+                    native_identity_from_result(create_result, args.user)
+                    if created_user_for_rollback
+                    else unix_user_identity(args.user)
+                )
                 if created_user_for_rollback:
                     marker = {
                         "version": 1,
@@ -4042,6 +4470,7 @@ Match User {args.user}
                         "created_user": True,
                         "created_at": int(time.time()),
                         "created_at_utc": utc_iso(),
+                        "managed_login_shell": str(login_shell_path),
                         **unix_identity_metadata(created_identity),
                     }
                     results.append(write_host_user_marker(host_user_marker_dir, args.user, marker))
@@ -4082,6 +4511,7 @@ Match User {args.user}
                         "permitlisten none",
                     ],
                     sshd_config,
+                    require_safe_environment=True,
                 )
             )
 
@@ -4090,16 +4520,45 @@ Match User {args.user}
     except Exception as exc:
         rollback = []
         if not args.dry_run:
+            preserve_rollback_paths = set()
+            cleanup_failure = native_created_user_cleanup_failure(
+                exc,
+                args.user,
+                "create-certificate-user",
+            )
+            if cleanup_failure:
+                preserve_rollback_paths.update({wrapper_path, login_shell_path, sshd_config})
+                if managed_policy_path in rollback_paths:
+                    preserve_rollback_paths.add(managed_policy_path)
+                rollback.append({
+                    "user": args.user,
+                    "status": "preserved",
+                    "reason": "native account helper could not confirm cleanup of the created user",
+                    "native_result": cleanup_failure,
+                })
+            elif created_user_for_rollback:
+                try:
+                    rollback.append(rollback_delete_created_user(args.user, created_identity))
+                except Exception as rollback_exc:
+                    preserve_rollback_paths.update(
+                        {wrapper_path, login_shell_path, sshd_config, marker_path}
+                    )
+                    if managed_policy_path in rollback_paths:
+                        preserve_rollback_paths.add(managed_policy_path)
+                    message = rollback_exc.message if isinstance(rollback_exc, SSHFlingError) else str(rollback_exc)
+                    rollback.append({"user": args.user, "rollback_error": message})
             for path, snapshot in reversed(rollback_snapshots):
+                if path in preserve_rollback_paths:
+                    rollback.append({
+                        "path": str(path),
+                        "status": "preserved",
+                        "reason": "created user could not be deleted",
+                    })
+                    continue
                 try:
                     rollback.append(restore_file_snapshot(path, snapshot))
                 except Exception as rollback_exc:
                     rollback.append({"path": str(path), "rollback_error": str(rollback_exc)})
-            if created_user_for_rollback:
-                try:
-                    rollback.append(delete_password_user(args.user, expected_identity=created_identity))
-                except SSHFlingError as rollback_exc:
-                    rollback.append({"user": args.user, "rollback_error": rollback_exc.message})
         if isinstance(exc, SSHFlingError):
             exc.details["rollback"] = rollback
         raise

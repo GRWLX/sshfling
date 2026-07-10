@@ -1,0 +1,8 @@
+schema_version = 1
+name = "sshfling-red-system"
+version = "0.0.0"
+language = "Red/System"
+abi = "sshfling-launcher-v1"
+library_source = "src/sshfling.reds"
+cli_source = "src/main.reds"
+shared_library = "libsshfling_launcher"

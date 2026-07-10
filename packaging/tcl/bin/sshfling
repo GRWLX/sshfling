@@ -1,0 +1,22 @@
+#!/usr/bin/env tclsh
+
+proc resolve_script_path {path} {
+    for {set count 0} {$count < 40} {incr count} {
+        if {[file type $path] ne "link"} {
+            return [file normalize $path]
+        }
+        set target [file readlink $path]
+        if {[file pathtype $target] eq "relative"} {
+            set path [file join [file dirname $path] $target]
+        } else {
+            set path $target
+        }
+    }
+    puts stderr "sshfling: too many symbolic links while resolving launcher"
+    exit 127
+}
+
+set package_root [file dirname [file dirname [resolve_script_path [info script]]]]
+lappend auto_path [file join $package_root lib sshfling]
+package require sshfling 0.0.0
+exit [::sshfling::run {*}$argv]

@@ -1,0 +1,9 @@
+{
+  "name": "sshfling/hack-node-consumer",
+  "description": "Server-side Hack adapter for the SSHFling npm library.",
+  "type": "project",
+  "license": "proprietary",
+  "require": {
+    "hhvm": ">=4.172"
+  }
+}

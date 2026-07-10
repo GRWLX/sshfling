@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import importlib.util
 import json
 import re
@@ -118,12 +119,12 @@ class LanguageSupportMatrixTests(unittest.TestCase):
         self.assertLess(languages.index("TypeScript"), languages.index("JavaScript"))
         self.assertLess(languages.index("TypeScript"), languages.index("Java"))
 
-    def test_powershell_is_blocked(self) -> None:
+    def test_powershell_package_is_supported(self) -> None:
         rows_by_language = {
             language_name(row): row for row in generate_language_support_matrix.LANGUAGE_SUPPORT
         }
 
-        self.assertEqual(status_value(rows_by_language["PowerShell"]).upper(), "BLOCKED")
+        self.assertEqual(status_value(rows_by_language["PowerShell"]).upper(), "PASS")
 
     def test_javascript_typescript_package_surface_is_supported(self) -> None:
         rows_by_language = {
@@ -199,6 +200,109 @@ class LanguageSupportMatrixTests(unittest.TestCase):
         )
         for path in required_paths:
             self.assertTrue((REPO_ROOT / path).is_file(), path)
+
+    def test_jvm_language_consumers_are_supported(self) -> None:
+        rows_by_language = {
+            language_name(row): row for row in generate_language_support_matrix.LANGUAGE_SUPPORT
+        }
+        source_paths = {
+            "Kotlin": (
+                "packaging/java/consumers/kotlin/src/main/kotlin/io/sshfling/validation/KotlinConsumer.kt",
+                "packaging/java/consumers/kotlin-gradle/src/main/kotlin/io/sshfling/validation/KotlinGradleConsumer.kt",
+            ),
+            "Scala": (
+                "packaging/java/consumers/scala/src/main/scala/io/sshfling/validation/ScalaConsumer.scala",
+                "packaging/java/consumers/scala-gradle/src/main/scala/io/sshfling/validation/ScalaGradleConsumer.scala",
+            ),
+            "Groovy": (
+                "packaging/java/consumers/groovy/src/main/groovy/io/sshfling/validation/GroovyConsumer.groovy",
+                "packaging/java/consumers/groovy-gradle/src/main/groovy/io/sshfling/validation/GroovyGradleConsumer.groovy",
+            ),
+            "Clojure": (
+                "packaging/java/consumers/clojure/src/main/clojure/io/sshfling/validation/clojure_consumer.clj",
+                "packaging/java/consumers/clojure-gradle/src/main/clojure/io/sshfling/validation/clojure_gradle_consumer.clj",
+            ),
+        }
+        for language, language_source_paths in source_paths.items():
+            self.assertEqual(status_value(rows_by_language[language]).upper(), "PASS")
+            for source_path in language_source_paths:
+                self.assertTrue((REPO_ROOT / source_path).is_file(), source_path)
+
+    def test_web_language_consumers_are_supported_or_gated(self) -> None:
+        rows_by_language = {
+            language_name(row): row for row in generate_language_support_matrix.LANGUAGE_SUPPORT
+        }
+        pass_sources = {
+            "React/JSX": "packaging/node/consumers/react/src/StatusPage.jsx",
+            "Vue": "packaging/node/consumers/vue/src/status-app.mjs",
+            "Svelte": "packaging/node/consumers/svelte/src/Status.svelte",
+            "Angular": "packaging/node/consumers/angular/src/server.ts",
+            "Elm": "packaging/node/consumers/elm/src/Main.elm",
+            "PureScript": "packaging/node/consumers/purescript/src/Main.purs",
+            "Reason/ReScript": "packaging/node/consumers/rescript/src/Main.res",
+            "HTML/CSS": "packaging/node/consumers/html-css/src/styles.css",
+            "Dart": "packaging/node/consumers/dart/bin/sshfling_consumer.dart",
+        }
+        blocked_sources = {
+            "Hack": "packaging/node/consumers/hack/src/main.hack",
+            "CFML": "packaging/node/consumers/cfml/test.cfm",
+        }
+
+        for language, source_path in pass_sources.items():
+            self.assertEqual(status_value(rows_by_language[language]).upper(), "PASS")
+            self.assertTrue((REPO_ROOT / source_path).is_file(), source_path)
+        for language, source_path in blocked_sources.items():
+            self.assertEqual(status_value(rows_by_language[language]).upper(), "BLOCKED")
+            self.assertTrue((REPO_ROOT / source_path).is_file(), source_path)
+
+    def test_scripting_language_packages_are_supported_or_gated(self) -> None:
+        rows_by_language = {
+            language_name(row): row for row in generate_language_support_matrix.LANGUAGE_SUPPORT
+        }
+        pass_sources = {
+            "Lua": "packaging/lua/lua/sshfling/init.lua",
+            "Tcl": "packaging/tcl/sshfling.tcl",
+            "AWK": "packaging/awk/sshfling.awk",
+            "sed": "packaging/sed/sshfling-version.sed",
+            "Zsh": "packaging/shell-languages/zsh/sshfling.zsh",
+            "Fish": "packaging/shell-languages/fish/sshfling.fish",
+            "Elvish": "packaging/shell-languages/elvish/sshfling.elv",
+            "Nushell": "packaging/shell-languages/nushell/sshfling.nu",
+            "PowerShell": "packaging/shell-languages/powershell/SSHFling.psm1",
+        }
+        blocked_sources = {
+            "Guix Scheme": "packaging/guix-scheme/sshfling-package.scm",
+        }
+
+        for language, source_path in pass_sources.items():
+            self.assertEqual(status_value(rows_by_language[language]).upper(), "PASS")
+            self.assertTrue((REPO_ROOT / source_path).is_file(), source_path)
+        for language, source_path in blocked_sources.items():
+            self.assertEqual(status_value(rows_by_language[language]).upper(), "BLOCKED")
+            self.assertTrue((REPO_ROOT / source_path).is_file(), source_path)
+
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("package-scripting-languages:", makefile)
+        self.assertTrue((REPO_ROOT / "packaging/build-scripting-languages.sh").is_file())
+
+    def test_domain_language_inventory_is_explicitly_non_pass(self) -> None:
+        rows_by_language = {
+            language_name(row): row for row in generate_language_support_matrix.LANGUAGE_SUPPORT
+        }
+        manifest_path = REPO_ROOT / "packaging/domain-languages/manifest.tsv"
+        with manifest_path.open(encoding="utf-8", newline="") as handle:
+            domain_rows = list(csv.DictReader(handle, delimiter="\t"))
+
+        self.assertEqual(len(domain_rows), 33)
+        for domain_row in domain_rows:
+            language = domain_row["language"]
+            self.assertIn(
+                status_value(rows_by_language[language]).upper(),
+                {"BLOCKED", "NOT_APPLICABLE"},
+                language,
+            )
+        makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("audit-domain-languages:", makefile)
 
     def test_unsupported_languages_are_not_pass(self) -> None:
         unsupported_pass = [

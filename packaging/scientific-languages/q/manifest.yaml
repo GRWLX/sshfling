@@ -1,0 +1,16 @@
+{
+  "name": "sshfling",
+  "version": "0.0.0",
+  "entrypoints": {
+    "default": "init.q"
+  },
+  "dependencies": [],
+  "metadata": {
+    "description": "Q/KDB+ launcher for the bundled SSHFling runtime",
+    "authors": [
+      "GRWLX"
+    ],
+    "license": "LicenseRef-Proprietary",
+    "repository": "https://github.com/GRWLX/sshfling"
+  }
+}

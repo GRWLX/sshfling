@@ -1,0 +1,53 @@
+(define-module (sshfling)
+  #:use-module (ice-9 popen)
+  #:export (run runtime-path template-directory))
+
+(define %installed-resource-root "@pkgdatadir@/runtime")
+
+(define (environment-or-false name)
+  (let ((value (getenv name)))
+    (and value (not (string-null? value)) value)))
+
+(define (resource-root)
+  (let ((root (environment-or-false "SSHFLING_PACKAGE_ROOT")))
+    (if root (string-append root "/runtime") %installed-resource-root)))
+
+(define (runtime-path)
+  (or (environment-or-false "SSHFLING_RUNTIME")
+      (string-append (resource-root) "/sshfling.py")))
+
+(define (template-directory)
+  (or (environment-or-false "SSHFLING_TEMPLATE_DIR")
+      (string-append (resource-root) "/templates")))
+
+(define (wait-status->integer status)
+  (cond
+   ((status:exit-val status) => (lambda (value) value))
+   ((status:term-sig status) => (lambda (signal) (+ 128 signal)))
+   (else 1)))
+
+(define (all-strings? values)
+  (or (null? values)
+      (and (string? (car values)) (all-strings? (cdr values)))))
+
+(define (run arguments)
+  "Run the bundled SSHFling CLI and return its integer process status."
+  (unless (and (list? arguments) (all-strings? arguments))
+    (error "SSHFling arguments must be a list of strings"))
+  (let ((runtime (runtime-path)))
+    (if (not (file-exists? runtime))
+        127
+        (let* ((python (or (environment-or-false "SSHFLING_PYTHON") "python3"))
+               (old-template (getenv "SSHFLING_TEMPLATE_DIR")))
+          (dynamic-wind
+            (lambda () (setenv "SSHFLING_TEMPLATE_DIR" (template-directory)))
+            (lambda ()
+              (catch 'system-error
+                (lambda ()
+                  (wait-status->integer
+                   (apply system* python runtime arguments)))
+                (lambda _ 127)))
+            (lambda ()
+              (if old-template
+                  (setenv "SSHFLING_TEMPLATE_DIR" old-template)
+                  (unsetenv "SSHFLING_TEMPLATE_DIR"))))))))

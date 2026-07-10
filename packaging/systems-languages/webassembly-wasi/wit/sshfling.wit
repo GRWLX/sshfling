@@ -1,0 +1,5 @@
+package sshfling:launcher;
+
+world sshfling {
+  import run: func(args: list<string>) -> u32;
+}

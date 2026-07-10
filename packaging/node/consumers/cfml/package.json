@@ -1,0 +1,17 @@
+{
+  "name": "sshfling-cfml-server-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "CFML server process invoking a Node bridge to the SSHFling npm API.",
+  "scripts": {
+    "test:node": "node test-bridge.cjs",
+    "test:cfml": "box execute test.cfm",
+    "test": "npm run test:node && npm run test:cfml"
+  },
+  "dependencies": {
+    "sshfling": "file:../.."
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
