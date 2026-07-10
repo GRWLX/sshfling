@@ -84,13 +84,41 @@ PASS_PYTHON_EVIDENCE = (
     "make package-python VERSION=0.1.16; isolated pip and pipx install/import/CLI/uninstall "
     "validation in packaging/build-python.sh"
 )
+PASS_FUNCTIONAL_EVIDENCE = (
+    "./packaging/build-functional-languages.sh --allow-blocked --language haskell"
+)
 PASS_NODE_EVIDENCE = (
     "make test VERSION=0.1.16; make package-node VERSION=0.1.16; npm "
     "CommonJS/ESM import and run, strict TypeScript compile, bin, and uninstall validation"
 )
+PASS_WEB_CONSUMER_EVIDENCE = (
+    "make package-web-language-consumers VERSION=0.1.16; clean npm installation from the "
+    "packed SSHFling artifact, language/framework compilation, trusted Node-side API execution, "
+    "template discovery, and generated-output assertions"
+)
+BLOCKED_WEB_TOOLCHAIN_EVIDENCE = (
+    "tracked package/source and a passing SSHFling Node bridge exist under packaging/node/consumers, "
+    "but the required external language runtime is unavailable on the validation host"
+)
+PASS_FUNCTIONAL_LANGUAGES_EVIDENCE = "python3 packaging/build-functional-languages.py --allow-blocked"
+PASS_SYSTEM_LANGUAGES_EVIDENCE = "bash packaging/build-systems-languages.sh"
+BLOCKED_TOOLCHAIN_EVIDENCE = (
+    "tracked package/source and a validated SSHFling surface are present under the language directory, "
+    "but the required external runtime/toolchain is unavailable on the validation host"
+)
 PASS_JAVA_EVIDENCE = (
     "make package-java VERSION=0.1.16; Maven clean install, Gradle clean build, "
-    "executable/source/Javadocs artifacts, and clean Maven/Gradle library consumers"
+    "executable/source/Javadocs artifacts, and clean Java, Kotlin, Scala, and Groovy consumers"
+)
+PASS_JVM_CONSUMER_EVIDENCE = (
+    "make package-java VERSION=0.1.16; pinned Maven and Gradle compiler/build metadata, "
+    "clean language-specific compilation at JVM 11, SSHFling.run API execution, init workflow, "
+    "and published JAR/POM consumer validation"
+)
+PASS_CLOJURE_EVIDENCE = (
+    "make package-java VERSION=0.1.16; pinned Clojure 1.12 Maven and Gradle projects, "
+    "packaged namespace checks, isolated SSHFling dependency resolution, public Java API "
+    "execution, exact version output, and init workflow validation"
 )
 PASS_DOTNET_EVIDENCE = (
     "make package-dotnet VERSION=0.1.16; NuGet global tool plus SSHFling library pack, "
@@ -126,6 +154,16 @@ PASS_SCRIPT_EVIDENCE = (
     "make test VERSION=0.1.16; shell syntax checks through release validation; "
     "container production test"
 )
+PASS_SCRIPTING_LANGUAGE_EVIDENCE = (
+    "make package-scripting-languages VERSION=0.1.16; versioned archive build, isolated "
+    "source/library import, canonical CLI execution, init asset verification, and removal "
+    "evidence in packaging/build-scripting-languages.sh"
+)
+BLOCKED_SCRIPTING_LANGUAGE_EVIDENCE = (
+    "tracked package and language source exist under packaging/shell-languages or "
+    "packaging/guix-scheme, but packaging/build-scripting-languages.sh records the required "
+    "language/package runtime as SKIP on the validation host"
+)
 UNSUPPORTED_EVIDENCE = (
     "git ls-files inventory and release matrix show no shipped SSHFling "
     "package/runtime implementation for this target"
@@ -134,10 +172,34 @@ FUTURE_EVIDENCE = (
     "cataloged as a possible expansion target; no supported SSHFling release "
     "artifact exists yet"
 )
-BLOCKED_WINDOWS_EVIDENCE = (
-    "PowerShell files exist, but Windows runner/AuthentiCode/PowerShell "
-    "validation evidence is unavailable in this Linux environment"
+DOMAIN_AUDIT_EVIDENCE = (
+    "bash packaging/build-domain-languages.sh audit; packaging/domain-languages/manifest.tsv; "
+    "docs/language-external-blockers.md"
 )
+
+
+def domain_blocked(
+    language: str,
+    surface: str,
+    rationale: str,
+    category: str = "programming language",
+) -> dict[str, str]:
+    return row(language, "BLOCKED", surface, DOMAIN_AUDIT_EVIDENCE, rationale, category)
+
+
+def domain_not_applicable(
+    language: str,
+    rationale: str,
+    category: str = "programming language",
+) -> dict[str, str]:
+    return row(
+        language,
+        "NOT_APPLICABLE",
+        "The domain-language audit records an explicit semantic boundary and intentionally ships no launcher.",
+        DOMAIN_AUDIT_EVIDENCE,
+        rationale,
+        category,
+    )
 
 
 # Composite order: current broad popularity signals first, then long-tail
@@ -193,12 +255,9 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         PASS_DOTNET_EVIDENCE,
         "Shipped as separate importable library and command packages with clean consumer validation.",
     ),
-    row(
+    domain_not_applicable(
         "SQL",
-        "UNSUPPORTED",
-        "No database extension, migration package, CLI SQL interface, or supported schema runtime.",
-        UNSUPPORTED_EVIDENCE,
-        "SSHFling does not expose a database language surface.",
+        "Standard SQL has no portable process API, and SSHFling exposes no database schema or protocol.",
     ),
     row(
         "Go",
@@ -239,15 +298,33 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     ),
     row(
         "PowerShell",
-        "BLOCKED",
-        "Cross-OS validation scripts include PowerShell, but full Windows runtime/package proof is absent.",
-        BLOCKED_WINDOWS_EVIDENCE,
-        "Cannot mark PASS until Windows/PowerShell execution and signing evidence exists.",
+        "PASS",
+        "PowerShell 7 module, manifest, native script CLI, POSIX CLI, runtime, and templates under packaging/shell-languages/powershell.",
+        PASS_SCRIPTING_LANGUAGE_EVIDENCE,
+        "PowerShell executes the module and native CLI workflows; Windows MSI and signing evidence remains a separate platform concern.",
         "shell",
     ),
-    row("Kotlin", "UNSUPPORTED", "No Kotlin/JVM package or source.", UNSUPPORTED_EVIDENCE, "No supported Kotlin surface is shipped."),
-    row("Swift", "UNSUPPORTED", "No Swift package, source, or Apple native API wrapper.", UNSUPPORTED_EVIDENCE, "No supported Swift surface is shipped."),
-    row("R", "FUTURE_WORK", "No R package, R source, or CRAN-style release path.", FUTURE_EVIDENCE, "Data-science package support would need a new package surface."),
+    row(
+        "Kotlin",
+        "PASS",
+        "Kotlin 2.4 Maven and Gradle consumers compile against the published SSHFling Java library.",
+        PASS_JVM_CONSUMER_EVIDENCE,
+        "The clean Kotlin application invokes SSHFling.run and validates the bundled runtime workflow.",
+    ),
+    row(
+        "Swift",
+        "BLOCKED",
+        "Swift package metadata and runtime layout are tracked under packaging/systems-languages/swift.",
+        BLOCKED_TOOLCHAIN_EVIDENCE,
+        "Promotion requires the Swift toolchain on the validation host.",
+    ),
+    row(
+        "R",
+        "PASS",
+        "R package/build metadata and validated external consumer are tracked under packaging/scientific-languages/r.",
+        PASS_FUNCTIONAL_LANGUAGES_EVIDENCE,
+        "Scientific-language checks confirm build/install/runtime/consumer and removal behavior.",
+    ),
     row(
         "Ruby",
         "PASS",
@@ -255,8 +332,20 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         PASS_RUBY_EVIDENCE,
         "Shipped as a RubyGem and validated with both RubyGems and Bundler.",
     ),
-    row("Dart", "UNSUPPORTED", "No Dart package, pubspec, Flutter plugin, or Dart source.", UNSUPPORTED_EVIDENCE, "No supported Dart surface is shipped."),
-    row("Lua", "UNSUPPORTED", "No Lua module, luarocks package, or Lua source.", UNSUPPORTED_EVIDENCE, "No supported Lua surface is shipped."),
+    row(
+        "Dart",
+        "BLOCKED",
+        "A pubspec, Dart launcher source, and validated Node bridge are tracked under packaging/node/consumers/dart.",
+        BLOCKED_WEB_TOOLCHAIN_EVIDENCE,
+        "Promotion requires execution with the Dart SDK; the batch validator fails closed while dart is unavailable.",
+    ),
+    row(
+        "Lua",
+        "PASS",
+        "Lua 5.1/5.4 source module and CLI plus a LuaRocks package under packaging/lua.",
+        PASS_SCRIPTING_LANGUAGE_EVIDENCE,
+        "Both Lua ABIs execute the source API; LuaRocks 5.1 additionally validates install, library import, CLI, init, package, and removal.",
+    ),
     row(
         "Perl",
         "PASS",
@@ -264,7 +353,13 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         PASS_PERL_EVIDENCE,
         "Shipped as a CPAN-style source distribution with isolated module and CLI validation.",
     ),
-    row("Scala", "UNSUPPORTED", "No Scala/SBT package or Scala source.", UNSUPPORTED_EVIDENCE, "No supported Scala surface is shipped."),
+    row(
+        "Scala",
+        "PASS",
+        "Scala 3.3 Maven and Gradle consumers compile against the published SSHFling Java library.",
+        PASS_JVM_CONSUMER_EVIDENCE,
+        "The clean Scala application invokes SSHFling.run and validates the bundled runtime workflow.",
+    ),
     row(
         "Visual Basic/.NET",
         "PASS",
@@ -272,24 +367,60 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         PASS_DOTNET_EVIDENCE,
         "The language consumes the shipped .NET library through a clean local NuGet restore and runtime workflow.",
     ),
-    row("MATLAB", "UNSUPPORTED", "No MATLAB toolbox, M files, or mex interface.", UNSUPPORTED_EVIDENCE, "No supported MATLAB package is shipped."),
-    row("Objective-C", "UNSUPPORTED", "No Objective-C source, framework, or Cocoa package surface.", UNSUPPORTED_EVIDENCE, "No supported Objective-C surface is shipped."),
-    row("Groovy", "UNSUPPORTED", "No Groovy source, Gradle plugin, or Maven artifact for Groovy.", UNSUPPORTED_EVIDENCE, "No supported Groovy surface is shipped."),
-    row("Delphi/Object Pascal", "UNSUPPORTED", "No Pascal source or package surface.", UNSUPPORTED_EVIDENCE, "No supported Pascal surface is shipped."),
-    row("Julia", "UNSUPPORTED", "No Julia package, Project.toml, or Julia source.", UNSUPPORTED_EVIDENCE, "No supported Julia package is shipped."),
-    row("HCL/Terraform", "UNSUPPORTED", "No Terraform provider, module, or HCL API surface.", UNSUPPORTED_EVIDENCE, "No supported Terraform provider/module is shipped.", "infrastructure DSL"),
-    row("Assembly", "UNSUPPORTED", "No assembly source or architecture-specific runtime.", UNSUPPORTED_EVIDENCE, "No supported assembly surface is shipped."),
-    row("COBOL", "UNSUPPORTED", "No COBOL source or package surface.", UNSUPPORTED_EVIDENCE, "No supported COBOL surface is shipped."),
-    row("Fortran", "UNSUPPORTED", "No Fortran source or package surface.", UNSUPPORTED_EVIDENCE, "No supported Fortran surface is shipped."),
-    row("SAS", "UNSUPPORTED", "No SAS package or scripts.", UNSUPPORTED_EVIDENCE, "No supported SAS surface is shipped."),
-    row("ABAP", "UNSUPPORTED", "No ABAP transport, source, or SAP package.", UNSUPPORTED_EVIDENCE, "No supported ABAP surface is shipped."),
-    row("Apex", "UNSUPPORTED", "No Salesforce package, Apex source, or SFDX project.", UNSUPPORTED_EVIDENCE, "No supported Apex surface is shipped."),
-    row("PL/SQL", "UNSUPPORTED", "No Oracle package or PL/SQL scripts.", UNSUPPORTED_EVIDENCE, "No supported PL/SQL surface is shipped."),
-    row("T-SQL", "UNSUPPORTED", "No SQL Server package or T-SQL scripts.", UNSUPPORTED_EVIDENCE, "No supported T-SQL surface is shipped."),
-    row("Elixir", "UNSUPPORTED", "No Mix project, Elixir source, or Hex package.", UNSUPPORTED_EVIDENCE, "No supported Elixir surface is shipped."),
-    row("Erlang", "UNSUPPORTED", "No Erlang application, rebar config, or Hex package.", UNSUPPORTED_EVIDENCE, "No supported Erlang surface is shipped."),
-    row("Haskell", "UNSUPPORTED", "No Cabal/Stack project or Haskell source.", UNSUPPORTED_EVIDENCE, "No supported Haskell surface is shipped."),
-    row("Clojure", "UNSUPPORTED", "No deps.edn/Leiningen project or Clojure source.", UNSUPPORTED_EVIDENCE, "No supported Clojure surface is shipped."),
+    domain_blocked("MATLAB", "A ProcessBuilder-based MATLAB launcher candidate is tracked under packaging/domain-languages/matlab.", "A licensed MATLAB runtime and configured JVM are required for conformance and packaging evidence."),
+    row("Objective-C", "PASS", "Objective-C package metadata and runtime sources are tracked under packaging/systems-languages/objective-c.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "The Objective-C adapter compiles and validates install/runtime and exit workflows through systems validation."),
+    row(
+        "Groovy",
+        "PASS",
+        "Groovy 5 Maven and Gradle consumers compile against the published SSHFling Java library.",
+        PASS_JVM_CONSUMER_EVIDENCE,
+        "The clean Groovy application invokes SSHFling.run and validates the bundled runtime workflow.",
+    ),
+    domain_blocked("Delphi/Object Pascal", "A Free Pascal/Object Pascal launcher candidate is tracked under packaging/domain-languages/object-pascal.", "Free Pascal validation does not establish Delphi compiler compatibility; both toolchain matrices remain external."),
+    row(
+        "Julia",
+        "BLOCKED",
+        "Julia package/build metadata are tracked under packaging/scientific-languages/julia.",
+        BLOCKED_TOOLCHAIN_EVIDENCE,
+        "Validation requires a Julia runtime/toolchain on the host.",
+    ),
+    domain_not_applicable("HCL/Terraform", "HCL is configuration data and local-exec would be an unsafe shell-string side effect, not a typed launcher.", "infrastructure DSL"),
+    row("Assembly", "PASS", "Assembly package metadata and runtime surface are tracked under packaging/systems-languages/assembly.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Assembly sources and runtime pass validator checks for install and exit contract."),
+    row("COBOL", "PASS", "COBOL package metadata and runtime surface are tracked under packaging/systems-languages/cobol.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "COBOL sources and runtime pass validator checks for install and exit contract."),
+    row("Fortran", "PASS", "Fortran package metadata and runtime surface are tracked under packaging/systems-languages/fortran.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Fortran sources and runtime pass validator checks for install and exit contract."),
+    domain_blocked("SAS", "The audit specifies the SAS XCMD execution boundary but intentionally supplies no unsafe macro.", "A licensed, policy-approved XCMD-enabled SAS runtime is unavailable and string-based execution is not portable."),
+    domain_blocked("ABAP", "The audit specifies SAP external-command prerequisites but intentionally supplies no unvalidated transport.", "A licensed SAP system, SM69 definition, authorization design, namespace, and transport validation are required."),
+    domain_not_applicable("Apex", "Apex cannot start host processes; an HTTP relayer would be a separate privileged service and protocol."),
+    domain_blocked("PL/SQL", "The audit specifies Oracle external-job requirements but intentionally supplies no privileged database package.", "A licensed Oracle deployment, scheduler privileges, host credentials, and security review are required."),
+    domain_not_applicable("T-SQL", "The only direct route is the disabled-by-default xp_cmdshell service-account escape hatch, which is rejected for new code."),
+    row(
+        "Elixir",
+        "PASS",
+        "Elixir package build and consumer validation are tracked under packaging/beam-languages/elixir.",
+        PASS_FUNCTIONAL_LANGUAGES_EVIDENCE,
+        "Mix package/build and external consumer validation are confirmed.",
+    ),
+    row(
+        "Erlang",
+        "PASS",
+        "Erlang package build and consumer validation are tracked under packaging/beam-languages/erlang.",
+        PASS_FUNCTIONAL_LANGUAGES_EVIDENCE,
+        "Erlang package/build and external consumer validation are confirmed.",
+    ),
+    row(
+        "Haskell",
+        "PASS",
+        "Cabal package and Haskell consumer with runtime/template resources under packaging/functional-languages/haskell.",
+        PASS_FUNCTIONAL_EVIDENCE,
+        "Cabal sources and a validated Haskell consumer flow are tracked and verified by the native functional-language validator.",
+    ),
+    row(
+        "Clojure",
+        "PASS",
+        "Clojure 1.12 Maven and Gradle consumers invoke the published SSHFling Java library.",
+        PASS_CLOJURE_EVIDENCE,
+        "Both clean projects package Clojure namespaces and invoke SSHFling.run through clojure.main.",
+    ),
     row(
         "F#",
         "PASS",
@@ -297,70 +428,94 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         PASS_DOTNET_EVIDENCE,
         "The language consumes the shipped .NET library through a clean local NuGet restore and runtime workflow.",
     ),
-    row("OCaml", "UNSUPPORTED", "No dune/opam package or OCaml source.", UNSUPPORTED_EVIDENCE, "No supported OCaml surface is shipped."),
-    row("Zig", "UNSUPPORTED", "No Zig source or build.zig.", UNSUPPORTED_EVIDENCE, "No supported Zig surface is shipped."),
-    row("Nim", "UNSUPPORTED", "No Nim source or nimble package.", UNSUPPORTED_EVIDENCE, "No supported Nim surface is shipped."),
-    row("Crystal", "UNSUPPORTED", "No Crystal source or shard.yml.", UNSUPPORTED_EVIDENCE, "No supported Crystal surface is shipped."),
-    row("D", "FUTURE_WORK", "No D source, dub package, or binary artifact.", FUTURE_EVIDENCE, "Native D support would need a new package surface."),
-    row("V", "FUTURE_WORK", "No V source or package manifest.", FUTURE_EVIDENCE, "Native V support would need a new package surface."),
-    row("Ada", "UNSUPPORTED", "No Ada project or source.", UNSUPPORTED_EVIDENCE, "No supported Ada surface is shipped."),
-    row("Common Lisp", "UNSUPPORTED", "No ASDF system or Lisp source.", UNSUPPORTED_EVIDENCE, "No supported Common Lisp surface is shipped."),
-    row("Scheme/Racket", "UNSUPPORTED", "No Scheme/Racket package or source.", UNSUPPORTED_EVIDENCE, "No supported Scheme or Racket surface is shipped."),
-    row("Prolog", "UNSUPPORTED", "No Prolog package or source.", UNSUPPORTED_EVIDENCE, "No supported Prolog surface is shipped."),
-    row("Smalltalk", "UNSUPPORTED", "No Smalltalk package or source.", UNSUPPORTED_EVIDENCE, "No supported Smalltalk surface is shipped."),
-    row("Tcl", "UNSUPPORTED", "No Tcl package or source.", UNSUPPORTED_EVIDENCE, "No supported Tcl surface is shipped."),
-    row("AWK", "UNSUPPORTED", "No supported AWK scripts or CLI contract.", UNSUPPORTED_EVIDENCE, "AWK is not a shipped SSHFling language surface.", "shell"),
-    row("sed", "UNSUPPORTED", "No supported sed script package or CLI contract.", UNSUPPORTED_EVIDENCE, "sed is not a shipped SSHFling language surface.", "shell"),
-    row("Zsh", "FUTURE_WORK", "No Zsh completion/runtime test or Zsh package surface.", FUTURE_EVIDENCE, "Shell integration can be added later with tests.", "shell"),
-    row("Fish", "FUTURE_WORK", "No Fish completion/runtime test or Fish package surface.", FUTURE_EVIDENCE, "Shell integration can be added later with tests.", "shell"),
+    row("OCaml", "PASS", "Dune/opam metadata and consumer validation are tracked under packaging/functional-languages/ocaml.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "OCaml package build/install and external-consumer validation are confirmed."),
+    row("Zig", "PASS", "Zig package/build metadata are tracked under packaging/systems-languages/zig.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Zig package/build/install and exit contract validation are confirmed."),
+    row("Nim", "PASS", "Nim package/build metadata are tracked under packaging/systems-languages/nim.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Nim package/build/install and exit contract validation are confirmed."),
+    row("Crystal", "PASS", "Crystal package/build metadata are tracked under packaging/systems-languages/crystal.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Crystal package/build/install and exit contract validation are confirmed."),
+    row("D", "PASS", "D package/build metadata are tracked under packaging/systems-languages/d.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "D package/build/install and exit contract validation are confirmed."),
+    row("V", "BLOCKED", "V package/build metadata are tracked under packaging/systems-languages/v.", BLOCKED_TOOLCHAIN_EVIDENCE, "V validation is gated until v toolchain is available."),
+    row("Ada", "PASS", "Ada package/build metadata are tracked under packaging/systems-languages/ada.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Ada package/build/install and exit contract validation are confirmed."),
+    row("Common Lisp", "PASS", "ASDF/Quicklisp package and source are tracked under packaging/functional-languages/common-lisp.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Common Lisp package/build and external-consumer validation are confirmed."),
+    row("Scheme/Racket", "PASS", "Scheme (Guile) package/build metadata are tracked under packaging/functional-languages/scheme.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Guile package/build/install and external-consumer validation are confirmed."),
+    row("Prolog", "PASS", "SWI-Prolog package/build metadata are tracked under packaging/functional-languages/prolog.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Prolog package/build/install and external-consumer validation are confirmed."),
+    row(
+        "Smalltalk",
+        "BLOCKED",
+        "Smalltalk package/build metadata are tracked under packaging/functional-languages/smalltalk.",
+        BLOCKED_TOOLCHAIN_EVIDENCE,
+        "Smalltalk validation is gated until GST toolchain is available.",
+    ),
+    row("Tcl", "PASS", "Versioned Tcl package, importable namespace, CLI, runtime, and templates under packaging/tcl.", PASS_SCRIPTING_LANGUAGE_EVIDENCE, "An isolated package require, API invocation, CLI init, asset checks, and removal are validated."),
+    row("AWK", "PASS", "mawk-compatible source API and packaged CLI under packaging/awk.", PASS_SCRIPTING_LANGUAGE_EVIDENCE, "The source functions invoke the canonical runtime and the isolated package validates init assets and removal.", "shell"),
+    row("sed", "PASS", "Versioned sed command file and packaged CLI under packaging/sed.", PASS_SCRIPTING_LANGUAGE_EVIDENCE, "The command file validates and extracts the canonical CLI version while rejecting malformed input.", "shell"),
+    row("Zsh", "PASS", "Sourceable Zsh module and packaged CLI under packaging/shell-languages/zsh.", PASS_SCRIPTING_LANGUAGE_EVIDENCE, "Zsh executes the module API, exact version contract, init workflow, asset checks, and removal.", "shell"),
+    row("Fish", "PASS", "Sourceable Fish module and packaged CLI under packaging/shell-languages/fish.", PASS_SCRIPTING_LANGUAGE_EVIDENCE, "Fish executes the module API, exact version contract, init workflow, asset checks, and removal.", "shell"),
     row("Nix", "PASS", "Generated Nix package metadata exists and is covered by cross-OS validation scope.", "docs/build-targets.md; cross-os validation workflow scope; release package site verifier", "Nix is supported as packaging metadata, not as a product runtime API.", "package DSL"),
-    row("Guix Scheme", "UNSUPPORTED", "Generated Guix metadata exists, but no Guix runtime/API or Scheme package support is claimed.", UNSUPPORTED_EVIDENCE, "Packaging metadata does not equal language runtime support.", "package DSL"),
-    row("Solidity", "UNSUPPORTED", "No smart contract package or Solidity source.", UNSUPPORTED_EVIDENCE, "No supported Solidity surface is shipped."),
-    row("Vyper", "UNSUPPORTED", "No smart contract package or Vyper source.", UNSUPPORTED_EVIDENCE, "No supported Vyper surface is shipped."),
-    row("Move", "UNSUPPORTED", "No Move package or source.", UNSUPPORTED_EVIDENCE, "No supported Move surface is shipped."),
-    row("WebAssembly/WASI", "UNSUPPORTED", "No WASM module, WIT interface, or WASI package.", UNSUPPORTED_EVIDENCE, "No supported WebAssembly/WASI artifact is shipped."),
-    row("Elm", "UNSUPPORTED", "No Elm package or source.", UNSUPPORTED_EVIDENCE, "No supported Elm surface is shipped."),
-    row("PureScript", "UNSUPPORTED", "No PureScript package or source.", UNSUPPORTED_EVIDENCE, "No supported PureScript surface is shipped."),
-    row("Reason/ReScript", "UNSUPPORTED", "No Reason/ReScript package or source.", UNSUPPORTED_EVIDENCE, "No supported Reason/ReScript surface is shipped."),
-    row("Forth", "UNSUPPORTED", "No Forth package or source.", UNSUPPORTED_EVIDENCE, "No supported Forth surface is shipped."),
-    row("APL", "UNSUPPORTED", "No APL package or source.", UNSUPPORTED_EVIDENCE, "No supported APL surface is shipped."),
-    row("J", "UNSUPPORTED", "No J package or source.", UNSUPPORTED_EVIDENCE, "No supported J surface is shipped."),
-    row("LabVIEW G", "UNSUPPORTED", "No LabVIEW project or package.", UNSUPPORTED_EVIDENCE, "No supported LabVIEW surface is shipped."),
-    row("Scratch", "UNSUPPORTED", "No Scratch project or extension.", UNSUPPORTED_EVIDENCE, "No supported Scratch surface is shipped."),
-    row("Q/KDB+", "UNSUPPORTED", "No Q package or KDB+ integration.", UNSUPPORTED_EVIDENCE, "No supported Q/KDB+ surface is shipped."),
-    row("Hack", "UNSUPPORTED", "No Hack package or source.", UNSUPPORTED_EVIDENCE, "No supported Hack surface is shipped."),
-    row("CFML", "UNSUPPORTED", "No CFML package or source.", UNSUPPORTED_EVIDENCE, "No supported CFML surface is shipped."),
-    row("Wolfram Language", "UNSUPPORTED", "No Wolfram package or notebook integration.", UNSUPPORTED_EVIDENCE, "No supported Wolfram Language surface is shipped."),
-    row("Verilog", "UNSUPPORTED", "No HDL source, FPGA bitstream, or vendor flow.", UNSUPPORTED_EVIDENCE, "No FPGA fabric support is shipped; host OS support is tracked separately.", "hardware description language"),
-    row("VHDL", "UNSUPPORTED", "No HDL source, FPGA bitstream, or vendor flow.", UNSUPPORTED_EVIDENCE, "No FPGA fabric support is shipped; host OS support is tracked separately.", "hardware description language"),
-    row("SystemVerilog", "UNSUPPORTED", "No HDL source, FPGA bitstream, or vendor flow.", UNSUPPORTED_EVIDENCE, "No FPGA fabric support is shipped; host OS support is tracked separately.", "hardware description language"),
-    row("CUDA", "UNSUPPORTED", "No CUDA kernels or GPU package.", UNSUPPORTED_EVIDENCE, "No supported CUDA surface is shipped."),
-    row("OpenCL C", "UNSUPPORTED", "No OpenCL kernels or runtime package.", UNSUPPORTED_EVIDENCE, "No supported OpenCL surface is shipped."),
-    row("GLSL", "UNSUPPORTED", "No shader package or graphics runtime.", UNSUPPORTED_EVIDENCE, "No supported GLSL surface is shipped."),
-    row("HLSL", "UNSUPPORTED", "No shader package or graphics runtime.", UNSUPPORTED_EVIDENCE, "No supported HLSL surface is shipped."),
-    row("WGSL", "UNSUPPORTED", "No WebGPU shader package or graphics runtime.", UNSUPPORTED_EVIDENCE, "No supported WGSL surface is shipped."),
-    row("Chapel", "UNSUPPORTED", "No Chapel source or package.", UNSUPPORTED_EVIDENCE, "No supported Chapel surface is shipped."),
-    row("Pony", "UNSUPPORTED", "No Pony source or package.", UNSUPPORTED_EVIDENCE, "No supported Pony surface is shipped."),
-    row("Janet", "UNSUPPORTED", "No Janet source or package.", UNSUPPORTED_EVIDENCE, "No supported Janet surface is shipped."),
-    row("Odin", "UNSUPPORTED", "No Odin source or package.", UNSUPPORTED_EVIDENCE, "No supported Odin surface is shipped."),
-    row("Ballerina", "UNSUPPORTED", "No Ballerina package or source.", UNSUPPORTED_EVIDENCE, "No supported Ballerina surface is shipped."),
-    row("Gleam", "UNSUPPORTED", "No Gleam package or source.", UNSUPPORTED_EVIDENCE, "No supported Gleam surface is shipped."),
-    row("Roc", "UNSUPPORTED", "No Roc package or source.", UNSUPPORTED_EVIDENCE, "No supported Roc surface is shipped."),
-    row("Red", "UNSUPPORTED", "No Red package or source.", UNSUPPORTED_EVIDENCE, "No supported Red surface is shipped."),
-    row("Ring", "UNSUPPORTED", "No Ring package or source.", UNSUPPORTED_EVIDENCE, "No supported Ring surface is shipped."),
-    row("Harbour", "UNSUPPORTED", "No Harbour package or source.", UNSUPPORTED_EVIDENCE, "No supported Harbour surface is shipped."),
-    row("Xojo", "UNSUPPORTED", "No Xojo project or package.", UNSUPPORTED_EVIDENCE, "No supported Xojo surface is shipped."),
-    row("AutoHotkey", "UNSUPPORTED", "No AutoHotkey scripts or package.", UNSUPPORTED_EVIDENCE, "No supported AutoHotkey surface is shipped.", "automation language"),
-    row("AutoIt", "UNSUPPORTED", "No AutoIt scripts or package.", UNSUPPORTED_EVIDENCE, "No supported AutoIt surface is shipped.", "automation language"),
-    row("AppleScript", "UNSUPPORTED", "No AppleScript package or source.", UNSUPPORTED_EVIDENCE, "No supported AppleScript surface is shipped.", "automation language"),
-    row("VBScript", "UNSUPPORTED", "No VBScript package or source.", UNSUPPORTED_EVIDENCE, "No supported VBScript surface is shipped.", "automation language"),
-    row("Power Query M", "UNSUPPORTED", "No Power Query connector or M source.", UNSUPPORTED_EVIDENCE, "No supported Power Query surface is shipped."),
-    row("Q#", "UNSUPPORTED", "No Q# package or source.", UNSUPPORTED_EVIDENCE, "No supported Q# surface is shipped."),
-    row("Arduino/Wiring", "UNSUPPORTED", "No Arduino library, sketch, or PlatformIO package.", UNSUPPORTED_EVIDENCE, "No supported Arduino/Wiring surface is shipped."),
-    row("MicroPython", "UNSUPPORTED", "No MicroPython firmware package or module.", UNSUPPORTED_EVIDENCE, "No supported MicroPython surface is shipped."),
-    row("CircuitPython", "UNSUPPORTED", "No CircuitPython library package.", UNSUPPORTED_EVIDENCE, "No supported CircuitPython surface is shipped."),
-    row("Elvish", "UNSUPPORTED", "No Elvish shell integration or package.", UNSUPPORTED_EVIDENCE, "No supported Elvish surface is shipped.", "shell"),
-    row("Nushell", "UNSUPPORTED", "No Nushell integration or package.", UNSUPPORTED_EVIDENCE, "No supported Nushell surface is shipped.", "shell"),
+    row("Guix Scheme", "BLOCKED", "A Guile module, Guix package definition, archive, CLI, runtime, and templates are tracked under packaging/guix-scheme.", BLOCKED_SCRIPTING_LANGUAGE_EVIDENCE, "The Guile module executes successfully, but the Guix definition cannot be promoted until guix build validates it.", "package DSL"),
+    domain_not_applicable("Solidity", "EVM contracts cannot access host filesystems, networks, or process tables; a relayer would be a different product."),
+    domain_not_applicable("Vyper", "Vyper targets the same isolated EVM and cannot launch a host SSHFling process."),
+    domain_not_applicable("Move", "Move modules execute inside a blockchain VM and cannot create host processes."),
+    row(
+        "WebAssembly/WASI",
+        "BLOCKED",
+        "WebAssembly/WASI package/build metadata are tracked under packaging/systems-languages/webassembly-wasi.",
+        BLOCKED_TOOLCHAIN_EVIDENCE,
+        "WASI validation is blocked until the toolchain and runtime are available.",
+    ),
+    row("Elm", "PASS", "Elm worker and Node-port consumer of the SSHFling npm library.", PASS_WEB_CONSUMER_EVIDENCE, "elm make and a complete Node port round trip are validated."),
+    row("PureScript", "PASS", "PureScript module and Node FFI consumer of the SSHFling npm library.", PASS_WEB_CONSUMER_EVIDENCE, "The PureScript compiler and runtime FFI contract are validated."),
+    row("Reason/ReScript", "PASS", "ReScript bindings and CommonJS consumer of the SSHFling npm library.", PASS_WEB_CONSUMER_EVIDENCE, "ReScript compilation and typed Node bindings are validated."),
+    row("Forth", "PASS", "Forth package/build metadata are tracked under packaging/systems-languages/forth.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Forth package/build/install and exit contract validation are confirmed."),
+    row("APL", "BLOCKED", "APL package/build metadata are tracked under packaging/scientific-languages/apl.", BLOCKED_TOOLCHAIN_EVIDENCE, "APL validation is blocked until Dyalog runtime/toolchain is available."),
+    row("J", "BLOCKED", "J package/build metadata are tracked under packaging/scientific-languages/j.", BLOCKED_TOOLCHAIN_EVIDENCE, "J validation is blocked until IJConsole/JConsole toolchain is available."),
+    domain_blocked("LabVIEW G", "The audit documents the System Exec VI candidate boundary without fabricating binary G source.", "A licensed LabVIEW version/OS matrix and genuine VI package are required for validation."),
+    domain_not_applicable("Scratch", "Scratch projects are sandboxed; a privileged extension host would be a separate service, not a project launcher."),
+    row("Q/KDB+", "BLOCKED", "Q/KDB+ package/build metadata are tracked under packaging/scientific-languages/q.", BLOCKED_TOOLCHAIN_EVIDENCE, "Q validation is blocked until q runtime/toolchain is available."),
+    row(
+        "Hack",
+        "BLOCKED",
+        "Hack source, Composer metadata, and a validated Node bridge are tracked under packaging/node/consumers/hack.",
+        BLOCKED_WEB_TOOLCHAIN_EVIDENCE,
+        "Promotion requires HHVM execution; the batch validator fails closed while hhvm is unavailable.",
+    ),
+    row(
+        "CFML",
+        "BLOCKED",
+        "CFML source, CommandBox metadata, and a validated Node bridge are tracked under packaging/node/consumers/cfml.",
+        BLOCKED_WEB_TOOLCHAIN_EVIDENCE,
+        "Promotion requires CommandBox/CFML execution; the batch validator fails closed while box is unavailable.",
+    ),
+    domain_blocked("Wolfram Language", "A RunProcess-based Paclet source candidate is tracked under packaging/domain-languages/wolfram-language.", "A licensed Wolfram kernel exposed through wolframscript is required for conformance evidence."),
+    domain_not_applicable("Verilog", "A simulator system task is a nonsynthesizable testbench escape, not a deployable SSHFling library.", "hardware description language"),
+    domain_not_applicable("VHDL", "VHDL foreign and simulator interfaces do not form a synthesizable host launcher.", "hardware description language"),
+    domain_not_applicable("SystemVerilog", "DPI and system tasks are simulator mechanisms, not synthesizable SSHFling packages.", "hardware description language"),
+    domain_not_applicable("CUDA", "CUDA device code cannot launch host processes; a host C++ wrapper would duplicate the C++ surface."),
+    domain_not_applicable("OpenCL C", "OpenCL kernels cannot create host processes; a host wrapper would be an existing C/C++ surface."),
+    domain_not_applicable("GLSL", "Shader stages have no host process API."),
+    domain_not_applicable("HLSL", "Shader stages have no host process API."),
+    domain_not_applicable("WGSL", "WebGPU shader stages have no host process API."),
+    row("Chapel", "BLOCKED", "Chapel package/build metadata are tracked under packaging/systems-languages/chapel.", BLOCKED_TOOLCHAIN_EVIDENCE, "Chapel validation is blocked until chpl compiler/runtime is available."),
+    row("Pony", "BLOCKED", "Pony package/build metadata are tracked under packaging/systems-languages/pony.", BLOCKED_TOOLCHAIN_EVIDENCE, "Pony validation is blocked until ponyc is available."),
+    row("Janet", "BLOCKED", "Janet package/build metadata are tracked under packaging/functional-languages/janet.", BLOCKED_TOOLCHAIN_EVIDENCE, "Janet validation is blocked until Janet toolchain is available."),
+    row("Odin", "BLOCKED", "Odin package/build metadata are tracked under packaging/systems-languages/odin.", BLOCKED_TOOLCHAIN_EVIDENCE, "Odin validation is blocked until Odin toolchain is available."),
+    row("Ballerina", "BLOCKED", "Ballerina package/build metadata are tracked under packaging/functional-languages/ballerina.", BLOCKED_TOOLCHAIN_EVIDENCE, "Ballerina validation is blocked until bal toolchain is available."),
+    row("Gleam", "PASS", "Gleam package/build metadata are tracked under packaging/beam-languages/gleam.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Gleam package/build and external-consumer validation are confirmed."),
+    row("Roc", "BLOCKED", "Roc package/build metadata are tracked under packaging/functional-languages/roc.", BLOCKED_TOOLCHAIN_EVIDENCE, "Roc validation is blocked until Roc runtime/toolchain is available."),
+    row("Red", "BLOCKED", "Red package/build metadata are tracked under packaging/systems-languages/red.", BLOCKED_TOOLCHAIN_EVIDENCE, "Red validation is blocked until Red runtime/toolchain is available."),
+    row("Ring", "BLOCKED", "Ring package/build metadata are tracked under packaging/functional-languages/ring.", BLOCKED_TOOLCHAIN_EVIDENCE, "Ring validation is blocked until Ring toolchain is available."),
+    row("Harbour", "BLOCKED", "Harbour package/build metadata are tracked under packaging/systems-languages/harbour.", BLOCKED_TOOLCHAIN_EVIDENCE, "Harbour validation is blocked until Harbour toolchain is available."),
+    domain_blocked("Xojo", "The audit records Xojo as a proprietary-toolchain blocker without fabricating a project.", "A licensed Xojo compiler and supported target matrix are unavailable."),
+    domain_blocked("AutoHotkey", "An AutoHotkey v2 launcher candidate is tracked under packaging/domain-languages/autohotkey.", "AutoHotkey v2 on Windows is required for argument and status conformance evidence.", "automation language"),
+    domain_blocked("AutoIt", "An AutoIt launcher candidate is tracked under packaging/domain-languages/autoit.", "AutoIt on Windows and its external licensing/toolchain are required for conformance evidence.", "automation language"),
+    domain_blocked("AppleScript", "An AppleScript launcher candidate is tracked under packaging/domain-languages/applescript.", "macOS osacompile and osascript execution are required; the surface is non-interactive.", "automation language"),
+    domain_blocked("VBScript", "A cscript-based VBScript launcher candidate is tracked under packaging/domain-languages/vbscript.", "Windows cscript execution is required and VBScript is deprecated by Microsoft.", "automation language"),
+    domain_not_applicable("Power Query M", "Power Query M evaluates data transformations and has no supported local process-launch API."),
+    domain_not_applicable("Q#", "Q# describes quantum operations; any subprocess call belongs to its classical host language."),
+    domain_not_applicable("Arduino/Wiring", "Microcontroller sketches cannot host the canonical Python/OpenSSH runtime required by this launcher."),
+    domain_not_applicable("MicroPython", "MicroPython targets constrained runtimes without the canonical subprocess/OpenSSH package contract."),
+    domain_not_applicable("CircuitPython", "CircuitPython targets constrained boards without host process or OpenSSH support."),
+    row("Elvish", "PASS", "An Elvish module, archive, packaged CLI, runtime, and templates are tracked under packaging/shell-languages/elvish.", PASS_SCRIPTING_LANGUAGE_EVIDENCE, "Elvish 0.21 executes the module API, exact version contract, init workflow, asset checks, and removal.", "shell"),
+    row("Nushell", "PASS", "A Nushell module, archive, packaged CLI, runtime, and templates are tracked under packaging/shell-languages/nushell.", PASS_SCRIPTING_LANGUAGE_EVIDENCE, "Nushell 0.113 executes the wrapped module API, exact version contract, init workflow, asset checks, and removal.", "shell"),
     row(
         "CMake",
         "PASS",
@@ -416,11 +571,11 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         "Markdown is the supported human-readable documentation format.",
         "documentation",
     ),
-    row("HTML/CSS", "UNSUPPORTED", "No tracked static site source, CSS package, or browser UI runtime.", UNSUPPORTED_EVIDENCE, "Generated package web output is not a supported HTML/CSS app surface.", "markup/style"),
-    row("Svelte", "UNSUPPORTED", "No Svelte package or source.", UNSUPPORTED_EVIDENCE, "No supported Svelte surface is shipped.", "framework"),
-    row("Vue", "UNSUPPORTED", "No Vue package or source.", UNSUPPORTED_EVIDENCE, "No supported Vue surface is shipped.", "framework"),
-    row("React/JSX", "UNSUPPORTED", "No React package or JSX/TSX source.", UNSUPPORTED_EVIDENCE, "No supported React surface is shipped.", "framework"),
-    row("Angular", "UNSUPPORTED", "No Angular workspace or package.", UNSUPPORTED_EVIDENCE, "No supported Angular surface is shipped.", "framework"),
+    row("HTML/CSS", "PASS", "Static HTML/CSS output generated after a trusted Node-side SSHFling package check.", PASS_WEB_CONSUMER_EVIDENCE, "The emitted page is script-free and explicitly does not perform browser-side SSH.", "markup/style"),
+    row("Svelte", "PASS", "Svelte server component consuming the SSHFling npm library under Node.", PASS_WEB_CONSUMER_EVIDENCE, "Svelte server compilation and rendering are validated without browser process access.", "framework"),
+    row("Vue", "PASS", "Vue server-rendered component consuming the SSHFling npm library under Node.", PASS_WEB_CONSUMER_EVIDENCE, "Vue SSR executes and validates the package in a trusted server process.", "framework"),
+    row("React/JSX", "PASS", "React JSX server component consuming the SSHFling npm library under Node.", PASS_WEB_CONSUMER_EVIDENCE, "JSX compilation and React static rendering validate the Node-only integration.", "framework"),
+    row("Angular", "PASS", "Strict TypeScript Angular server component consuming the SSHFling npm library.", PASS_WEB_CONSUMER_EVIDENCE, "Angular server rendering validates the integration without exposing process access to browsers.", "framework"),
 ]
 
 
@@ -446,6 +601,18 @@ def validate_language_support(entries: Iterable[dict[str, str]] = LANGUAGE_SUPPO
         "C#/.NET",
         "Visual Basic/.NET",
         "F#",
+        "Kotlin",
+        "Scala",
+        "Groovy",
+        "Clojure",
+        "Elm",
+        "PureScript",
+        "Reason/ReScript",
+        "React/JSX",
+        "Vue",
+        "Svelte",
+        "Angular",
+        "HTML/CSS",
         "Perl",
         "CMake",
     ):

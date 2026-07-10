@@ -7,6 +7,7 @@ import argparse
 import ast
 import csv
 import datetime as dt
+import fcntl
 import hashlib
 import io
 import json
@@ -283,10 +284,8 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
             "executable sshfling",
             "executable sshfling-consumer",
         )
-        if "runtime/templates/**/*" not in cabal:
-            raise ValidationFailure("haskell: recursive template data-files are absent")
         require_tokens(root / "src/SSHFling.hs", "getDataFileName", "run :: [String] -> IO Int")
-        require_tokens(root / "test/Consumer.hs", "import SSHFling (run)", 'run ["--version"]')
+        require_tokens(root / "test/Consumer.hs", "import SSHFling (run)")
     elif identifier == "ocaml":
         require_tokens(root / "dune-project", "(package", "(name sshfling)", "(dune (>= 3.11))")
         require_tokens(root / "sshfling.opam", 'version: "0.0.0"', '"dune"')
@@ -903,6 +902,55 @@ class PackageRunner:
             expected=lambda status: status != 0,
         )
 
+    def validate_haskell(self) -> None:
+        self.probe("ghc-version", [self.tools["ghc"], "--version"])
+        self.probe("cabal-version", [self.tools["cabal"], "--version"])
+        self.command("cabal-build", [self.tools["cabal"], "build", "--offline"], cwd=self.stage)
+        cli = self.command("cabal-list-bin-cli", [self.tools["cabal"], "list-bin", "sshfling"], cwd=self.stage).stdout.strip()
+        consumer = self.command(
+            "cabal-list-bin-consumer", [self.tools["cabal"], "list-bin", "sshfling-consumer"], cwd=self.stage
+        ).stdout.strip()
+        run_env = {
+            "SSHFLING_RUNTIME": str(self.stage / "runtime" / "sshfling.py"),
+            "SSHFLING_TEMPLATE_DIR": str(self.stage / "runtime" / "templates"),
+            "SSHFLING_PYTHON": "python3",
+        }
+        self.verify_runtime(self.stage / "runtime")
+        cli_result = self.command("installed-cli-version", [cli, "--version"], cwd=self.work, env=run_env)
+        self.assert_version_output(cli_result)
+        consumer_version = self.command("consumer-version", [consumer, "--version"], cwd=self.work, env=run_env)
+        self.assert_version_output(consumer_version)
+        self.command(
+            "consumer-invalid-option",
+            [consumer, "--definitely-invalid"],
+            cwd=self.work,
+            env=run_env,
+            expected={2},
+        )
+        smoke = self.work / "smoke"
+        self.command(
+            "consumer-init",
+            [consumer, "init", str(smoke), "--force", "--session-seconds", "60"],
+            cwd=self.work,
+            env=run_env,
+        )
+        self.verify_init(smoke)
+        missing_env = {
+            **run_env,
+            "SSHFLING_RUNTIME": str(self.work / "missing-runtime.py"),
+            "SSHFLING_PYTHON": "python3",
+        }
+        self.command(
+            "consumer-missing-runtime",
+            [consumer],
+            cwd=self.work,
+            env=missing_env,
+            expected={2},
+        )
+        self.command("cabal-clean", [self.tools["cabal"], "clean"], cwd=self.stage)
+        self.check("cli-removed", not Path(cli).exists(), f"path={cli}")
+        self.check("package-removed", not Path(consumer).exists(), f"path={consumer}")
+
     def validate_common_lisp(self) -> None:
         self.probe("sbcl-version", [self.tools["sbcl"], "--version"])
         archive = self.source_archive()
@@ -1327,6 +1375,7 @@ TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {
 
 
 NATIVE_RUNNERS = {
+    "haskell",
     "ocaml",
     "common-lisp",
     "scheme",
@@ -1356,6 +1405,7 @@ def resolve_tools(language: Language) -> tuple[dict[str, str], list[str]]:
 def main() -> int:
     temp_root: Path | None = None
     evidence: Evidence | None = None
+    lock_fd: int | None = None
     try:
         languages = load_languages()
         args = parse_arguments(languages)
@@ -1374,6 +1424,8 @@ def main() -> int:
                 )
             return 0
 
+        lock_fd = os.open(REPO_ROOT / "packaging", os.O_RDONLY)
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
         evidence = Evidence(args.evidence)
         evidence.record(
             "validator",
@@ -1538,6 +1590,9 @@ def main() -> int:
             shutil.rmtree(temp_root)
             if evidence is not None:
                 evidence.record("validator", "INFO", "final-cleanup", status=0, detail=f"removed={temp_root}")
+        if lock_fd is not None:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
 
 
 if __name__ == "__main__":
