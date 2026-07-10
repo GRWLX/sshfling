@@ -1,0 +1,1544 @@
+#!/usr/bin/env python3
+"""Focused native-package validator for the standalone language launchers."""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import csv
+import datetime as dt
+import hashlib
+import io
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import tomllib
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Iterable
+
+
+if sys.version_info < (3, 11):
+    raise SystemExit("build-functional-languages: Python >= 3.11 is required")
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+MANIFESTS = (
+    REPO_ROOT / "packaging/functional-languages/languages.tsv",
+    REPO_ROOT / "packaging/scientific-languages/languages.tsv",
+    REPO_ROOT / "packaging/beam-languages/languages.tsv",
+)
+DEFAULT_EVIDENCE = REPO_ROOT / "packaging/functional-languages/validation-evidence.tsv"
+EXPECTED_FIELDS = (
+    "id",
+    "label",
+    "tools",
+    "runner",
+    "root",
+    "metadata",
+    "api",
+    "consumer",
+    "bundle",
+)
+EXPECTED_VERSION = "0.1.16"
+UNSET_RUNTIME_ENV = (
+    "SSHFLING_RUNTIME",
+    "SSHFLING_TEMPLATE_DIR",
+    "SSHFLING_PACKAGE_ROOT",
+    "SSHFLING_PYTHON",
+)
+
+
+@dataclass(frozen=True)
+class Language:
+    identifier: str
+    label: str
+    tools: str
+    runner: str
+    package_dir: Path
+    metadata: tuple[str, ...]
+    api: tuple[str, ...]
+    consumer: str
+    bundle: str
+
+
+class ValidationFailure(RuntimeError):
+    pass
+
+
+class Evidence:
+    fields = (
+        "timestamp_utc",
+        "language",
+        "result",
+        "phase",
+        "status",
+        "cwd",
+        "command",
+        "stdout",
+        "stderr",
+        "detail",
+    )
+
+    def __init__(self, path: Path):
+        self.path = path.resolve()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_name(f".{self.path.name}.tmp")
+        with temporary.open("w", encoding="utf-8", newline="") as stream:
+            csv.writer(stream, delimiter="\t", lineterminator="\n").writerow(self.fields)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, self.path)
+
+    @staticmethod
+    def _bounded(value: str, limit: int = 65536) -> str:
+        if len(value) <= limit:
+            return value
+        digest = hashlib.sha256(value.encode("utf-8", "replace")).hexdigest()
+        return f"{value[:limit]}\n[truncated sha256={digest} bytes={len(value.encode())}]"
+
+    def record(
+        self,
+        language: str,
+        result: str,
+        phase: str,
+        *,
+        status: str | int = "",
+        cwd: Path | str = "",
+        command: str = "",
+        stdout: str = "",
+        stderr: str = "",
+        detail: str = "",
+    ) -> None:
+        row = (
+            dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            language,
+            result,
+            phase,
+            str(status),
+            str(cwd),
+            command,
+            self._bounded(stdout),
+            self._bounded(stderr),
+            detail,
+        )
+        with self.path.open("a", encoding="utf-8", newline="") as stream:
+            csv.writer(stream, delimiter="\t", lineterminator="\n").writerow(row)
+            stream.flush()
+            os.fsync(stream.fileno())
+
+
+def source_constants(path: Path) -> dict[str, object]:
+    tree = ast.parse(path.read_bytes(), filename=str(path))
+    constants: dict[str, object] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if isinstance(target, ast.Name):
+            try:
+                constants[target.id] = ast.literal_eval(node.value)
+            except (ValueError, TypeError):
+                pass
+    return constants
+
+
+def load_languages() -> list[Language]:
+    languages: list[Language] = []
+    seen: set[str] = set()
+    declared_by_group: dict[Path, set[str]] = {}
+    for manifest in MANIFESTS:
+        with manifest.open(newline="", encoding="utf-8") as stream:
+            reader = csv.DictReader(stream, delimiter="\t")
+            if tuple(reader.fieldnames or ()) != EXPECTED_FIELDS:
+                raise ValidationFailure(f"invalid manifest header: {manifest}")
+            declared_by_group[manifest.parent] = set()
+            for row in reader:
+                identifier = row["id"]
+                if identifier in seen:
+                    raise ValidationFailure(f"duplicate language ID: {identifier}")
+                for value in (identifier, row["runner"], row["root"], row["bundle"]):
+                    if not re.fullmatch(r"[A-Za-z0-9._/-]+", value):
+                        raise ValidationFailure(f"unsafe manifest value: {value!r}")
+                seen.add(identifier)
+                declared_by_group[manifest.parent].add(row["root"])
+                languages.append(
+                    Language(
+                        identifier=identifier,
+                        label=row["label"].replace("_", " "),
+                        tools=row["tools"],
+                        runner=row["runner"],
+                        package_dir=manifest.parent / row["root"],
+                        metadata=tuple(row["metadata"].split(",")),
+                        api=tuple(row["api"].split(",")),
+                        consumer=row["consumer"],
+                        bundle=row["bundle"],
+                    )
+                )
+    if len(languages) != 18:
+        raise ValidationFailure(f"expected 18 language records, found {len(languages)}")
+    for group, declared in declared_by_group.items():
+        actual = {path.name for path in group.iterdir() if path.is_dir()}
+        if actual != declared:
+            raise ValidationFailure(
+                f"package directories differ from {group / 'languages.tsv'}: "
+                f"declared={sorted(declared)} actual={sorted(actual)}"
+            )
+    return languages
+
+
+def parse_arguments(languages: list[Language]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Build, install, consume, and remove standalone language packages."
+    )
+    parser.add_argument("--language", action="append", default=[], metavar="ID")
+    parser.add_argument(
+        "--allow-blocked",
+        action="store_true",
+        help="allow structurally verified packages whose toolchains are unavailable",
+    )
+    parser.add_argument(
+        "--audit-only",
+        action="store_true",
+        help="run explicit source and bundle contract checks without runtime tests",
+    )
+    parser.add_argument("--timeout", type=int, default=120, metavar="SECONDS")
+    parser.add_argument("--evidence", type=Path, default=DEFAULT_EVIDENCE)
+    parser.add_argument("--list", action="store_true")
+    args = parser.parse_args()
+    if args.timeout < 1 or args.timeout > 3600:
+        parser.error("--timeout must be between 1 and 3600 seconds")
+    known = {language.identifier for language in languages}
+    unknown = sorted(set(args.language) - known)
+    if unknown:
+        parser.error(f"unknown language ID: {', '.join(unknown)}")
+    return args
+
+
+def text(path: Path) -> str:
+    if not path.is_file():
+        raise ValidationFailure(f"missing required file: {path}")
+    value = path.read_text(encoding="utf-8")
+    if not value:
+        raise ValidationFailure(f"empty required file: {path}")
+    return value
+
+
+def require_tokens(path: Path, *tokens: str) -> str:
+    value = text(path)
+    missing = [token for token in tokens if token not in value]
+    if missing:
+        raise ValidationFailure(f"{path}: missing contract tokens {missing}")
+    return value
+
+
+def require_regex(path: Path, pattern: str) -> str:
+    value = text(path)
+    if re.search(pattern, value, re.MULTILINE) is None:
+        raise ValidationFailure(f"{path}: contract pattern did not match: {pattern}")
+    return value
+
+
+def require_toml(path: Path) -> dict[str, object]:
+    try:
+        with path.open("rb") as stream:
+            return tomllib.load(stream)
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        raise ValidationFailure(f"invalid TOML {path}: {error}") from error
+
+
+def require_json(path: Path) -> dict[str, object]:
+    try:
+        value = json.loads(text(path))
+    except json.JSONDecodeError as error:
+        raise ValidationFailure(f"invalid JSON {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise ValidationFailure(f"expected JSON object: {path}")
+    return value
+
+
+def validate_contract(language: Language, canonical_files: set[str]) -> str:
+    root = language.package_dir
+    if not root.is_dir():
+        raise ValidationFailure(f"missing package directory: {root}")
+    for relative in (*language.metadata, *language.api, language.consumer):
+        text(root / relative)
+
+    identifier = language.identifier
+    if identifier == "haskell":
+        cabal = require_tokens(
+            root / "sshfling.cabal",
+            "name:               sshfling",
+            "version:            0.0.0",
+            "data-files:",
+            "runtime/sshfling.py",
+            "exposed-modules:  SSHFling",
+            "executable sshfling",
+            "executable sshfling-consumer",
+        )
+        if "runtime/templates/**/*" not in cabal:
+            raise ValidationFailure("haskell: recursive template data-files are absent")
+        require_tokens(root / "src/SSHFling.hs", "getDataFileName", "run :: [String] -> IO Int")
+        require_tokens(root / "test/Consumer.hs", "import SSHFling (run)", 'run ["--version"]')
+    elif identifier == "ocaml":
+        require_tokens(root / "dune-project", "(package", "(name sshfling)", "(dune (>= 3.11))")
+        require_tokens(root / "sshfling.opam", 'version: "0.0.0"', '"dune"')
+        require_tokens(
+            root / "dune",
+            "(install",
+            "(section lib)",
+            "(section libexec)",
+            "runtime/sshfling.py as runtime/sshfling.py",
+            "runtime/templates/.env.example",
+            "runtime/templates/secrets/.gitkeep",
+        )
+        require_tokens(
+            root / "src/dune",
+            "runtime_config.ml",
+            "SSHFLING_OCAML_RESOURCE_DIR",
+            "(public_name sshfling)",
+        )
+        require_tokens(root / "src/sshfling.ml", "Runtime_config.resource_root", "Sys.file_exists runtime")
+        require_tokens(root / "src/sshfling.mli", "val run : string list -> int")
+        require_tokens(root / "bin/dune", "(public_name sshfling)")
+    elif identifier == "common-lisp":
+        require_tokens(root / "sshfling.asd", ':version "0.0.0"', ':static-file "runtime/sshfling.py"')
+        require_tokens(
+            root / "src/sshfling.lisp",
+            '(asdf:system-source-directory "sshfling")',
+            "(probe-file runtime)",
+            "(defun run (arguments)",
+        )
+        require_tokens(root / "test/consumer.lisp", '(asdf:load-system "sshfling")', "sshfling:run")
+    elif identifier == "scheme":
+        require_tokens(root / "configure.ac", "AC_INIT([sshfling-guile], [0.0.0]", "AC_PROG_INSTALL")
+        if "GUILE_PKG" in text(root / "configure.ac"):
+            raise ValidationFailure("scheme: configure.ac still requires nonstandard GUILE_PKG")
+        configure = require_tokens(root / "configure", "version=0.0.0", "Guile 3.0 is required")
+        if not os.access(root / "configure", os.X_OK) or "substitute" not in configure:
+            raise ValidationFailure("scheme: checked-in configure is not executable/complete")
+        require_tokens(root / "Makefile.in", "install:", "uninstall:", "dist:", "build/sshfling.go")
+        require_tokens(root / "module/sshfling.scm.in", '"@pkgdatadir@/runtime"', "file-exists? runtime")
+        require_tokens(root / "bin/sshfling-guile.in", "@guilemoduledir@", "(run (cdr (command-line)))")
+    elif identifier == "prolog":
+        pack_metadata = require_tokens(root / "pack.pl", "name(sshfling).", "version('0.0.0').")
+        if "requires([])." in pack_metadata:
+            raise ValidationFailure("prolog: empty requires/1 is invalid SWI pack metadata")
+        require_tokens(
+            root / "prolog/sshfling.pl",
+            ":- module(sshfling, [run/2, runtime_path/1, template_directory/1]).",
+            "prolog_load_context(directory",
+            "exists_file(Runtime)",
+        )
+        require_tokens(root / "test/consumer.pl", "sshfling:run", ":- initialization(main, main).")
+    elif identifier == "smalltalk":
+        try:
+            tree = ET.parse(root / "package.xml")
+        except ET.ParseError as error:
+            raise ValidationFailure(f"smalltalk: invalid package.xml: {error}") from error
+        package = tree.getroot()
+        if package.findtext("version") != "0.0.0" or package.findtext("filein") != "src/SSHFling.st":
+            raise ValidationFailure("smalltalk: package identity/file-in contract is invalid")
+        declared: set[str] = set()
+        for node in package.findall("file"):
+            if node.text and node.text.startswith("runtime/"):
+                declared.add(node.text.removeprefix("runtime/"))
+        for directory in package.findall("dir"):
+            name = directory.attrib.get("name", "")
+            for node in directory.findall("file"):
+                if node.text:
+                    declared.add(f"{name}/{node.text}".removeprefix("runtime/"))
+        if declared != canonical_files:
+            raise ValidationFailure(
+                f"smalltalk: package bundle declaration differs: "
+                f"missing={sorted(canonical_files - declared)} extra={sorted(declared - canonical_files)}"
+            )
+        require_tokens(root / "src/SSHFling.st", "SSHFling class >> run:", "SSHFLING_RUNTIME")
+    elif identifier == "ballerina":
+        metadata = require_toml(root / "Ballerina.toml")
+        package = metadata.get("package")
+        if not isinstance(package, dict) or package.get("name") != "sshfling" or package.get("version") != "0.0.0":
+            raise ValidationFailure("ballerina: package identity/version is invalid")
+        if package.get("include") != ["resources/**"]:
+            raise ValidationFailure("ballerina: BALA resources are not explicitly included")
+        dependencies = require_toml(root / "Dependencies.toml")
+        if dependencies.get("ballerina", {}).get("distribution-version") != "2201.12.0":
+            raise ValidationFailure("ballerina: distribution lock is invalid")
+        require_tokens(
+            root / "sshfling.bal",
+            'const string packageVersion = "0.0.0"',
+            "/repositories/local/bala/grwlx/sshfling/",
+            "public function run(string[] args) returns int",
+        )
+    elif identifier == "roc":
+        require_tokens(root / "package.roc", "package [SSHFling] {}", 'package_version = "0.0.0"')
+        require_tokens(root / "SSHFling.roc", "module [run!, runtime_path!, template_directory!]", "Cmd.exec_exit_code!()")
+        main = require_tokens(root / "main.roc", 'sshfling: "package.roc"', "import sshfling.SSHFling", "SSHFling.run!")
+        consumer = require_tokens(root / "test/consumer.roc", 'sshfling: "../package.roc"', "import sshfling.SSHFling")
+        if 'Cmd.exec!("roc"' in main + consumer:
+            raise ValidationFailure("roc: consumer recursively invokes roc instead of importing package")
+    elif identifier == "janet":
+        require_tokens(root / "project.janet", ':name "sshfling"', ':version "0.0.0"', ':files @[')
+        api = require_tokens(
+            root / "src/sshfling.janet",
+            "module/expand-path (dyn :current-file)",
+            'configured-or "SSHFLING_PACKAGE_ROOT" package-root',
+            "(os/stat (runtime-path))",
+        )
+        if '(os/cwd)' in api:
+            raise ValidationFailure("janet: default resource lookup still depends on CWD")
+    elif identifier == "ring":
+        require_tokens(root / "package.ring", ':version = "0.0.0"', ':files = ["lib.ring"')
+        api = require_tokens(
+            root / "lib.ring",
+            "sysget(cName)",
+            "justfilepath(filename())",
+            "fexists(runtimepath())",
+            "func run aArgs",
+        )
+        if "cValue = get(cName)" in api:
+            raise ValidationFailure("ring: environment lookup still uses variable get()")
+    elif identifier == "apl":
+        metadata = require_json(root / "apl-package.json")
+        if metadata.get("version") != "0.0.0" or "runtime" not in metadata.get("assets", []):
+            raise ValidationFailure("apl: package version/assets contract is invalid")
+        require_tokens(root / "src/SSHFling.dyalog", ":Namespace SSHFling", "∇ status←Run args")
+        require_tokens(root / "test/consumer.dyalog", "⎕FIX 'file://src/SSHFling.dyalog'", "SSHFlingConsumer.Run", "⎕OFF")
+    elif identifier == "j":
+        require_tokens(root / "manifest.ijs", "VERSION=: '0.0.0'", "runtime/", "src/sshfling.ijs")
+        api = require_tokens(root / "src/sshfling.ijs", "run=: 3 : 0", "jpath '~addons/sshfling'")
+        if "configuredor jpath '.'" in api:
+            raise ValidationFailure("j: default resource lookup still depends on CWD")
+        require_tokens(root / "test/consumer.ijs", "load 'src/sshfling.ijs'", "run_sshfling_")
+    elif identifier == "julia":
+        metadata = require_toml(root / "Project.toml")
+        if metadata.get("name") != "SSHFling" or metadata.get("version") != "0.0.0":
+            raise ValidationFailure("julia: Project.toml package identity is invalid")
+        require_tokens(root / "src/SSHFling.jl", "export run", "@__DIR__", "return 127")
+        require_tokens(root / "test/runtests.jl", "using SSHFling", "SSHFling.run")
+    elif identifier == "r":
+        description = require_tokens(
+            root / "DESCRIPTION",
+            "Package: sshfling",
+            "Version: 0.0.0",
+            "Depends: R (>= 4.3.0)",
+            "Suggests: testthat",
+        )
+        if "License: file LICENSE" not in description:
+            raise ValidationFailure("r: package license metadata is absent")
+        require_tokens(root / "NAMESPACE", "export(run)", "export(runtime_path)", "export(template_directory)")
+        require_tokens(root / "R/sshfling.R", 'system.file("runtime", "sshfling.py"', "file.exists(runtime)", "127L")
+        require_tokens(root / "man/sshfling.Rd", "\\alias{run}", "\\alias{runtime_path}", "\\arguments")
+        require_tokens(root / "tests/check-api.R", "--definitely-invalid", "127L")
+        require_tokens(root / "tests/testthat/test-api.R", "testthat::test_that", "testthat::expect_identical")
+    elif identifier == "q":
+        metadata = require_json(root / "manifest.yaml")
+        if metadata.get("name") != "sshfling" or metadata.get("version") != "0.0.0":
+            raise ValidationFailure("q: manifest identity/version is invalid")
+        api = require_tokens(root / "src/sshfling.q", ".sshfling.run:", ".sshfling.sourceFile:string .z.f")
+        if 'configuredOr["SSHFLING_PACKAGE_ROOT";"."]' in api:
+            raise ValidationFailure("q: default resource lookup still depends on CWD")
+        require_tokens(root / "init.q", "\\l src/sshfling.q")
+    elif identifier == "erlang":
+        require_tokens(root / "rebar.config", "warnings_as_errors", '{deps, []}')
+        require_tokens(root / "src/sshfling.app.src", "{vsn, \"0.0.0\"}", "{modules, [sshfling]}")
+        require_tokens(root / "src/sshfling.erl", "code:priv_dir(sshfling)", "filelib:is_regular(Runtime)", "run(Arguments)")
+        require_tokens(root / "test/sshfling_consumer.erl", "sshfling:run")
+    elif identifier == "elixir":
+        require_tokens(root / "mix.exs", 'version: "0.0.0"', 'files: ["lib", "priv/runtime"', "deps: []")
+        require_tokens(root / "lib/sshfling.ex", "Application.app_dir(:sshfling", "File.regular?(runtime)", "def run(arguments)")
+        require_tokens(root / "test/sshfling_consumer_test.exs", "SSHFling.run")
+    elif identifier == "gleam":
+        metadata = require_toml(root / "gleam.toml")
+        if metadata.get("name") != "sshfling" or metadata.get("version") != "0.0.0" or metadata.get("target") != "erlang":
+            raise ValidationFailure("gleam: package identity/version/target is invalid")
+        require_tokens(root / "src/sshfling.gleam", '@external(erlang, "sshfling_ffi", "run")', "pub fn run")
+        ffi = require_tokens(root / "src/sshfling_ffi.erl", "code:priv_dir(sshfling)", "filelib:is_regular(Runtime)")
+        if 'filename:absname(".")' in ffi:
+            raise ValidationFailure("gleam: default resource lookup still depends on CWD")
+        require_tokens(root / "test/consumer.gleam", "import sshfling", "sshfling.run")
+    else:
+        raise ValidationFailure(f"no explicit source contract for {identifier}")
+
+    return f"ecosystem={identifier};metadata=parsed;api=explicit;consumer=explicit"
+
+
+def copy_entry(source: Path, destination: Path) -> None:
+    if source.is_dir():
+        shutil.copytree(source, destination, copy_function=shutil.copy2)
+    else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
+def create_canonical_bundle(root: Path) -> tuple[Path, str, list[str]]:
+    constants = source_constants(REPO_ROOT / "bin/sshfling")
+    version = constants.get("VERSION")
+    entries = constants.get("TEMPLATE_ENTRIES")
+    if version != EXPECTED_VERSION:
+        raise ValidationFailure(
+            f"canonical runtime version must be {EXPECTED_VERSION}, found {version!r}"
+        )
+    requested = os.environ.get("SSHFLING_VERSION")
+    if requested is not None and requested != version:
+        raise ValidationFailure(
+            f"SSHFLING_VERSION={requested!r} does not equal canonical {version!r}"
+        )
+    if not isinstance(entries, list) or not entries or not all(isinstance(item, str) for item in entries):
+        raise ValidationFailure("canonical TEMPLATE_ENTRIES is invalid")
+    bundle = root / "canonical-runtime"
+    templates = bundle / "templates"
+    templates.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "bin/sshfling", bundle / "sshfling.py")
+    (bundle / "sshfling.py").chmod(0o755)
+    for relative in entries:
+        copy_entry(REPO_ROOT / relative, templates / relative)
+    compile((bundle / "sshfling.py").read_bytes(), "sshfling.py", "exec")
+    return bundle, version, entries
+
+
+def file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def file_inventory(root: Path) -> dict[str, tuple[str, int]]:
+    return {
+        path.relative_to(root).as_posix(): (file_digest(path), path.stat().st_mode & 0o777)
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def inject_version(stage: Path, version: str, bundle: Path) -> int:
+    changed = 0
+    for path in stage.rglob("*"):
+        if not path.is_file():
+            continue
+        if bundle == path or bundle in path.parents:
+            continue
+        try:
+            value = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "0.0.0" in value:
+            path.write_text(value.replace("0.0.0", version), encoding="utf-8")
+            changed += 1
+    if not changed:
+        raise ValidationFailure("staged package contains no injectable 0.0.0 version")
+    return changed
+
+
+def stage_language(
+    root: Path,
+    language: Language,
+    canonical: Path,
+    version: str,
+) -> tuple[Path, Path]:
+    language_root = root / language.identifier
+    stage = language_root / "stage"
+    work = language_root / "work"
+    shutil.copytree(language.package_dir, stage, copy_function=shutil.copy2)
+    work.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "LICENSE", stage / "LICENSE")
+    shutil.copy2(REPO_ROOT / "README.md", stage / "README.md")
+    bundle = stage / language.bundle
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(canonical, bundle, copy_function=shutil.copy2)
+    inject_version(stage, version, bundle)
+    expected = file_inventory(canonical)
+    actual = file_inventory(bundle)
+    if actual != expected:
+        raise ValidationFailure(f"{language.identifier}: staged canonical bundle differs")
+    return stage, work
+
+
+def isolated_environment(work: Path, extra: dict[str, str] | None = None) -> dict[str, str]:
+    home = work / "home"
+    cache = work / "cache"
+    config = work / "config"
+    data = work / "data"
+    temporary = work / "tmp"
+    for directory in (home, cache, config, data, temporary):
+        directory.mkdir(parents=True, exist_ok=True)
+    environment = os.environ.copy()
+    for name in UNSET_RUNTIME_ENV:
+        environment.pop(name, None)
+    environment.update(
+        {
+            "HOME": str(home),
+            "XDG_CACHE_HOME": str(cache),
+            "XDG_CONFIG_HOME": str(config),
+            "XDG_DATA_HOME": str(data),
+            "TMPDIR": str(temporary),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONUNBUFFERED": "1",
+            "LC_ALL": "C.UTF-8",
+            "LANG": "C.UTF-8",
+        }
+    )
+    if extra:
+        environment.update({key: str(value) for key, value in extra.items()})
+    return environment
+
+
+def safe_extract(archive: tarfile.TarFile, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    base = destination.resolve()
+    for member in archive.getmembers():
+        target = (destination / member.name).resolve()
+        if base != target and base not in target.parents:
+            raise ValidationFailure(f"archive has unsafe member: {member.name}")
+        if member.issym() or member.islnk():
+            raise ValidationFailure(f"archive has unsupported link: {member.name}")
+    archive.extractall(destination)
+
+
+def archive_tree(source: Path, archive: Path, root_name: str) -> None:
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive, "w:gz", format=tarfile.PAX_FORMAT) as stream:
+        stream.add(source, arcname=root_name, recursive=True)
+
+
+def extract_single_root(archive: Path, destination: Path) -> Path:
+    with tarfile.open(archive, "r:*") as stream:
+        safe_extract(stream, destination)
+    children = [path for path in destination.iterdir()]
+    if len(children) != 1 or not children[0].is_dir():
+        raise ValidationFailure(f"archive does not contain one package root: {archive}")
+    return children[0]
+
+
+def prolog_atom(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+class PackageRunner:
+    def __init__(
+        self,
+        language: Language,
+        stage: Path,
+        work: Path,
+        canonical: Path,
+        version: str,
+        entries: list[str],
+        evidence: Evidence,
+        timeout: int,
+        tools: dict[str, str],
+    ):
+        self.language = language
+        self.stage = stage
+        self.work = work
+        self.canonical = canonical
+        self.version = version
+        self.entries = entries
+        self.evidence = evidence
+        self.timeout = timeout
+        self.tools = tools
+        self.command_count = 0
+        self.base_env = isolated_environment(work)
+        self.evidence.record(
+            language.identifier,
+            "INFO",
+            "isolated-environment",
+            detail="unset=" + ",".join(UNSET_RUNTIME_ENV) + f";HOME={self.base_env['HOME']}",
+        )
+
+    def command(
+        self,
+        phase: str,
+        arguments: list[str | Path],
+        *,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
+        expected: set[int] | Callable[[int], bool] = {0},
+    ) -> subprocess.CompletedProcess[str]:
+        argv = [str(argument) for argument in arguments]
+        command_text = shlex.join(argv)
+        run_cwd = (cwd or self.stage).resolve()
+        run_env = self.base_env.copy()
+        if env:
+            run_env.update({key: str(value) for key, value in env.items()})
+        self.command_count += 1
+        print(f"COMMAND\t{self.language.identifier}\t{phase}\t{command_text}", flush=True)
+        try:
+            completed = subprocess.run(
+                argv,
+                cwd=run_cwd,
+                env=run_env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=self.timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            stdout = error.stdout or ""
+            stderr = error.stderr or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", "replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", "replace")
+            self.evidence.record(
+                self.language.identifier,
+                "TIMEOUT",
+                phase,
+                status="timeout",
+                cwd=run_cwd,
+                command=command_text,
+                stdout=stdout,
+                stderr=stderr,
+                detail=f"timeout_seconds={self.timeout}",
+            )
+            raise ValidationFailure(f"{self.language.identifier}: {phase} timed out") from error
+        accepted = expected(completed.returncode) if callable(expected) else completed.returncode in expected
+        self.evidence.record(
+            self.language.identifier,
+            "PASS" if accepted else "FAIL",
+            phase,
+            status=completed.returncode,
+            cwd=run_cwd,
+            command=command_text,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+        )
+        if not accepted:
+            print(completed.stdout, end="", file=sys.stderr)
+            print(completed.stderr, end="", file=sys.stderr)
+            raise ValidationFailure(
+                f"{self.language.identifier}: {phase} returned {completed.returncode}"
+            )
+        return completed
+
+    def check(self, phase: str, condition: bool, detail: str) -> None:
+        self.evidence.record(
+            self.language.identifier,
+            "PASS" if condition else "FAIL",
+            phase,
+            status=0 if condition else 1,
+            detail=detail,
+        )
+        if not condition:
+            raise ValidationFailure(f"{self.language.identifier}: {phase}: {detail}")
+
+    def record_archive(self, phase: str, archive: Path) -> None:
+        self.check(
+            phase,
+            archive.is_file() and archive.stat().st_size > 0,
+            f"archive={archive.name};bytes={archive.stat().st_size if archive.exists() else 0};"
+            f"sha256={file_digest(archive) if archive.exists() else 'missing'}",
+        )
+
+    def source_archive(self, package_name: str | None = None) -> Path:
+        root_name = package_name or f"sshfling-{self.version}"
+        archive = self.work / f"{root_name}.tar.gz"
+        archive_tree(self.stage, archive, root_name)
+        self.record_archive("source-archive", archive)
+        return archive
+
+    def verify_runtime(self, installed_runtime: Path, phase: str = "installed-resources") -> None:
+        expected = file_inventory(self.canonical)
+        actual = file_inventory(installed_runtime) if installed_runtime.is_dir() else {}
+        files_match = set(actual) == set(expected)
+        digests_match = files_match and all(actual[name][0] == expected[name][0] for name in expected)
+        executables_match = files_match and all(
+            bool(actual[name][1] & 0o111) == bool(expected[name][1] & 0o111)
+            for name in expected
+        )
+        mode_mismatches = (
+            [
+                f"{name}:{expected[name][1]:03o}->{actual[name][1]:03o}"
+                for name in expected
+                if name in actual
+                and bool(actual[name][1] & 0o111) != bool(expected[name][1] & 0o111)
+            ]
+            if files_match
+            else []
+        )
+        self.check(
+            phase,
+            files_match and digests_match and executables_match,
+            f"root={installed_runtime};files={len(actual)};files_match={files_match};"
+            f"digests_match={digests_match};executable_modes_match={executables_match};"
+            f"mode_mismatches={','.join(mode_mismatches) or 'none'}",
+        )
+
+    def verify_init(self, smoke: Path) -> None:
+        expected_templates = file_inventory(self.canonical / "templates")
+        failures: list[str] = []
+        for name, (digest, mode) in expected_templates.items():
+            installed = smoke / name
+            if not installed.is_file():
+                failures.append(f"missing:{name}")
+                continue
+            if file_digest(installed) != digest:
+                failures.append(f"digest:{name}")
+            if bool(installed.stat().st_mode & 0o111) != bool(mode & 0o111):
+                failures.append(f"mode:{name}")
+        environment = smoke / ".env"
+        if not environment.is_file() or environment.stat().st_mode & 0o777 != 0o600:
+            failures.append("mode:.env")
+        self.check(
+            "init-assets",
+            not failures,
+            f"smoke={smoke};templates={len(expected_templates)};failures={','.join(failures) or 'none'}",
+        )
+
+    def assert_version_output(self, completed: subprocess.CompletedProcess[str]) -> None:
+        self.check(
+            "exact-version-output",
+            completed.stdout == f"sshfling {self.version}\n",
+            f"expected={f'sshfling {self.version}'.encode()!r};actual={completed.stdout.encode()!r}",
+        )
+
+    def run_status_cases(
+        self,
+        command_factory: Callable[[list[str]], list[str | Path]],
+        *,
+        cwd: Path,
+        env: dict[str, str] | None = None,
+    ) -> None:
+        version = self.command("consumer-version", command_factory(["--version"]), cwd=cwd, env=env)
+        self.assert_version_output(version)
+        self.command(
+            "consumer-invalid-option",
+            command_factory(["--definitely-invalid"]),
+            cwd=cwd,
+            env=env,
+            expected={2},
+        )
+        smoke = self.work / "smoke"
+        self.command(
+            "consumer-init",
+            command_factory(["init", str(smoke), "--force", "--session-seconds", "60"]),
+            cwd=cwd,
+            env=env,
+        )
+        self.verify_init(smoke)
+        missing_env = dict(env or {})
+        missing_env["SSHFLING_RUNTIME"] = str(self.work / "missing-runtime.py")
+        self.command(
+            "consumer-missing-runtime",
+            command_factory([]),
+            cwd=cwd,
+            env=missing_env,
+            expected={127},
+        )
+
+    def run(self) -> None:
+        method = getattr(self, f"validate_{self.language.runner}", None)
+        if method is None:
+            raise ValidationFailure(
+                f"{self.language.identifier}: native package validation is not implemented"
+            )
+        method()
+
+    def probe(self, phase: str, arguments: list[str]) -> None:
+        self.command(f"tool-{phase}", arguments, cwd=self.work)
+
+    def validate_ocaml(self) -> None:
+        self.probe("ocamlc-version", [self.tools["ocamlc"], "-version"])
+        self.probe("dune-version", [self.tools["dune"], "--version"])
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "source")
+        prefix = self.work / "prefix"
+        resource_root = prefix / "lib/sshfling/runtime"
+        build_env = {
+            "DUNE_CACHE": "disabled",
+            "SSHFLING_OCAML_RESOURCE_DIR": str(resource_root),
+        }
+        self.command(
+            "dune-build-install-artifacts",
+            [self.tools["dune"], "build", f"--root={source}", "--display=short", "@install"],
+            cwd=self.work,
+            env=build_env,
+        )
+        self.command(
+            "dune-install",
+            [self.tools["dune"], "install", f"--root={source}", f"--prefix={prefix}", "sshfling"],
+            cwd=self.work,
+            env=build_env,
+        )
+        self.verify_runtime(resource_root)
+        cli = prefix / "bin/sshfling"
+        cli_result = self.command("installed-cli-version", [cli, "--version"], cwd=self.work)
+        self.assert_version_output(cli_result)
+        consumer = self.work / "external-ocaml-consumer"
+        consumer.mkdir()
+        (consumer / "dune-project").write_text("(lang dune 3.11)\n(name external_consumer)\n", encoding="utf-8")
+        (consumer / "dune").write_text("(executable (name main) (libraries sshfling))\n", encoding="utf-8")
+        (consumer / "main.ml").write_text(
+            "let () = exit (Sshfling.run (Array.to_list Sys.argv |> List.tl))\n",
+            encoding="utf-8",
+        )
+        consumer_env = {"DUNE_CACHE": "disabled", "OCAMLPATH": str(prefix / "lib")}
+        self.command("external-consumer-build", [self.tools["dune"], "build"], cwd=consumer, env=consumer_env)
+        executable = consumer / "_build/default/main.exe"
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        self.run_status_cases(lambda args: [executable, *args], cwd=unrelated, env=consumer_env)
+        self.command(
+            "dune-uninstall",
+            [self.tools["dune"], "uninstall", f"--root={source}", f"--prefix={prefix}", "sshfling"],
+            cwd=self.work,
+            env=build_env,
+        )
+        shutil.rmtree(consumer / "_build", ignore_errors=True)
+        self.check("cli-removed", not cli.exists(), f"path={cli}")
+        self.command(
+            "import-absence",
+            [self.tools["dune"], "build"],
+            cwd=consumer,
+            env=consumer_env,
+            expected=lambda status: status != 0,
+        )
+
+    def validate_common_lisp(self) -> None:
+        self.probe("sbcl-version", [self.tools["sbcl"], "--version"])
+        archive = self.source_archive()
+        install_root = self.work / "installed-systems"
+        source = extract_single_root(archive, install_root)
+        registry = f'(:source-registry (:tree "{install_root}") :ignore-inherited-configuration)'
+        env = {"CL_SOURCE_REGISTRY": registry}
+        self.command(
+            "asdf-compile-install",
+            [
+                self.tools["sbcl"],
+                "--noinform",
+                "--non-interactive",
+                "--eval",
+                "(require :asdf)",
+                "--eval",
+                '(asdf:compile-system "sshfling" :force t)',
+            ],
+            cwd=self.work,
+            env=env,
+        )
+        self.verify_runtime(source / "runtime")
+        consumer = self.work / "external-consumer.lisp"
+        consumer.write_text(
+            "(require :asdf)\n"
+            '(asdf:load-system "sshfling")\n'
+            "(uiop:quit (sshfling:run (uiop:command-line-arguments)))\n",
+            encoding="utf-8",
+        )
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        self.run_status_cases(
+            lambda args: [self.tools["sbcl"], "--noinform", "--disable-debugger", "--script", consumer, *args],
+            cwd=unrelated,
+            env=env,
+        )
+        shutil.rmtree(source)
+        shutil.rmtree(self.work / "cache", ignore_errors=True)
+        self.command(
+            "import-absence",
+            [
+                self.tools["sbcl"],
+                "--noinform",
+                "--non-interactive",
+                "--eval",
+                "(require :asdf)",
+                "--eval",
+                '(uiop:quit (if (asdf:find-system "sshfling" nil) 1 0))',
+            ],
+            cwd=unrelated,
+            env=env,
+        )
+
+    def validate_scheme(self) -> None:
+        self.probe("guile-version", [self.tools["guile"], "--version"])
+        self.probe("make-version", [self.tools["make"], "--version"])
+        dist_prefix = self.work / "dist-prefix"
+        env = {"GUILE_AUTO_COMPILE": "0"}
+        self.command("configure-dist", [self.stage / "configure", f"--prefix={dist_prefix}"], cwd=self.stage, env=env)
+        self.command("guile-native-dist", [self.tools["make"], "dist"], cwd=self.stage, env=env)
+        archive = self.stage / f"sshfling-guile-{self.version}.tar.gz"
+        self.record_archive("source-archive", archive)
+        source = extract_single_root(archive, self.work / "source")
+        prefix = self.work / "prefix"
+        self.command("configure-install", [source / "configure", f"--prefix={prefix}"], cwd=source, env=env)
+        self.command("guile-compile-check", [self.tools["make"], "check"], cwd=source, env=env)
+        self.command("guile-install", [self.tools["make"], "install"], cwd=source, env=env)
+        runtime = prefix / "share/sshfling-guile/runtime"
+        self.verify_runtime(runtime)
+        module_dir = prefix / "share/guile/site/3.0"
+        object_dir = prefix / "lib/guile/3.0/site-ccache"
+        consumer = self.work / "external-consumer.scm"
+        consumer.write_text(
+            "(use-modules (sshfling))\n(exit (run (cdr (command-line))))\n",
+            encoding="utf-8",
+        )
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        command = lambda args: [
+            self.tools["guile"],
+            "--no-auto-compile",
+            "-L",
+            module_dir,
+            "-C",
+            object_dir,
+            consumer,
+            *args,
+        ]
+        self.run_status_cases(command, cwd=unrelated, env=env)
+        cli = prefix / "bin/sshfling-guile"
+        cli_result = self.command("installed-cli-version", [cli, "--version"], cwd=unrelated, env=env)
+        self.assert_version_output(cli_result)
+        self.command("guile-uninstall", [self.tools["make"], "uninstall"], cwd=source, env=env)
+        self.check("cli-removed", not cli.exists(), f"path={cli}")
+        self.command(
+            "import-absence",
+            command(["--version"]),
+            cwd=unrelated,
+            env=env,
+            expected=lambda status: status != 0,
+        )
+
+    def validate_prolog(self) -> None:
+        self.probe("swipl-version", [self.tools["swipl"], "--version"])
+        archive = self.work / f"sshfling-{self.version}.tgz"
+        archive_tree(self.stage, archive, f"sshfling-{self.version}")
+        self.record_archive("source-archive", archive)
+        pack_root = self.work / "packs"
+        pack_root.mkdir()
+        install_goal = (
+            "use_module(library(prolog_pack)),"
+            f"pack_install({prolog_atom(str(archive.resolve()))},["
+            f"package_directory({prolog_atom(str(pack_root))}),name(sshfling),version({prolog_atom(self.version)}),"
+            "interactive(false),"
+            "silent(true),test(false),git(false)]),halt"
+        )
+        self.command("pack-install", [self.tools["swipl"], "-q", "-g", install_goal], cwd=self.work)
+        candidates = [path for path in pack_root.iterdir() if path.is_dir() and (path / "pack.pl").is_file()]
+        self.check("pack-layout", len(candidates) == 1, f"candidates={[str(path) for path in candidates]}")
+        installed = candidates[0]
+        self.verify_runtime(installed / "runtime")
+        consumer = self.work / "external-consumer.pl"
+        consumer.write_text(
+            ":- use_module(library(prolog_pack)).\n"
+            ":- initialization(main, main).\n"
+            "main(Arguments) :-\n"
+            "    getenv('SSHFLING_PROLOG_PACK_DIR', Directory),\n"
+            "    pack_attach(Directory, [duplicate(replace)]),\n"
+            "    use_module(library(sshfling)),\n"
+            "    sshfling:run(Arguments, Status),\n"
+            "    halt(Status).\n",
+            encoding="utf-8",
+        )
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        env = {"SSHFLING_PROLOG_PACK_DIR": str(installed)}
+        command = lambda args: [self.tools["swipl"], "-q", "-s", consumer, "--", *args]
+        self.run_status_cases(command, cwd=unrelated, env=env)
+        remove_goal = (
+            "use_module(library(prolog_pack)),"
+            f"pack_attach({prolog_atom(str(installed))},[duplicate(replace)]),"
+            "pack_remove(sshfling),halt"
+        )
+        self.command("pack-remove", [self.tools["swipl"], "-q", "-g", remove_goal], cwd=self.work)
+        self.check("package-removed", not installed.exists(), f"path={installed}")
+        self.command(
+            "import-absence",
+            command(["--version"]),
+            cwd=unrelated,
+            env=env,
+            expected=lambda status: status != 0,
+        )
+
+    def validate_r(self) -> None:
+        self.probe("R-version", [self.tools["R"], "--version"])
+        self.probe("Rscript-version", [self.tools["Rscript"], "--version"])
+        env = {
+            "R_ENVIRON_USER": "/dev/null",
+            "R_PROFILE_USER": "/dev/null",
+            "_R_CHECK_FORCE_SUGGESTS_": "false",
+            "_R_CHECK_CRAN_INCOMING_REMOTE_": "false",
+        }
+        self.command(
+            "R-CMD-build",
+            [self.tools["R"], "CMD", "build", "--no-build-vignettes", "--no-manual", self.stage],
+            cwd=self.work,
+            env=env,
+        )
+        archive = self.work / f"sshfling_{self.version}.tar.gz"
+        self.record_archive("source-archive", archive)
+        check_dir = self.work / "check"
+        check_dir.mkdir()
+        self.command(
+            "R-CMD-check",
+            [self.tools["R"], "CMD", "check", "--no-manual", "--no-build-vignettes", archive],
+            cwd=check_dir,
+            env=env,
+        )
+        library = self.work / "R-library"
+        library.mkdir()
+        self.command(
+            "R-CMD-install",
+            [self.tools["R"], "CMD", "INSTALL", f"--library={library}", archive],
+            cwd=self.work,
+            env=env,
+        )
+        self.verify_runtime(library / "sshfling/runtime")
+        consumer = self.work / "external-consumer.R"
+        consumer.write_text(
+            "suppressPackageStartupMessages(library(sshfling))\n"
+            "quit(save = \"no\", status = run(commandArgs(trailingOnly = TRUE)))\n",
+            encoding="utf-8",
+        )
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        consumer_env = {**env, "R_LIBS_USER": str(library)}
+        command = lambda args: [self.tools["Rscript"], "--vanilla", consumer, *args]
+        self.run_status_cases(command, cwd=unrelated, env=consumer_env)
+        self.command(
+            "R-CMD-remove",
+            [self.tools["R"], "CMD", "REMOVE", f"--library={library}", "sshfling"],
+            cwd=self.work,
+            env=env,
+        )
+        self.check("package-removed", not (library / "sshfling").exists(), f"library={library}")
+        self.command(
+            "import-absence",
+            [
+                self.tools["Rscript"],
+                "--vanilla",
+                "-e",
+                'quit(status=if (requireNamespace("sshfling", quietly=TRUE)) 1L else 0L)',
+            ],
+            cwd=unrelated,
+            env=consumer_env,
+        )
+
+    def validate_erlang(self) -> None:
+        self.probe(
+            "erl-version",
+            [self.tools["erl"], "-noshell", "-eval", 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'],
+        )
+        self.probe("erlc-available", [self.tools["erlc"], "-v"])
+        self.source_archive()
+        library_root = self.work / "otp-lib"
+        package = library_root / f"sshfling-{self.version}"
+        ebin = package / "ebin"
+        ebin.mkdir(parents=True)
+        shutil.copytree(self.stage / "priv", package / "priv", copy_function=shutil.copy2)
+        self.command(
+            "erlc-package-build",
+            [self.tools["erlc"], "-Werror", "-o", ebin, self.stage / "src/sshfling.erl"],
+            cwd=self.work,
+        )
+        shutil.copy2(self.stage / "src/sshfling.app.src", ebin / "sshfling.app")
+        binary_archive = self.work / f"sshfling-{self.version}-otp.tar.gz"
+        archive_tree(package, binary_archive, package.name)
+        self.record_archive("otp-archive", binary_archive)
+        self.verify_runtime(package / "priv/runtime")
+        consumer_dir = self.work / "external-erlang-consumer"
+        consumer_ebin = consumer_dir / "ebin"
+        consumer_ebin.mkdir(parents=True)
+        consumer_source = consumer_dir / "sshfling_external.erl"
+        consumer_source.write_text(
+            "-module(sshfling_external).\n"
+            "-export([main/0]).\n"
+            "main() ->\n"
+            "    ok = application:load(sshfling),\n"
+            "    halt(sshfling:run(init:get_plain_arguments())).\n",
+            encoding="utf-8",
+        )
+        self.command(
+            "external-consumer-build",
+            [self.tools["erlc"], "-Werror", "-o", consumer_ebin, consumer_source],
+            cwd=consumer_dir,
+        )
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        env = {"ERL_LIBS": str(library_root)}
+        command = lambda args: [
+            self.tools["erl"],
+            "-noshell",
+            "-pa",
+            consumer_ebin,
+            "-s",
+            "sshfling_external",
+            "main",
+            "-extra",
+            *args,
+        ]
+        self.run_status_cases(command, cwd=unrelated, env=env)
+        shutil.rmtree(package)
+        self.command(
+            "import-absence",
+            [
+                self.tools["erl"],
+                "-noshell",
+                "-eval",
+                'case code:which(sshfling) of non_existing -> halt(0); _ -> halt(1) end.',
+            ],
+            cwd=unrelated,
+            env=env,
+        )
+        self.check("package-removed", not package.exists(), f"path={package}")
+
+    def validate_elixir(self) -> None:
+        self.probe("elixir-version", [self.tools["elixir"], "--version"])
+        self.probe("mix-version", [self.tools["mix"], "--version"])
+        archive = self.source_archive()
+        mix_env = {
+            "MIX_HOME": str(self.work / "mix-home"),
+            "HEX_HOME": str(self.work / "hex-home"),
+            "MIX_ENV": "dev",
+        }
+        self.command("mix-package-compile", [self.tools["mix"], "compile", "--warnings-as-errors"], cwd=self.stage, env=mix_env)
+        package_source = extract_single_root(archive, self.work / "installed-source")
+        consumer = self.work / "external-mix-consumer"
+        consumer.mkdir()
+        package_literal = json.dumps(str(package_source))
+        (consumer / "mix.exs").write_text(
+            "defmodule ExternalConsumer.MixProject do\n"
+            "  use Mix.Project\n"
+            f"  def project, do: [app: :external_consumer, version: \"0.1.0\", elixir: \">= 1.14.0\", deps: [{{:sshfling, path: {package_literal}}}]]\n"
+            "  def application, do: []\n"
+            "end\n",
+            encoding="utf-8",
+        )
+        script = consumer / "consumer.exs"
+        script.write_text("System.halt(SSHFling.run(System.argv()))\n", encoding="utf-8")
+        self.command("mix-deps-get", [self.tools["mix"], "deps.get"], cwd=consumer, env=mix_env)
+        self.command("mix-deps-compile", [self.tools["mix"], "deps.compile", "--force"], cwd=consumer, env=mix_env)
+        self.command("external-consumer-build", [self.tools["mix"], "compile", "--warnings-as-errors"], cwd=consumer, env=mix_env)
+        installed_runtime = consumer / "_build/dev/lib/sshfling/priv/runtime"
+        self.verify_runtime(installed_runtime)
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        command = lambda args: [self.tools["mix"], "run", script, *args]
+        self.run_status_cases(command, cwd=consumer, env=mix_env)
+        self.command("mix-deps-clean", [self.tools["mix"], "deps.clean", "sshfling", "--unlock"], cwd=consumer, env=mix_env)
+        shutil.rmtree(package_source)
+        self.check("package-removed", not installed_runtime.exists(), f"path={installed_runtime}")
+        self.command(
+            "import-absence",
+            [self.tools["mix"], "run", script, "--version"],
+            cwd=consumer,
+            env=mix_env,
+            expected=lambda status: status != 0,
+        )
+
+    def validate_gleam(self) -> None:
+        self.probe("gleam-version", [self.tools["gleam"], "--version"])
+        self.probe(
+            "erl-version",
+            [self.tools["erl"], "-noshell", "-eval", 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'],
+        )
+        self.command("gleam-package-check", [self.tools["gleam"], "check"], cwd=self.stage)
+        before = {path.resolve() for path in self.stage.rglob("*.tar*")}
+        self.command("gleam-hex-tarball", [self.tools["gleam"], "export", "hex-tarball"], cwd=self.stage)
+        after = {path.resolve() for path in self.stage.rglob("*.tar*")}
+        archives = sorted(after - before)
+        self.check("hex-archive-count", len(archives) == 1, f"archives={[path.name for path in archives]}")
+        archive = archives[0]
+        self.record_archive("hex-archive", archive)
+        self.check("hex-archive-version", self.version in archive.name, f"archive={archive.name}")
+        install_source = self.work / f"sshfling-{self.version}"
+        with tarfile.open(archive, "r:") as outer:
+            member = outer.getmember("contents.tar.gz")
+            stream = outer.extractfile(member)
+            if stream is None:
+                raise ValidationFailure("gleam: Hex archive has no contents stream")
+            payload = stream.read()
+        with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as contents:
+            safe_extract(contents, install_source)
+        consumer = self.work / "external-gleam-consumer"
+        source_dir = consumer / "src"
+        source_dir.mkdir(parents=True)
+        (consumer / "gleam.toml").write_text(
+            "name = \"external_consumer\"\n"
+            "version = \"0.1.0\"\n"
+            "target = \"erlang\"\n"
+            "[dependencies]\n"
+            f"sshfling = {{ path = {json.dumps(str(install_source))} }}\n",
+            encoding="utf-8",
+        )
+        smoke = self.work / "smoke"
+        modules = {
+            "version": 'let assert 0 = sshfling.run(["--version"])',
+            "invalid": 'let assert 2 = sshfling.run(["--definitely-invalid"])',
+            "init_case": f'let assert 0 = sshfling.run(["init", {json.dumps(str(smoke))}, "--force", "--session-seconds", "60"])',
+            "missing": "let assert 127 = sshfling.run([])",
+        }
+        for name, body in modules.items():
+            (source_dir / f"{name}.gleam").write_text(
+                f"import sshfling\n\npub fn main() {{\n  {body}\n  Nil\n}}\n",
+                encoding="utf-8",
+            )
+        self.command("external-consumer-build", [self.tools["gleam"], "build"], cwd=consumer)
+        installed_candidates = list((consumer / "build").glob("*/erlang/sshfling/priv/runtime"))
+        self.check("gleam-installed-layout", len(installed_candidates) == 1, f"candidates={installed_candidates}")
+        self.verify_runtime(installed_candidates[0])
+        version = self.command("consumer-version", [self.tools["gleam"], "run", "-m", "version"], cwd=consumer)
+        self.assert_version_output(version)
+        self.command("consumer-invalid-option", [self.tools["gleam"], "run", "-m", "invalid"], cwd=consumer)
+        self.command("consumer-init", [self.tools["gleam"], "run", "-m", "init_case"], cwd=consumer)
+        self.verify_init(smoke)
+        self.command(
+            "consumer-missing-runtime",
+            [self.tools["gleam"], "run", "-m", "missing"],
+            cwd=consumer,
+            env={"SSHFLING_RUNTIME": str(self.work / "missing-runtime.py")},
+        )
+        shutil.rmtree(install_source)
+        shutil.rmtree(consumer / "build", ignore_errors=True)
+        self.command(
+            "import-absence",
+            [self.tools["gleam"], "check"],
+            cwd=consumer,
+            expected=lambda status: status != 0,
+        )
+
+
+TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "haskell": ("ghc", "cabal"),
+    "ocaml": ("ocamlc", "dune"),
+    "common-lisp": ("sbcl",),
+    "scheme": ("guile", "make"),
+    "prolog": ("swipl",),
+    "smalltalk": ("gst", "gst-package"),
+    "ballerina": ("bal",),
+    "roc": ("roc",),
+    "janet": ("janet", "jpm"),
+    "ring": ("ring", "ringpm"),
+    "apl": ("dyalog",),
+    "j": ("ijconsole",),
+    "julia": ("julia",),
+    "r": ("R", "Rscript"),
+    "q": ("q",),
+    "erlang": ("erl", "erlc"),
+    "elixir": ("elixir", "mix"),
+    "gleam": ("gleam", "erl"),
+}
+
+
+NATIVE_RUNNERS = {
+    "ocaml",
+    "common-lisp",
+    "scheme",
+    "prolog",
+    "r",
+    "erlang",
+    "elixir",
+    "gleam",
+}
+
+
+def resolve_tools(language: Language) -> tuple[dict[str, str], list[str]]:
+    requirements = TOOL_REQUIREMENTS.get(language.identifier)
+    if requirements is None:
+        raise ValidationFailure(f"no explicit tool requirements for {language.identifier}")
+    tools: dict[str, str] = {}
+    missing: list[str] = []
+    for name in requirements:
+        path = shutil.which(name)
+        if path:
+            tools[name] = path
+        else:
+            missing.append(name)
+    return tools, missing
+
+
+def main() -> int:
+    temp_root: Path | None = None
+    evidence: Evidence | None = None
+    try:
+        languages = load_languages()
+        args = parse_arguments(languages)
+        selected = [
+            language
+            for language in languages
+            if not args.language or language.identifier in args.language
+        ]
+        if args.list:
+            print("id\tlabel\ttools\tnative_validation")
+            for language in selected:
+                print(
+                    f"{language.identifier}\t{language.label}\t"
+                    f"{'+'.join(TOOL_REQUIREMENTS[language.identifier])}\t"
+                    f"{'yes' if language.identifier in NATIVE_RUNNERS else 'structural-only'}"
+                )
+            return 0
+
+        evidence = Evidence(args.evidence)
+        evidence.record(
+            "validator",
+            "INFO",
+            "start",
+            status=0,
+            command=shlex.join(sys.argv),
+            detail=f"python={sys.version.split()[0]};timeout={args.timeout};audit_only={args.audit_only}",
+        )
+        temp_root = Path(tempfile.mkdtemp(prefix="sshfling-languages-"))
+        canonical, version, entries = create_canonical_bundle(temp_root)
+        canonical_files = set(file_inventory(canonical))
+        evidence.record(
+            "validator",
+            "PASS",
+            "canonical-runtime",
+            status=0,
+            detail=f"version={version};files={len(canonical_files)};requested={os.environ.get('SSHFLING_VERSION', '<unset>')}",
+        )
+        tested = 0
+        blocked = 0
+        audited = 0
+        failed = 0
+        blocked_tools: list[str] = []
+
+        for language in selected:
+            language_root = temp_root / language.identifier
+            stage: Path | None = None
+            work: Path | None = None
+            outcome_recorded = False
+            print(f"VALIDATE\t{language.identifier}\t{language.label}", flush=True)
+            try:
+                contract = validate_contract(language, canonical_files)
+                evidence.record(language.identifier, "PASS", "structural-contract", status=0, detail=contract)
+                stage, work = stage_language(temp_root, language, canonical, version)
+                evidence.record(
+                    language.identifier,
+                    "PASS",
+                    "canonical-bundle",
+                    status=0,
+                    detail=f"bundle={language.bundle};files={len(canonical_files)};version={version}",
+                )
+                if args.audit_only:
+                    audited += 1
+                    outcome_recorded = True
+                    print(f"AUDITED\t{language.identifier}\tstructural=verified\ttested=no", flush=True)
+                    evidence.record(language.identifier, "AUDITED", "outcome", status=0, detail="runtime_not_requested")
+                    continue
+                tools, missing = resolve_tools(language)
+                if missing:
+                    blocked += 1
+                    blocked_tools.append(f"{language.identifier}:{','.join(missing)}")
+                    outcome_recorded = True
+                    print(
+                        f"BLOCKED\t{language.identifier}\tmissing={','.join(missing)}\t"
+                        "structural=verified\ttested=no",
+                        flush=True,
+                    )
+                    evidence.record(
+                        language.identifier,
+                        "BLOCKED",
+                        "outcome",
+                        status="missing-toolchain",
+                        detail=f"missing={','.join(missing)};structural=verified;tested=no",
+                    )
+                    continue
+                if language.identifier not in NATIVE_RUNNERS:
+                    blocked += 1
+                    reason = "native-package-workflow-unavailable"
+                    blocked_tools.append(f"{language.identifier}:{reason}")
+                    outcome_recorded = True
+                    print(
+                        f"BLOCKED\t{language.identifier}\treason={reason}\t"
+                        "structural=verified\ttested=no",
+                        flush=True,
+                    )
+                    evidence.record(
+                        language.identifier,
+                        "BLOCKED",
+                        "outcome",
+                        status=reason,
+                        detail="toolchain_present;structural=verified;tested=no",
+                    )
+                    continue
+                runner = PackageRunner(
+                    language,
+                    stage,
+                    work,
+                    canonical,
+                    version,
+                    entries,
+                    evidence,
+                    args.timeout,
+                    tools,
+                )
+                runner.run()
+                tested += 1
+                outcome_recorded = True
+                print(
+                    f"PASS\t{language.identifier}\tcommands={runner.command_count}\t"
+                    "archive=yes\tinstall=yes\tconsumer=yes\tremove=yes",
+                    flush=True,
+                )
+                evidence.record(
+                    language.identifier,
+                    "PASS",
+                    "outcome",
+                    status=0,
+                    detail=f"commands={runner.command_count};archive=yes;install=yes;consumer=yes;remove=yes",
+                )
+            except (ValidationFailure, OSError, subprocess.SubprocessError, tarfile.TarError) as error:
+                failed += 1
+                outcome_recorded = True
+                print(f"FAILED\t{language.identifier}\t{error}", file=sys.stderr, flush=True)
+                evidence.record(language.identifier, "FAIL", "outcome", status=1, detail=str(error))
+            finally:
+                if language_root.exists():
+                    shutil.rmtree(language_root)
+                if evidence is not None:
+                    evidence.record(
+                        language.identifier,
+                        "INFO",
+                        "cleanup",
+                        status=0,
+                        detail=f"removed={language_root};outcome_recorded={outcome_recorded}",
+                    )
+
+        evidence.record(
+            "validator",
+            "PASS" if failed == 0 else "FAIL",
+            "summary",
+            status=0 if failed == 0 else 1,
+            detail=f"tested={tested};blocked={blocked};audited={audited};failed={failed};selected={len(selected)}",
+        )
+        print(
+            f"SUMMARY\ttested={tested}\tblocked={blocked}\taudited={audited}\tfailed={failed}\t"
+            f"evidence={evidence.path}",
+            flush=True,
+        )
+        if blocked_tools:
+            print(f"BLOCKED_TOOLS\t{';'.join(blocked_tools)}", flush=True)
+        if failed:
+            return 1
+        if args.audit_only:
+            return 0
+        if tested == 0:
+            print(
+                "validator: no native package was tested; use --audit-only for a structural-only run",
+                file=sys.stderr,
+            )
+            return 4
+        if blocked and not args.allow_blocked:
+            return 3
+        return 0
+    except (ValidationFailure, OSError, SyntaxError, csv.Error) as error:
+        print(f"validator: {error}", file=sys.stderr)
+        if evidence is not None:
+            evidence.record("validator", "FAIL", "fatal", status=1, detail=str(error))
+        return 1
+    finally:
+        if temp_root is not None and temp_root.exists():
+            shutil.rmtree(temp_root)
+            if evidence is not None:
+                evidence.record("validator", "INFO", "final-cleanup", status=0, detail=f"removed={temp_root}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
