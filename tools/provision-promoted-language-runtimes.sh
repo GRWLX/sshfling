@@ -203,6 +203,18 @@ download \
 install -d "$destination/red/bin"
 install -m 0755 "$red_binary" "$destination/red/bin/red"
 
+roc_archive="$download_dir/roc-linux_x86_64-alpha4-rolling.tar.gz"
+download \
+  "https://github.com/roc-lang/roc/releases/download/alpha4-rolling/roc-linux_x86_64-alpha4-rolling.tar.gz" \
+  "96e8be05e6f7176433ada74532ff36a62b8dc44c5247a82cdf919f2dadc5178b" \
+  "$roc_archive"
+install_tar "$roc_archive" "$destination/roc"
+roc_root="$(find "$destination/roc" -mindepth 1 -maxdepth 1 -type d -name 'roc_nightly-*' -print -quit)"
+if [[ -z "$roc_root" || ! -x "$roc_root/roc" ]]; then
+  echo "Roc toolchain archive did not contain an executable roc binary" >&2
+  exit 1
+fi
+
 path_entries=(
   "$destination/julia/julia-1.10.10/bin"
   "$destination/j/j9.6/bin"
@@ -215,10 +227,11 @@ path_entries=(
   "$destination/harbour/bin"
   "$destination/ring/bin"
   "$destination/red/bin"
+  "$roc_root"
   "/usr/bin"
 )
 
-for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring red bal chpl mason; do
+for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring red roc bal chpl mason; do
   found=0
   for entry in "${path_entries[@]}"; do
     if [[ -x "$entry/$executable" ]]; then

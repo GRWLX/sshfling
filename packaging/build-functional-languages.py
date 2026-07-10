@@ -391,9 +391,22 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
             "public function run(string[] args) returns int",
         )
     elif identifier == "roc":
-        require_tokens(root / "package.roc", "package [SSHFling] {}", 'package_version = "0.0.0"')
-        require_tokens(root / "SSHFling.roc", "module [run!, runtime_path!, template_directory!]", "Cmd.exec_exit_code!()")
-        main = require_tokens(root / "main.roc", 'sshfling: "package.roc"', "import sshfling.SSHFling", "SSHFling.run!")
+        require_tokens(root / "package.roc", "package [SSHFling] {}")
+        require_tokens(
+            root / "SSHFling.roc",
+            "module [run!, runtime_path!, template_directory!, package_version]",
+            'package_version = "0.0.0"',
+            "File.exists!(runtime)?",
+            "Cmd.exec_exit_code!()",
+        )
+        main = require_tokens(
+            root / "main.roc",
+            'sshfling: "package.roc"',
+            "import sshfling.SSHFling",
+            "List.drop_first(raw_args, 1)",
+            'Err(Exit(status, ""))',
+            "SSHFling.run!",
+        )
         consumer = require_tokens(root / "test/consumer.roc", 'sshfling: "../package.roc"', "import sshfling.SSHFling")
         if 'Cmd.exec!("roc"' in main + consumer:
             raise ValidationFailure("roc: consumer recursively invokes roc instead of importing package")
@@ -1576,6 +1589,60 @@ class PackageRunner:
         )
         self.check("package-removed", not local_package.exists(), f"path={local_package}")
 
+    def validate_roc(self) -> None:
+        self.probe("roc-version", [self.tools["roc"], "version"])
+        self.command("roc-package-check", [self.tools["roc"], "check", self.stage / "main.roc"], cwd=self.stage)
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "installed-source")
+        self.command("roc-package-build", [self.tools["roc"], "build", source / "main.roc"], cwd=source)
+        cli = source / "main"
+        self.check("roc-cli-built", cli.is_file() and os.access(cli, os.X_OK), f"path={cli}")
+        self.verify_runtime(source / "runtime")
+
+        package_literal = json.dumps(str(source / "package.roc"))
+        consumer_dir = self.work / "external-roc-consumer"
+        consumer_dir.mkdir()
+        consumer = consumer_dir / "consumer.roc"
+        consumer.write_text(
+            "app [main!] {\n"
+            "    cli: platform \"https://github.com/roc-lang/basic-cli/releases/download/0.20.0/X73hGh05nNTkDHU06FHC0YfFaQB1pimX7gncRcao5mU.tar.br\",\n"
+            f"    sshfling: {package_literal},\n"
+            "}\n\n"
+            "import cli.Arg exposing [Arg]\n"
+            "import sshfling.SSHFling\n\n"
+            "main! : List Arg => Result {} _\n"
+            "main! = |raw_args|\n"
+            "    status = SSHFling.run!(List.map(List.drop_first(raw_args, 1), Arg.display))?\n"
+            "    if status == 0 then\n"
+            "        Ok({})\n"
+            "    else\n"
+            "        Err(Exit(status, \"\"))\n",
+            encoding="utf-8",
+        )
+        env = {
+            "SSHFLING_RUNTIME": str(source / "runtime/sshfling.py"),
+            "SSHFLING_TEMPLATE_DIR": str(source / "runtime/templates"),
+        }
+        self.command("external-consumer-check", [self.tools["roc"], "check", consumer], cwd=consumer_dir, env=env)
+        self.command("external-consumer-build", [self.tools["roc"], "build", consumer], cwd=consumer_dir, env=env)
+        consumer_cli = consumer_dir / "consumer"
+        self.check("external-consumer-executable", consumer_cli.is_file(), f"path={consumer_cli}")
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        self.run_status_cases(lambda args: [consumer_cli, *args], cwd=unrelated, env=env)
+        cli_result = self.command("installed-cli-version", [cli, "--version"], cwd=unrelated, env=env)
+        self.assert_version_output(cli_result)
+
+        shutil.rmtree(source)
+        self.check("package-removed", not source.exists(), f"path={source}")
+        self.command(
+            "import-absence",
+            [self.tools["roc"], "check", consumer],
+            cwd=consumer_dir,
+            env=env,
+            expected=lambda status: status != 0,
+        )
+
     def validate_common_lisp(self) -> None:
         self.probe("sbcl-version", [self.tools["sbcl"], "--version"])
         archive = self.source_archive()
@@ -2004,6 +2071,7 @@ NATIVE_RUNNERS = {
     "janet",
     "ring",
     "ballerina",
+    "roc",
     "j",
     "julia",
     "ocaml",

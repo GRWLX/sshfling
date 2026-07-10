@@ -95,7 +95,6 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "Smalltalk",
             "APL",
             "Q/KDB+",
-            "Roc",
         ):
             cells = by_language[language]
             publications = [
@@ -134,6 +133,7 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "CFML",
             "Chapel",
             "Ballerina",
+            "Roc",
         ):
             cells = by_language[language]
             self.assertEqual(matrix.derived_catalog_status(cells), "PASS", language)

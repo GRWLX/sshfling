@@ -2096,6 +2096,41 @@ _object_pascal_deployment["validation_evidence"] = (
 )
 DEPLOYMENTS.append(_object_pascal_deployment)
 
+_roc_deployment = deployment(
+    "roc-source-package",
+    "Roc",
+    "Roc source package",
+    "Roc package and application",
+    "library + CLI",
+    "sshfling-roc-VERSION.tar.gz",
+    "package-functional-languages",
+    [
+        "packaging/functional-languages/roc/package.roc",
+        "packaging/functional-languages/roc/SSHFling.roc",
+        "packaging/functional-languages/roc/main.roc",
+        "packaging/functional-languages/roc/test/consumer.roc",
+        "packaging/build-functional-languages.py",
+        "tools/provision-promoted-language-runtimes.sh",
+        "tools/validate_promoted_language_evidence.py",
+    ],
+    (
+        "A Roc package module, application entry point, and external consumer are tracked under packaging/functional-languages/roc.",
+        "package.roc exposes the SSHFling module while the source package records its versioned module API and basic-cli platform boundary.",
+        "The functional-language validator runs roc check, roc build, and a clean external Roc consumer against the deterministic source archive.",
+        "The source archive contains Roc sources, license, README, and the byte-checked canonical runtime bundle.",
+        "A separate Roc application imports the extracted package by path and runs outside the repository source tree with explicit runtime resources.",
+        "The module exposes run!, runtime_path!, template_directory!, and package_version while the package also builds a CLI application.",
+        "The Roc consumer and CLI print the exact SSHFling release version.",
+        "The consumer validates init assets, invalid option status, missing runtime status, package removal, and import absence.",
+    ),
+)
+_roc_deployment["validation_evidence"] = (
+    "The functional-language validator records roc PASS with source archive, "
+    "roc check/build, external consumer check/build, exact version, init, "
+    "invalid option, missing runtime, removal, and import-absence evidence."
+)
+DEPLOYMENTS.append(_roc_deployment)
+
 
 FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Python", "PASS"),
@@ -2188,7 +2223,7 @@ FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Odin", "PASS"),
     ("Ballerina", "PASS"),
     ("Gleam", "PASS"),
-    ("Roc", "BLOCKED"),
+    ("Roc", "PASS"),
 )
 
 
@@ -2624,6 +2659,7 @@ _PROMOTED_RUNTIME_SURFACES = {
     "cfml-commandbox-runtime",
     "chapel-mason-runtime",
     "ballerina-package-runtime",
+    "roc-package-runtime",
 }
 CATALOG_SURFACES = [
     item for item in CATALOG_SURFACES if item["id"] not in _PROMOTED_RUNTIME_SURFACES

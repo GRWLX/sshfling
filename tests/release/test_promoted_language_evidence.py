@@ -328,8 +328,9 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
         self.assertIn("11c4df319b18ed26946962883e7646e3d510c63b19dafb064a5060b792e549e0", provisioner)
         self.assertIn("f88d95236319460327b05efcfdab7c342caa7d22", provisioner)
         self.assertIn("95c75a49f8b3d15b8ae1ddf10f9589bc0fd0eecf84d432bad163191f900cb23c", provisioner)
+        self.assertIn("96e8be05e6f7176433ada74532ff36a62b8dc44c5247a82cdf919f2dadc5178b", provisioner)
         self.assertIn("janet jpm zig", provisioner)
-        self.assertIn("hbmk2 ring red bal", provisioner)
+        self.assertIn("hbmk2 ring red roc bal", provisioner)
 
         for relative in (
             ".github/workflows/release-packages.yml",

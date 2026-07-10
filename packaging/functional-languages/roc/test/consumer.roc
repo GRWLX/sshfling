@@ -9,4 +9,4 @@ import sshfling.SSHFling
 main! : List Arg => Result {} _
 main! = |_args|
     status = SSHFling.run!(["--version"])?
-    if status == 0 then Ok({}) else Err(SSHFlingExited(status))
+    if status == 0 then Ok({}) else Err(Exit(status, ""))

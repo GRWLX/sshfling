@@ -5,8 +5,8 @@ an explicit package manager or distribution mechanism, deployment type, interfac
 and artifact boundary. Maven and Gradle are separate JVM deployments, and real
 importable library surfaces are named rather than inferred from language names.
 
-Catalog outcomes: **64 PASS**, **11 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **142 explicit surface cells** (115 PASS, 11 BLOCKED, 16 NOT_APPLICABLE).
-Fully implemented runtime deployments retain **720 detailed PASS cells** across **90 surfaces**, including **73 validated library-capable surfaces**.
+Catalog outcomes: **65 PASS**, **10 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **142 explicit surface cells** (116 PASS, 10 BLOCKED, 16 NOT_APPLICABLE).
+Fully implemented runtime deployments retain **728 detailed PASS cells** across **91 surfaces**, including **74 validated library-capable surfaces**.
 
 A source-archive publication PASS proves deterministic archive creation and inventory
 only. It is deliberately separate from install, library-consumer, CLI, and runtime
@@ -160,8 +160,8 @@ TODO status audit: **0 row(s) differ** from current package evidence (none). The
 | C91-089-02 | 89 | Ballerina | Ballerina package | versioned source-archive publication | source package | sshfling-ballerina-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for ballerina are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
 | C91-090-01 | 90 | Gleam | Gleam/Hex | Hex library package | library | sshfling-VERSION Hex tarball | PASS | PASS | PASS | The per-language validator runs gleam check, exports a Hex tarball, and builds an external consumer. |
 | C91-090-02 | 90 | Gleam | Gleam/Hex | versioned source-archive publication | source package | sshfling-gleam-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for gleam are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
-| C91-091-01 | 91 | Roc | Roc source package | versioned source-archive publication | source package | sshfling-roc-VERSION.tar.gz | PASS | BLOCKED | BLOCKED | PASS published-source-archive and published-source-inventory rows for roc are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
-| C91-091-02 | 91 | Roc | Roc source package | Roc package and application | library + CLI | sshfling-roc-VERSION.tar.gz | BLOCKED | BLOCKED | BLOCKED | BLOCKED runtime-validation: source publication passes, but the Roc toolchain is unavailable for package and consumer validation |
+| C91-091-01 | 91 | Roc | Roc source package | Roc package and application | library + CLI | sshfling-roc-VERSION.tar.gz | PASS | PASS | PASS | The functional-language validator records roc PASS with source archive, roc check/build, external consumer check/build, exact version, init, invalid option, missing runtime, removal, and import-absence evidence. |
+| C91-091-02 | 91 | Roc | Roc source package | versioned source-archive publication | source package | sshfling-roc-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for roc are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
 
 ## Fully Validated Deployment Surfaces
 
@@ -259,6 +259,7 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | ring-source-library | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | sshfling-ring-VERSION.tar.gz | `package-functional-languages` |
 | red-redsystem-cli | Red | Red/System compiler | Red/System source package | CLI | sshfling-red-VERSION.tar.gz | `package-systems-languages` |
 | object-pascal-fpc-package | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | sshfling-object-pascal-VERSION.tar.gz | `package-systems-languages` |
+| roc-source-package | Roc | Roc source package | Roc package and application | library + CLI | sshfling-roc-VERSION.tar.gz | `package-functional-languages` |
 
 ## Detailed Eight-Check Verification Cells
 
@@ -984,3 +985,11 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | LD-90-06 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Public interface | PASS | The unit exposes RunSSHFling for argument-array execution and the package includes a CLI. |
 | LD-90-07 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Version contract | PASS | The consumer and CLI print the exact SSHFling release version. |
 | LD-90-08 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Runtime assets/workflow | PASS | The consumer and CLI validate version, init, invalid option, and missing runtime behavior; Delphi compiler compatibility is not claimed. |
+| LD-91-01 | Roc | Roc source package | Roc package and application | library + CLI | Source surface | PASS | A Roc package module, application entry point, and external consumer are tracked under packaging/functional-languages/roc. |
+| LD-91-02 | Roc | Roc source package | Roc package and application | library + CLI | Package metadata | PASS | package.roc exposes the SSHFling module while the source package records its versioned module API and basic-cli platform boundary. |
+| LD-91-03 | Roc | Roc source package | Roc package and application | library + CLI | Package build | PASS | The functional-language validator runs roc check, roc build, and a clean external Roc consumer against the deterministic source archive. |
+| LD-91-04 | Roc | Roc source package | Roc package and application | library + CLI | Artifact contents | PASS | The source archive contains Roc sources, license, README, and the byte-checked canonical runtime bundle. |
+| LD-91-05 | Roc | Roc source package | Roc package and application | library + CLI | Isolated consumer | PASS | A separate Roc application imports the extracted package by path and runs outside the repository source tree with explicit runtime resources. |
+| LD-91-06 | Roc | Roc source package | Roc package and application | library + CLI | Public interface | PASS | The module exposes run!, runtime_path!, template_directory!, and package_version while the package also builds a CLI application. |
+| LD-91-07 | Roc | Roc source package | Roc package and application | library + CLI | Version contract | PASS | The Roc consumer and CLI print the exact SSHFling release version. |
+| LD-91-08 | Roc | Roc source package | Roc package and application | library + CLI | Runtime assets/workflow | PASS | The consumer validates init assets, invalid option status, missing runtime status, package removal, and import absence. |

@@ -8,8 +8,8 @@ import sshfling.SSHFling
 
 main! : List Arg => Result {} _
 main! = |raw_args|
-    status = SSHFling.run!(List.map(raw_args, Arg.display))?
+    status = SSHFling.run!(List.map(List.drop_first(raw_args, 1), Arg.display))?
     if status == 0 then
         Ok({})
     else
-        Err(SSHFlingExited(status))
+        Err(Exit(status, ""))

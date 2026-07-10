@@ -223,7 +223,7 @@ my $status = SSHFling::run('--version');
 
 ## Generated First-91 Library Surface Index
 
-This index contains 77 explicit library/module surfaces: 70 PASS and 7 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
+This index contains 77 explicit library/module surfaces: 71 PASS and 6 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
 
 | Order | Language | Package manager | Deployment | Interface | Status | Artifact | Evidence or blocker |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
@@ -303,6 +303,6 @@ This index contains 77 explicit library/module surfaces: 70 PASS and 7 BLOCKED. 
 | 88 | Odin | Odin source package | Odin collection and executable | library + CLI | PASS | sshfling-odin-VERSION.tar.gz | The systems validator extracts the archive, builds the Odin collection and command, and executes an isolated consumer. |
 | 89 | Ballerina | Ballerina package | Ballerina module dependency | library | PASS | sshfling-ballerina-VERSION.tar.gz and grwlx-sshfling-any-VERSION.bala | The functional-language validator runs bal test, bal pack, local repository push, external consumer tests, and removal/import-failure checks. |
 | 90 | Gleam | Gleam/Hex | Hex library package | library | PASS | sshfling-VERSION Hex tarball | The per-language validator runs gleam check, exports a Hex tarball, and builds an external consumer. |
-| 91 | Roc | Roc source package | Roc package and application | library + CLI | BLOCKED | sshfling-roc-VERSION.tar.gz | BLOCKED runtime-validation: source publication passes, but the Roc toolchain is unavailable for package and consumer validation |
+| 91 | Roc | Roc source package | Roc package and application | library + CLI | PASS | sshfling-roc-VERSION.tar.gz | The functional-language validator records roc PASS with source archive, roc check/build, external consumer check/build, exact version, init, invalid option, missing runtime, removal, and import-absence evidence. |
 
 <!-- END GENERATED FIRST-91 LIBRARY SURFACES -->
