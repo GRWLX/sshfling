@@ -2193,6 +2193,33 @@ DEPLOYMENTS.append(
     )
 )
 
+DEPLOYMENTS.append(
+    validated_batch_package(
+        "matlab-octave-package",
+        "MATLAB",
+        "GNU Octave",
+        "MATLAB-compatible source package",
+        "library",
+        "sshfling-matlab-VERSION.tar.gz",
+        "package-functional-languages",
+        "packaging/scientific-languages/matlab",
+        [
+            "packaging/scientific-languages/matlab/matlab-package.json",
+            "packaging/scientific-languages/matlab/+sshfling/run.m",
+            "packaging/scientific-languages/matlab/+sshfling/runtimePath.m",
+            "packaging/scientific-languages/matlab/+sshfling/templateDirectory.m",
+            "packaging/scientific-languages/matlab/test/consumer.m",
+            "packaging/build-functional-languages.py",
+        ],
+        "matlab-package.json declares the GNU Octave validation boundary and explicitly does not claim MathWorks MATLAB runtime conformance.",
+        "The per-language validator executes octave-cli against a deterministic MATLAB-compatible source archive.",
+        "The staged source package contains +sshfling package functions, consumer script, license, README, and the byte-checked canonical runtime bundle.",
+        "A clean external Octave consumer imports the extracted +sshfling package outside the repository source tree.",
+        "sshfling.run accepts a cell array of character-vector arguments and returns the canonical runtime status.",
+        "The consumer validates version, init, invalid option, missing runtime, package removal, and import absence.",
+    )
+)
+
 
 FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Python", "PASS"),
@@ -2218,7 +2245,7 @@ FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Perl", "PASS"),
     ("Scala", "PASS"),
     ("Visual Basic/.NET", "PASS"),
-    ("MATLAB", "BLOCKED"),
+    ("MATLAB", "PASS"),
     ("Objective-C", "PASS"),
     ("Groovy", "PASS"),
     ("Delphi/Object Pascal", "PASS"),
@@ -2359,6 +2386,7 @@ def source_publication(
 FUNCTIONAL_SOURCE_PACKAGES = (
     ("R", "r", "R CMD", "packaging/scientific-languages/r"),
     ("Julia", "julia", "Julia Pkg", "packaging/scientific-languages/julia"),
+    ("MATLAB", "matlab", "GNU Octave", "packaging/scientific-languages/matlab"),
     ("Elixir", "elixir", "Mix", "packaging/beam-languages/elixir"),
     ("Erlang", "erlang", "OTP/rebar3", "packaging/beam-languages/erlang"),
     ("Haskell", "haskell", "Cabal", "packaging/functional-languages/haskell"),
@@ -2722,6 +2750,7 @@ _PROMOTED_RUNTIME_SURFACES = {
     "hack-hhvm-runtime",
     "smalltalk-package-runtime",
     "apl-gnu-runtime",
+    "matlab-package-folder-runtime",
     "chapel-mason-runtime",
     "ballerina-package-runtime",
     "roc-package-runtime",

@@ -2,9 +2,10 @@
 
 Audit date: 2026-07-10.
 
-All languages in this document remain non-PASS. The generated support matrix
-classifies unavailable proprietary/platform runtimes as `BLOCKED` and semantic
-non-process domains as `NOT_APPLICABLE`. The files under
+The candidate surfaces in this document remain non-PASS unless a separate
+generated support-matrix row explicitly names a different validated runtime.
+The generated support matrix classifies unavailable proprietary/platform
+runtimes as `BLOCKED` and semantic non-process domains as `NOT_APPLICABLE`. The files under
 `packaging/domain-languages/` are quarantined audit evidence, not release
 packages, and `packaging/build-domain-languages.sh package LANGUAGE` fails for
 every row.
@@ -30,14 +31,17 @@ quarantine wording, and shell syntax/lint without producing an artifact.
 <!-- target:matlab -->
 ### MATLAB
 
-`matlab/+sshfling/run.m` is a real non-shell launcher. It constructs a Java
+`matlab/+sshfling/run.m` is a real non-shell launcher for MathWorks MATLAB. It constructs a Java
 `ProcessBuilder` argument list, inherits standard streams, waits, and returns
 the status. The gate uses `matlab -batch` and a fake executable whose path and
 arguments contain spaces and shell metacharacters. MATLAB and a configured JVM
 are external requirements; MATLAB is not installed here and its use is subject
 to MathWorks licensing. MathWorks documents both [calling Java from MATLAB](https://www.mathworks.com/help/matlab/using-java-libraries-in-matlab.html)
 and the separate [JRE configuration requirement](https://www.mathworks.com/help/matlab/matlab_external/configure-your-system-to-use-java.html).
-No `.mltbx` is emitted.
+No `.mltbx` is emitted. The PASS row for MATLAB is a separate GNU
+Octave-validated MATLAB-compatible source package under
+`packaging/scientific-languages/matlab`; it does not claim MathWorks MATLAB
+runtime conformance.
 
 <!-- target:wolfram-language -->
 ### Wolfram Language

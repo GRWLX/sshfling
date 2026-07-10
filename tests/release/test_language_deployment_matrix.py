@@ -133,6 +133,7 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "Hack",
             "Smalltalk",
             "APL",
+            "MATLAB",
         ):
             cells = by_language[language]
             self.assertEqual(matrix.derived_catalog_status(cells), "PASS", language)
@@ -203,6 +204,7 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "Hack",
             "Smalltalk",
             "APL",
+            "MATLAB",
             "Tcl",
             "AWK",
             "Lua",

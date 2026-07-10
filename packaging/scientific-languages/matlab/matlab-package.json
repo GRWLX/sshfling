@@ -1,0 +1,13 @@
+{
+  "name": "grwlx-sshfling",
+  "group": "grwlx",
+  "version": "0.0.0",
+  "description": "GNU Octave-validated MATLAB-compatible launcher for the bundled SSHFling runtime",
+  "interpreter": "GNU Octave",
+  "source": "+sshfling/run.m",
+  "project_url": "https://github.com/GRWLX/sshfling",
+  "license": "LicenseRef-Proprietary",
+  "minimum_octave_version": "8.4",
+  "mathworks_matlab_runtime": "not claimed",
+  "assets": ["runtime", "LICENSE", "README.md"]
+}

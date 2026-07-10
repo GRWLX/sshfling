@@ -297,7 +297,7 @@ class LanguageSupportMatrixTests(unittest.TestCase):
             domain_rows = list(csv.DictReader(handle, delimiter="\t"))
 
         self.assertEqual(len(domain_rows), 33)
-        promoted_domain_rows = {"Delphi/Object Pascal"}
+        promoted_domain_rows = {"Delphi/Object Pascal", "MATLAB"}
         for domain_row in domain_rows:
             language = domain_row["language"]
             if language in promoted_domain_rows:

@@ -194,8 +194,8 @@ def load_languages() -> list[Language]:
                         bundle=row["bundle"],
                     )
                 )
-    if len(languages) != 18:
-        raise ValidationFailure(f"expected 18 language records, found {len(languages)}")
+    if len(languages) != 19:
+        raise ValidationFailure(f"expected 19 language records, found {len(languages)}")
     for group, declared in declared_by_group.items():
         actual = {path.name for path in group.iterdir() if path.is_dir()}
         if actual != declared:
@@ -487,6 +487,27 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
         require_tokens(root / "src/SSHFling.jl", "export run", "@__DIR__", "return 127")
         require_tokens(root / "test/runtests.jl", "using SSHFling", "SSHFling.run")
         require_tokens(root / "bin/sshfling.jl", "using SSHFling", "SSHFling.run(ARGS)")
+    elif identifier == "matlab":
+        metadata = require_json(root / "matlab-package.json")
+        if (
+            metadata.get("version") != "0.0.0"
+            or metadata.get("interpreter") != "GNU Octave"
+            or metadata.get("mathworks_matlab_runtime") != "not claimed"
+            or "runtime" not in metadata.get("assets", [])
+        ):
+            raise ValidationFailure("matlab: package version/runtime contract is invalid")
+        require_tokens(root / "+sshfling/packageVersion.m", "function version = packageVersion()", "0.0.0")
+        require_tokens(root / "+sshfling/runtimePath.m", "SSHFLING_PACKAGE_ROOT", "SSHFLING_RUNTIME")
+        require_tokens(root / "+sshfling/templateDirectory.m", "SSHFLING_TEMPLATE_DIR")
+        require_tokens(
+            root / "+sshfling/run.m",
+            "function status = run(arguments)",
+            "sshfling.runtimePath()",
+            "shellQuote",
+            "system(command)",
+            "status = 127",
+        )
+        require_tokens(root / "test/consumer.m", "argv()", "sshfling.run(args)", "exit(status)")
     elif identifier == "r":
         description = require_tokens(
             root / "DESCRIPTION",
@@ -1252,6 +1273,57 @@ class PackageRunner:
             expected=lambda status: status != 0,
         )
         self.check("package-removed", not source.exists(), f"path={source}")
+
+    def validate_matlab(self) -> None:
+        self.probe("octave-version", [self.tools["octave-cli"], "--version"])
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "source")
+        self.verify_runtime(source / "runtime")
+        env = {
+            "SSHFLING_PACKAGE_ROOT": str(source),
+            "OCTAVE_HISTFILE": str(self.work / "octave-history"),
+        }
+        octave = [
+            self.tools["octave-cli"],
+            "--quiet",
+            "--no-gui",
+            "--no-init-file",
+            "--path",
+            str(source),
+        ]
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+
+        consumer = self.work / "external-consumer.m"
+        consumer.write_text(
+            "args = argv();\n"
+            "if ~isempty(args) && strcmp(args{1}, '--')\n"
+            "    args = args(2:end);\n"
+            "end\n"
+            "status = sshfling.run(args);\n"
+            "exit(status);\n",
+            encoding="utf-8",
+        )
+        command = lambda args: [*octave, consumer, "--", *args]
+        self.run_status_cases(command, cwd=unrelated, env=env)
+
+        packaged_version = self.command(
+            "packaged-consumer-version",
+            [*octave, source / "test/consumer.m", "--", "--version"],
+            cwd=unrelated,
+            env=env,
+        )
+        self.assert_version_output(packaged_version)
+
+        shutil.rmtree(source)
+        self.check("package-removed", not source.exists(), f"path={source}")
+        self.command(
+            "import-absence",
+            [*octave, consumer, "--", "--version"],
+            cwd=unrelated,
+            env=env,
+            expected=lambda status: status != 0,
+        )
 
     def validate_janet(self) -> None:
         self.probe("janet-version", [self.tools["janet"], "--version"])
@@ -2214,6 +2286,7 @@ TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "apl": ("apl",),
     "j": ("jconsole",),
     "julia": ("julia",),
+    "matlab": ("octave-cli",),
     "r": ("R", "Rscript"),
     "q": ("q",),
     "erlang": ("erl", "erlc"),
@@ -2231,6 +2304,7 @@ NATIVE_RUNNERS = {
     "roc",
     "j",
     "julia",
+    "matlab",
     "ocaml",
     "common-lisp",
     "scheme",

@@ -2,5 +2,6 @@ id	label	tools	runner	root	metadata	api	consumer	bundle
 apl	APL	apl	apl	apl	apl-package.json	src/sshfling.apl	test/consumer.apl	runtime
 j	J	jconsole	j	j	manifest.ijs	src/sshfling.ijs	test/consumer.ijs	runtime
 julia	Julia	julia	julia	julia	Project.toml	src/SSHFling.jl	test/runtests.jl	runtime
+matlab	MATLAB	octave-cli	matlab	matlab	matlab-package.json	+sshfling/packageVersion.m,+sshfling/runtimePath.m,+sshfling/templateDirectory.m,+sshfling/run.m	test/consumer.m	runtime
 r	R	R+Rscript	r	r	DESCRIPTION,NAMESPACE	R/sshfling.R	tests/check-api.R	inst/runtime
 q	Q_KDB	q	q	q	manifest.yaml	src/sshfling.q	test/consumer.q	runtime

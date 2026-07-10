@@ -229,11 +229,11 @@ class LanguageReleaseArtifactTests(unittest.TestCase):
         all_files = inventory("all")
 
         self.assertEqual(len(scripting), 12)
-        self.assertEqual(len(functional), 19)
+        self.assertEqual(len(functional), 20)
         self.assertEqual(len(systems), 20)
         self.assertEqual(catalog, functional + systems)
         self.assertEqual(all_files, scripting + catalog)
-        self.assertEqual(len(all_files), 51)
+        self.assertEqual(len(all_files), 52)
         self.assertEqual(len(all_files), len(set(all_files)))
         self.assertTrue(all(VERSION in name for name in all_files))
 

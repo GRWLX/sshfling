@@ -5,8 +5,8 @@ an explicit package manager or distribution mechanism, deployment type, interfac
 and artifact boundary. Maven and Gradle are separate JVM deployments, and real
 importable library surfaces are named rather than inferred from language names.
 
-Catalog outcomes: **68 PASS**, **7 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **142 explicit surface cells** (119 PASS, 7 BLOCKED, 16 NOT_APPLICABLE).
-Fully implemented runtime deployments retain **752 detailed PASS cells** across **94 surfaces**, including **77 validated library-capable surfaces**.
+Catalog outcomes: **69 PASS**, **6 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **143 explicit surface cells** (121 PASS, 6 BLOCKED, 16 NOT_APPLICABLE).
+Fully implemented runtime deployments retain **760 detailed PASS cells** across **95 surfaces**, including **78 validated library-capable surfaces**.
 
 A source-archive publication PASS proves deterministic archive creation and inventory
 only. It is deliberately separate from install, library-consumer, CLI, and runtime
@@ -58,7 +58,8 @@ TODO status audit: **0 row(s) differ** from current package evidence (none). The
 | C91-022-01 | 22 | Scala | Maven | Scala 3 JVM dependency | library | io.sshfling:sshfling-cli:VERSION | PASS | PASS | PASS | The package-java validator supplies the detailed PASS evidence below. |
 | C91-022-02 | 22 | Scala | Gradle | Scala 3 JVM dependency | library | io.sshfling:sshfling-cli:VERSION | PASS | PASS | PASS | The package-java validator supplies the detailed PASS evidence below. |
 | C91-023-01 | 23 | Visual Basic/.NET | NuGet | PackageReference library | library | SSHFling.VERSION.nupkg | PASS | PASS | PASS | The package-dotnet validator supplies the detailed PASS evidence below. |
-| C91-024-01 | 24 | MATLAB | MATLAB package folder | ProcessBuilder launcher package | library | tracked +sshfling candidate; publication disabled | BLOCKED | BLOCKED | BLOCKED | BLOCKED runtime-validation: a licensed MATLAB runtime and configured JVM are required for conformance |
+| C91-024-01 | 24 | MATLAB | GNU Octave | MATLAB-compatible source package | library | sshfling-matlab-VERSION.tar.gz | PASS | PASS | PASS | The per-language validator executes octave-cli against a deterministic MATLAB-compatible source archive. |
+| C91-024-02 | 24 | MATLAB | GNU Octave | versioned source-archive publication | source package | sshfling-matlab-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for matlab are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
 | C91-025-01 | 25 | Objective-C | CMake/source build | Objective-C shared-library dependency | library + CLI | libsshfling_objc.so and sshfling-objective-c validation artifacts | PASS | PASS | PASS | The focused systems validator compiles warning-clean shared-library, CLI, and consumer binaries. |
 | C91-025-02 | 25 | Objective-C | CMake/source build | versioned source-archive publication | source package | sshfling-objective-c-VERSION.tar.gz | PASS | PASS | PASS | A PASS source-archive row for objective-c, including inventory digest and repeat-build identity, is recorded in dist/sshfling-systems-languages-VERSION-validation.tsv. |
 | C91-026-01 | 26 | Groovy | Maven | Groovy/JVM dependency | library | io.sshfling:sshfling-cli:VERSION | PASS | PASS | PASS | The package-java validator supplies the detailed PASS evidence below. |
@@ -263,6 +264,7 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | roc-source-package | Roc | Roc source package | Roc package and application | library + CLI | sshfling-roc-VERSION.tar.gz | `package-functional-languages` |
 | smalltalk-gnu-package | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | sshfling-smalltalk-VERSION.tar.gz | `package-functional-languages` |
 | apl-gnu-package | APL | GNU APL | GNU APL source package | library | sshfling-apl-VERSION.tar.gz | `package-functional-languages` |
+| matlab-octave-package | MATLAB | GNU Octave | MATLAB-compatible source package | library | sshfling-matlab-VERSION.tar.gz | `package-functional-languages` |
 
 ## Detailed Eight-Check Verification Cells
 
@@ -1020,3 +1022,11 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | LD-94-06 | APL | GNU APL | GNU APL source package | library | Public interface | PASS | SSHFling∆Run accepts a nested APL argument vector and returns the canonical runtime status. |
 | LD-94-07 | APL | GNU APL | GNU APL source package | library | Version contract | PASS | The focused APL consumer must print the exact SSHFling release version. |
 | LD-94-08 | APL | GNU APL | GNU APL source package | library | Runtime assets/workflow | PASS | The consumer validates version, init, invalid option, missing runtime, package removal, and import absence. |
+| LD-95-01 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Source surface | PASS | Tracked MATLAB package sources and its public surface live under packaging/scientific-languages/matlab. |
+| LD-95-02 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Package metadata | PASS | matlab-package.json declares the GNU Octave validation boundary and explicitly does not claim MathWorks MATLAB runtime conformance. |
+| LD-95-03 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Package build | PASS | The per-language validator executes octave-cli against a deterministic MATLAB-compatible source archive. |
+| LD-95-04 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Artifact contents | PASS | The staged source package contains +sshfling package functions, consumer script, license, README, and the byte-checked canonical runtime bundle. |
+| LD-95-05 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Isolated consumer | PASS | A clean external Octave consumer imports the extracted +sshfling package outside the repository source tree. |
+| LD-95-06 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Public interface | PASS | sshfling.run accepts a cell array of character-vector arguments and returns the canonical runtime status. |
+| LD-95-07 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Version contract | PASS | The focused MATLAB consumer must print the exact SSHFling release version. |
+| LD-95-08 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Runtime assets/workflow | PASS | The consumer validates version, init, invalid option, missing runtime, package removal, and import absence. |

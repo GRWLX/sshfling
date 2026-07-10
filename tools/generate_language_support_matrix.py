@@ -396,7 +396,13 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         PASS_DOTNET_EVIDENCE,
         "The language consumes the shipped .NET library through a clean local NuGet restore and runtime workflow.",
     ),
-    domain_blocked("MATLAB", "A ProcessBuilder-based MATLAB launcher candidate is tracked under packaging/domain-languages/matlab.", "A licensed MATLAB runtime and configured JVM are required for conformance and packaging evidence."),
+    row(
+        "MATLAB",
+        "PASS",
+        "A GNU Octave-validated MATLAB-compatible +sshfling package, runtime assets, and an external consumer are tracked under packaging/scientific-languages/matlab.",
+        PASS_FUNCTIONAL_LANGUAGES_EVIDENCE,
+        "octave-cli executes the +sshfling package and external consumer against the canonical runtime; MathWorks MATLAB runtime conformance remains outside this PASS claim.",
+    ),
     row("Objective-C", "PASS", "Objective-C package metadata and runtime sources are tracked under packaging/systems-languages/objective-c.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "The Objective-C shared library, external consumer, CLI runtime, and exit workflows compile and execute in an isolated build tree."),
     row(
         "Groovy",

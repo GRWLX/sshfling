@@ -223,7 +223,7 @@ my $status = SSHFling::run('--version');
 
 ## Generated First-91 Library Surface Index
 
-This index contains 78 explicit library/module surfaces: 74 PASS and 4 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
+This index contains 78 explicit library/module surfaces: 75 PASS and 3 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
 
 | Order | Language | Package manager | Deployment | Interface | Status | Artifact | Evidence or blocker |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
@@ -254,7 +254,7 @@ This index contains 78 explicit library/module surfaces: 74 PASS and 4 BLOCKED. 
 | 22 | Scala | Maven | Scala 3 JVM dependency | library | PASS | io.sshfling:sshfling-cli:VERSION | The package-java validator supplies the detailed PASS evidence below. |
 | 22 | Scala | Gradle | Scala 3 JVM dependency | library | PASS | io.sshfling:sshfling-cli:VERSION | The package-java validator supplies the detailed PASS evidence below. |
 | 23 | Visual Basic/.NET | NuGet | PackageReference library | library | PASS | SSHFling.VERSION.nupkg | The package-dotnet validator supplies the detailed PASS evidence below. |
-| 24 | MATLAB | MATLAB package folder | ProcessBuilder launcher package | library | BLOCKED | tracked +sshfling candidate; publication disabled | BLOCKED runtime-validation: a licensed MATLAB runtime and configured JVM are required for conformance |
+| 24 | MATLAB | GNU Octave | MATLAB-compatible source package | library | PASS | sshfling-matlab-VERSION.tar.gz | The per-language validator executes octave-cli against a deterministic MATLAB-compatible source archive. |
 | 25 | Objective-C | CMake/source build | Objective-C shared-library dependency | library + CLI | PASS | libsshfling_objc.so and sshfling-objective-c validation artifacts | The focused systems validator compiles warning-clean shared-library, CLI, and consumer binaries. |
 | 26 | Groovy | Maven | Groovy/JVM dependency | library | PASS | io.sshfling:sshfling-cli:VERSION | The package-java validator supplies the detailed PASS evidence below. |
 | 26 | Groovy | Gradle | Groovy/JVM dependency | library | PASS | io.sshfling:sshfling-cli:VERSION | The package-java validator supplies the detailed PASS evidence below. |
