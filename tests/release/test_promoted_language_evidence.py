@@ -18,7 +18,12 @@ SPEC.loader.exec_module(validator)
 
 
 class PromotedLanguageEvidenceTests(unittest.TestCase):
-    def write_functional(self, path: Path, blocked: str | None = None) -> None:
+    def write_functional(
+        self,
+        path: Path,
+        blocked: str | None = None,
+        wrong_output: str | None = None,
+    ) -> None:
         fields = [
             "timestamp_utc", "language", "result", "phase", "status", "cwd",
             "command", "stdout", "stderr", "detail",
@@ -51,7 +56,10 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
                         "result": "PASS",
                         "phase": "exact-version-output",
                         "status": "0",
-                        "detail": "expected=sshfling 0.1.16;actual=sshfling 0.1.16",
+                        "detail": (
+                            "expected=sshfling 0.1.16;"
+                            f"actual=sshfling {'9.9.9' if language == wrong_output else '0.1.16'}"
+                        ),
                     }
                 )
                 writer.writerow(
@@ -64,7 +72,12 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
                     }
                 )
 
-    def write_systems(self, path: Path, blocked: tuple[str, str] | None = None) -> None:
+    def write_systems(
+        self,
+        path: Path,
+        blocked: tuple[str, str] | None = None,
+        contradictory_zig: bool = False,
+    ) -> None:
         with path.open("w", encoding="utf-8", newline="") as stream:
             writer = csv.writer(stream, delimiter="\t", lineterminator="\n")
             writer.writerow(["record", "subject", "phase", "status", "detail"])
@@ -93,6 +106,8 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
                     elif phase == "runtime-validation":
                         detail = "builder_exit=0;mode=build-only;capabilities=compile"
                     writer.writerow(["RESULT", language, phase, "PASS", detail])
+            if contradictory_zig:
+                writer.writerow(["RESULT", "zig", "cli-version", "FAIL", "output=sshfling 9.9.9"])
 
     def test_accepts_complete_pass_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -134,6 +149,27 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
             errors = validator.validate(functional, systems, "9.9.9")
             self.assertTrue(any("version" in error or "output" in error for error in errors))
 
+    def test_rejects_mismatched_functional_actual_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            functional = root / "functional.tsv"
+            systems = root / "systems.tsv"
+            self.write_functional(functional, wrong_output="julia")
+            self.write_systems(systems)
+            errors = validator.validate(functional, systems, "0.1.16")
+            self.assertIn("julia: lacks exact version 0.1.16 output evidence", errors)
+
+    def test_rejects_contradictory_zig_phase_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            functional = root / "functional.tsv"
+            systems = root / "systems.tsv"
+            self.write_functional(functional)
+            self.write_systems(systems, contradictory_zig=True)
+            errors = validator.validate(functional, systems, "0.1.16")
+            self.assertIn("zig: cli-version is not PASS", errors)
+            self.assertIn("zig: contradictory systems failure evidence", errors)
+
     def test_release_workflows_depend_on_strict_catalog_evidence(self) -> None:
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn("package-language-catalog-strict:", makefile)
@@ -146,6 +182,13 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
         self.assertIn("tools/provision-promoted-language-runtimes.sh", runtime_workflow)
         self.assertIn("make package-language-catalog-strict", runtime_workflow)
         self.assertIn("name: language-catalog-packages", runtime_workflow)
+
+        provisioner = (REPO_ROOT / "tools/provision-promoted-language-runtimes.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("907daf191ad3f1cf7e5190ec4f44eb29cd54ba21", provisioner)
+        self.assertIn("11c4df319b18ed26946962883e7646e3d510c63b19dafb064a5060b792e549e0", provisioner)
+        self.assertIn("janet jpm zig", provisioner)
 
         for relative in (
             ".github/workflows/release-packages.yml",

@@ -586,8 +586,9 @@ def isolated_environment(work: Path, extra: dict[str, str] | None = None) -> dic
     cache = work / "cache"
     config = work / "config"
     data = work / "data"
+    state = work / "state"
     temporary = work / "tmp"
-    for directory in (home, cache, config, data, temporary):
+    for directory in (home, cache, config, data, state, temporary):
         directory.mkdir(parents=True, exist_ok=True)
     environment = os.environ.copy()
     for name in UNSET_RUNTIME_ENV:
@@ -598,6 +599,7 @@ def isolated_environment(work: Path, extra: dict[str, str] | None = None) -> dic
             "XDG_CACHE_HOME": str(cache),
             "XDG_CONFIG_HOME": str(config),
             "XDG_DATA_HOME": str(data),
+            "XDG_STATE_HOME": str(state),
             "TMPDIR": str(temporary),
             "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONUNBUFFERED": "1",
@@ -895,10 +897,11 @@ class PackageRunner:
         )
 
     def assert_version_output(self, completed: subprocess.CompletedProcess[str]) -> None:
+        expected = f"sshfling {self.version}"
         self.check(
             "exact-version-output",
-            completed.stdout == f"sshfling {self.version}\n",
-            f"expected={f'sshfling {self.version}'.encode()!r};actual={completed.stdout.encode()!r}",
+            completed.stdout == f"{expected}\n",
+            f"expected={expected};actual={completed.stdout.removesuffix(chr(10))}",
         )
 
     def run_status_cases(
@@ -1099,7 +1102,8 @@ class PackageRunner:
 
         shutil.rmtree(prefix)
         package_env.unlink()
-        shutil.rmtree(self.work / "home" / ".cabal" / "store", ignore_errors=True)
+        shutil.rmtree(self.work / "home", ignore_errors=True)
+        shutil.rmtree(self.work / "state", ignore_errors=True)
         shutil.rmtree(source)
         self.check("cli-removed", not cli.exists(), f"path={cli}")
         self.command(
@@ -1270,7 +1274,7 @@ class PackageRunner:
         unrelated = self.work / "unrelated-cwd"
         unrelated.mkdir()
         command = lambda args: [self.tools["jconsole"], consumer, *args]
-        smoke = self.work / "smoke project's"
+        smoke = self.work / "smoke project's\nnewline"
         self.run_status_cases(command, cwd=unrelated, env=env, smoke=smoke)
         self.check(
             "consumer-init-cwd-isolation",

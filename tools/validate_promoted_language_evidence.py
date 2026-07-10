@@ -85,12 +85,15 @@ def validate(functional_path: Path, systems_path: Path, version: str) -> list[st
             or detail_fields(bundles[0].get("detail", "")).get("version") != version
         ):
             errors.append(f"{language}: canonical bundle is not version {version}")
-        version_outputs = [
-            row
-            for row in selected
-            if row.get("phase") == "exact-version-output" and row.get("result") == "PASS"
-        ]
-        if not any(f"sshfling {version}" in row.get("detail", "") for row in version_outputs):
+        version_outputs = [row for row in selected if row.get("phase") == "exact-version-output"]
+        expected_output = f"sshfling {version}"
+        if not version_outputs or any(
+            row.get("result") != "PASS"
+            or row.get("status") != "0"
+            or detail_fields(row.get("detail", "")).get("expected") != expected_output
+            or detail_fields(row.get("detail", "")).get("actual") != expected_output
+            for row in version_outputs
+        ):
             errors.append(f"{language}: lacks exact version {version} output evidence")
         if any(row.get("result") in {"FAIL", "BLOCKED"} for row in selected):
             errors.append(f"{language}: contradictory functional FAIL/BLOCKED evidence")
@@ -123,17 +126,23 @@ def validate(functional_path: Path, systems_path: Path, version: str) -> list[st
 
     for language in SYSTEM_BUILD_LANGUAGES:
         selected = [row for row in systems if row.get("subject") == language]
-        by_phase = {row.get("phase"): row for row in selected}
-        for phase in (
+        required_phases = (
             "source-archive",
             "cli-version",
             "init-template",
             "invalid-option",
             "missing-runtime",
             "runtime-validation",
-        ):
-            if by_phase.get(phase, {}).get("status") != "PASS":
+        )
+        by_phase: dict[str, dict[str, str]] = {}
+        for phase in required_phases:
+            phase_rows = [row for row in selected if row.get("phase") == phase]
+            if len(phase_rows) != 1 or phase_rows[0].get("status") != "PASS":
                 errors.append(f"{language}: {phase} is not PASS")
+            elif len(phase_rows) == 1:
+                by_phase[phase] = phase_rows[0]
+        if any(row.get("status") in {"FAIL", "BLOCKED", "INCOMPLETE"} for row in selected):
+            errors.append(f"{language}: contradictory systems failure evidence")
         output = detail_fields(by_phase.get("cli-version", {}).get("detail", "")).get("output")
         if output != f"sshfling {version}":
             errors.append(f"{language}: cli-version output is not sshfling {version}")

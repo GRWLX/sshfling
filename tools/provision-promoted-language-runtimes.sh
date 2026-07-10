@@ -57,6 +57,22 @@ download \
   "c09ac75730de76ad2f3e28eb054ee69c7ebb56ec95ae20234c0a0c37e57de681" \
   "$janet_archive"
 install_tar "$janet_archive" "$destination/janet"
+janet_root="$destination/janet/janet-v1.41.2-linux"
+
+jpm_archive="$download_dir/jpm-907daf191ad3f1cf7e5190ec4f44eb29cd54ba21.tar.gz"
+download \
+  "https://codeload.github.com/janet-lang/jpm/tar.gz/907daf191ad3f1cf7e5190ec4f44eb29cd54ba21" \
+  "11c4df319b18ed26946962883e7646e3d510c63b19dafb064a5060b792e549e0" \
+  "$jpm_archive"
+install_tar "$jpm_archive" "$destination/jpm" 1
+(
+  cd "$destination/jpm"
+  PATH="$janet_root/bin:$PATH" \
+    PREFIX="$janet_root" \
+    JANET_PATH="$janet_root/lib/janet" \
+    JANET_LIBPATH="$janet_root/lib" \
+    "$janet_root/bin/janet" bootstrap.janet >&2
+)
 
 zig_archive="$download_dir/zig-linux-x86_64-0.13.0.tar.xz"
 download \
@@ -112,7 +128,7 @@ path_entries=(
   "$destination/ponyc/bin"
 )
 
-for executable in julia jconsole janet zig v sshfling-wasi-clang odin ponyc; do
+for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc; do
   found=0
   for entry in "${path_entries[@]}"; do
     if [[ -x "$entry/$executable" ]]; then
