@@ -257,6 +257,16 @@ exec "$root/usr/bin/gst-package" --kernel-dir="$root/usr/share/gnu-smalltalk/ker
 EOF
 chmod +x "$smalltalk_root/bin/gst" "$smalltalk_root/bin/gst-package"
 
+apl_root="$destination/apl"
+apl_deb="$download_dir/apl_2.0-1_amd64.deb"
+download \
+  "https://ftp.gnu.org/gnu/apl/apl_2.0-1_amd64.deb" \
+  "eb09ce5761a8c989f1993d451200527a3ebf0f253543e1aaf8fbe53b6a9bdb7b" \
+  "$apl_deb"
+rm -rf -- "$apl_root"
+install -d "$apl_root"
+extract_deb "$apl_deb" "$apl_root"
+
 path_entries=(
   "$destination/julia/julia-1.10.10/bin"
   "$destination/j/j9.6/bin"
@@ -271,10 +281,11 @@ path_entries=(
   "$destination/red/bin"
   "$roc_root"
   "$destination/smalltalk/bin"
+  "$destination/apl/usr/bin"
   "/usr/bin"
 )
 
-for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring red roc gst gst-package bal chpl mason; do
+for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring red roc gst gst-package apl bal chpl mason; do
   found=0
   for entry in "${path_entries[@]}"; do
     if [[ -x "$entry/$executable" ]]; then

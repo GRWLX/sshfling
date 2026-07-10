@@ -2,10 +2,11 @@
   "name": "grwlx-sshfling",
   "group": "grwlx",
   "version": "0.0.0",
-  "description": "Dyalog APL launcher for the bundled SSHFling runtime",
-  "source": "src/SSHFling.dyalog",
+  "description": "GNU APL launcher for the bundled SSHFling runtime",
+  "interpreter": "GNU APL",
+  "source": "src/sshfling.apl",
   "project_url": "https://github.com/GRWLX/sshfling",
   "license": "LicenseRef-Proprietary",
-  "minimum_dyalog_version": "19.0",
+  "minimum_gnu_apl_version": "2.0",
   "assets": ["runtime", "LICENSE", "README.md"]
 }

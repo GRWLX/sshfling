@@ -5,8 +5,8 @@ an explicit package manager or distribution mechanism, deployment type, interfac
 and artifact boundary. Maven and Gradle are separate JVM deployments, and real
 importable library surfaces are named rather than inferred from language names.
 
-Catalog outcomes: **67 PASS**, **8 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **142 explicit surface cells** (118 PASS, 8 BLOCKED, 16 NOT_APPLICABLE).
-Fully implemented runtime deployments retain **744 detailed PASS cells** across **93 surfaces**, including **76 validated library-capable surfaces**.
+Catalog outcomes: **68 PASS**, **7 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **142 explicit surface cells** (119 PASS, 7 BLOCKED, 16 NOT_APPLICABLE).
+Fully implemented runtime deployments retain **752 detailed PASS cells** across **94 surfaces**, including **77 validated library-capable surfaces**.
 
 A source-archive publication PASS proves deterministic archive creation and inventory
 only. It is deliberately separate from install, library-consumer, CLI, and runtime
@@ -129,8 +129,8 @@ TODO status audit: **0 row(s) differ** from current package evidence (none). The
 | C91-067-01 | 67 | Reason/ReScript | npm | CommonJS binding dependency | library consumer | sshfling-VERSION.tgz | PASS | PASS | PASS | The ReScript compiler emits a CommonJS module and the Node test validates its exported status and templates. |
 | C91-068-01 | 68 | Forth | Gforth/source package | loadable Forth source package | library + CLI | Forth words, native bridge, and cli.fs | PASS | PASS | PASS | The focused systems validator builds the native bridge and loads the Forth API with Gforth. |
 | C91-068-02 | 68 | Forth | Gforth/source package | versioned source-archive publication | source package | sshfling-forth-VERSION.tar.gz | PASS | PASS | PASS | A PASS source-archive row for forth, including inventory digest and repeat-build identity, is recorded in dist/sshfling-systems-languages-VERSION-validation.tsv. |
-| C91-069-01 | 69 | APL | Dyalog source package | versioned source-archive publication | source package | sshfling-apl-VERSION.tar.gz | PASS | BLOCKED | BLOCKED | PASS published-source-archive and published-source-inventory rows for apl are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
-| C91-069-02 | 69 | APL | Dyalog source package | Dyalog namespace package | library | sshfling-apl-VERSION.tar.gz | BLOCKED | BLOCKED | BLOCKED | BLOCKED runtime-validation: source publication passes, but the Dyalog interpreter is unavailable for package and consumer validation |
+| C91-069-01 | 69 | APL | GNU APL | GNU APL source package | library | sshfling-apl-VERSION.tar.gz | PASS | PASS | PASS | The per-language validator executes the pinned GNU APL runtime against a deterministic source archive. |
+| C91-069-02 | 69 | APL | GNU APL source package | versioned source-archive publication | source package | sshfling-apl-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for apl are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
 | C91-070-01 | 70 | J | J package | J addon dependency and command | library + CLI | sshfling-j-VERSION.tar.gz | PASS | PASS | PASS | The per-language validator installs the deterministic archive as an isolated J addon and runs its external consumer. |
 | C91-070-02 | 70 | J | J package | versioned source-archive publication | source package | sshfling-j-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for j are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
 | C91-071-01 | 71 | LabVIEW G | VIPM/LabVIEW project | System Exec VI integration | library VI + CLI adapter candidate | none | BLOCKED | BLOCKED | BLOCKED | BLOCKED runtime-validation: a licensed LabVIEW version/OS matrix and genuine VI package are required; no binary G source is fabricated |
@@ -262,6 +262,7 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | object-pascal-fpc-package | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | sshfling-object-pascal-VERSION.tar.gz | `package-systems-languages` |
 | roc-source-package | Roc | Roc source package | Roc package and application | library + CLI | sshfling-roc-VERSION.tar.gz | `package-functional-languages` |
 | smalltalk-gnu-package | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | sshfling-smalltalk-VERSION.tar.gz | `package-functional-languages` |
+| apl-gnu-package | APL | GNU APL | GNU APL source package | library | sshfling-apl-VERSION.tar.gz | `package-functional-languages` |
 
 ## Detailed Eight-Check Verification Cells
 
@@ -1011,3 +1012,11 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | LD-93-06 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Public interface | PASS | SSHFling class>>run: accepts a Smalltalk argument collection and returns the canonical runtime status. |
 | LD-93-07 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Version contract | PASS | The focused Smalltalk consumer must print the exact SSHFling release version. |
 | LD-93-08 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Runtime assets/workflow | PASS | The consumer validates version, init, invalid option, missing runtime, package removal, and import absence. |
+| LD-94-01 | APL | GNU APL | GNU APL source package | library | Source surface | PASS | Tracked APL package sources and its public surface live under packaging/scientific-languages/apl. |
+| LD-94-02 | APL | GNU APL | GNU APL source package | library | Package metadata | PASS | apl-package.json declares the GNU APL interpreter boundary, package identity, source entry, and bundled runtime assets. |
+| LD-94-03 | APL | GNU APL | GNU APL source package | library | Package build | PASS | The per-language validator executes the pinned GNU APL runtime against a deterministic source archive. |
+| LD-94-04 | APL | GNU APL | GNU APL source package | library | Artifact contents | PASS | The staged source package contains GNU APL source, consumer script, license, README, and the byte-checked canonical runtime bundle. |
+| LD-94-05 | APL | GNU APL | GNU APL source package | library | Isolated consumer | PASS | A clean external APL consumer loads the extracted package source outside the repository source tree. |
+| LD-94-06 | APL | GNU APL | GNU APL source package | library | Public interface | PASS | SSHFling∆Run accepts a nested APL argument vector and returns the canonical runtime status. |
+| LD-94-07 | APL | GNU APL | GNU APL source package | library | Version contract | PASS | The focused APL consumer must print the exact SSHFling release version. |
+| LD-94-08 | APL | GNU APL | GNU APL source package | library | Runtime assets/workflow | PASS | The consumer validates version, init, invalid option, missing runtime, package removal, and import absence. |

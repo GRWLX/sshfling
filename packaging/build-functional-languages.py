@@ -450,10 +450,29 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
             raise ValidationFailure("ring: POSIX status wrapper is not executable/complete")
     elif identifier == "apl":
         metadata = require_json(root / "apl-package.json")
-        if metadata.get("version") != "0.0.0" or "runtime" not in metadata.get("assets", []):
+        if (
+            metadata.get("version") != "0.0.0"
+            or metadata.get("interpreter") != "GNU APL"
+            or metadata.get("source") != "src/sshfling.apl"
+            or "runtime" not in metadata.get("assets", [])
+        ):
             raise ValidationFailure("apl: package version/assets contract is invalid")
-        require_tokens(root / "src/SSHFling.dyalog", ":Namespace SSHFling", "∇ status←Run args")
-        require_tokens(root / "test/consumer.dyalog", "⎕FIX 'file://src/SSHFling.dyalog'", "SSHFlingConsumer.Run", "⎕OFF")
+        require_tokens(
+            root / "src/sshfling.apl",
+            "SSHFling∆PackageVersion",
+            "SSHFling∆Run",
+            "SSHFLING_RUNTIME",
+            "SSHFLING_TEMPLATE_DIR",
+            "⎕FIO[24]",
+            "SSHFling∆ApplicationArgs",
+            "SSHFling∆WriteStatus",
+        )
+        require_tokens(
+            root / "test/consumer.apl",
+            "SSHFling∆Run",
+            "SSHFling∆ApplicationArgs",
+            "SSHFling∆WriteStatus",
+        )
     elif identifier == "j":
         require_tokens(root / "manifest.ijs", "VERSION=: '0.0.0'", "runtime/", "src/sshfling.ijs")
         api = require_tokens(root / "src/sshfling.ijs", "run=: 3 : 0", "jpath '~addons/sshfling'")
@@ -1369,6 +1388,84 @@ class PackageRunner:
         )
         self.check("package-removed", not source.exists(), f"path={source}")
 
+    def write_apl_status_wrapper(self, path: Path, source: Path, consumer: Path, package_root: Path) -> None:
+        apl = shlex.quote(self.tools["apl"])
+        source_arg = shlex.quote(str(source))
+        consumer_arg = shlex.quote(str(consumer))
+        package_arg = shlex.quote(str(package_root))
+        path.write_text(
+            "#!/usr/bin/env sh\n"
+            "set -u\n"
+            'status_file="${TMPDIR:-/tmp}/sshfling-apl-status.$$"\n'
+            'stdout_file="${TMPDIR:-/tmp}/sshfling-apl-stdout.$$"\n'
+            "cleanup() {\n"
+            '    rm -f -- "$status_file" "$stdout_file"\n'
+            "}\n"
+            "emit_stdout() {\n"
+            '    if [ -f "$stdout_file" ]; then\n'
+            '        sed \'${/^$/d;}\' "$stdout_file"\n'
+            "    fi\n"
+            "}\n"
+            "trap cleanup EXIT HUP INT TERM\n"
+            "SSHFLING_APL_STATUS_FILE=\"$status_file\" \\\n"
+            f"SSHFLING_PACKAGE_ROOT=\"${{SSHFLING_PACKAGE_ROOT:-{package_arg}}}\" \\\n"
+            f"{apl} -s --OFF -f {source_arg} -f {consumer_arg} -- \"$@\" >\"$stdout_file\"\n"
+            "apl_status=$?\n"
+            'if [ "$apl_status" -ne 0 ]; then\n'
+            "    emit_stdout\n"
+            '    exit "$apl_status"\n'
+            "fi\n"
+            'if [ ! -s "$status_file" ]; then\n'
+            "    emit_stdout\n"
+            "    exit 1\n"
+            "fi\n"
+            "status=$(sed -n '1p' \"$status_file\")\n"
+            'case "$status" in\n'
+            "    ''|*[!0-9]*)\n"
+            "        emit_stdout\n"
+            "        exit 1\n"
+            "        ;;\n"
+            "esac\n"
+            "emit_stdout\n"
+            'exit "$status"\n',
+            encoding="utf-8",
+        )
+        path.chmod(0o755)
+
+    def validate_apl(self) -> None:
+        self.probe("apl-version", [self.tools["apl"], "--version"])
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "source")
+        self.verify_runtime(source / "runtime")
+
+        env = {"SSHFLING_PACKAGE_ROOT": str(source)}
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        consumer = self.work / "external-consumer.apl"
+        consumer.write_text(
+            "Status←SSHFling∆Run SSHFling∆ApplicationArgs ⎕ARG\n"
+            "SSHFling∆WriteStatus Status\n",
+            encoding="utf-8",
+        )
+        wrapper = self.work / "external-apl-consumer"
+        self.write_apl_status_wrapper(wrapper, source / "src/sshfling.apl", consumer, source)
+        self.run_status_cases(lambda args: [wrapper, *args], cwd=unrelated, env=env)
+
+        packaged = self.work / "packaged-apl-consumer"
+        self.write_apl_status_wrapper(packaged, source / "src/sshfling.apl", source / "test/consumer.apl", source)
+        packaged_version = self.command("packaged-consumer-version", [packaged, "--version"], cwd=unrelated, env=env)
+        self.assert_version_output(packaged_version)
+
+        shutil.rmtree(source)
+        self.check("package-removed", not source.exists(), f"path={source}")
+        self.command(
+            "import-absence",
+            [wrapper, "--version"],
+            cwd=unrelated,
+            env=env,
+            expected=lambda status: status != 0,
+        )
+
     def validate_j(self) -> None:
         self.probe(
             "j-version",
@@ -2114,7 +2211,7 @@ TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "roc": ("roc",),
     "janet": ("janet", "jpm"),
     "ring": ("ring",),
-    "apl": ("dyalog",),
+    "apl": ("apl",),
     "j": ("jconsole",),
     "julia": ("julia",),
     "r": ("R", "Rscript"),
@@ -2129,6 +2226,7 @@ NATIVE_RUNNERS = {
     "haskell",
     "janet",
     "ring",
+    "apl",
     "ballerina",
     "roc",
     "j",

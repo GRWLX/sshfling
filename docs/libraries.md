@@ -223,7 +223,7 @@ my $status = SSHFling::run('--version');
 
 ## Generated First-91 Library Surface Index
 
-This index contains 78 explicit library/module surfaces: 73 PASS and 5 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
+This index contains 78 explicit library/module surfaces: 74 PASS and 4 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
 
 | Order | Language | Package manager | Deployment | Interface | Status | Artifact | Evidence or blocker |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
@@ -291,7 +291,7 @@ This index contains 78 explicit library/module surfaces: 73 PASS and 5 BLOCKED. 
 | 66 | PureScript | npm | Node FFI dependency | library consumer | PASS | sshfling-VERSION.tgz | The PureScript compiler validates the foreign imports and the generated module executes under Node. |
 | 67 | Reason/ReScript | npm | CommonJS binding dependency | library consumer | PASS | sshfling-VERSION.tgz | The ReScript compiler emits a CommonJS module and the Node test validates its exported status and templates. |
 | 68 | Forth | Gforth/source package | loadable Forth source package | library + CLI | PASS | Forth words, native bridge, and cli.fs | The focused systems validator builds the native bridge and loads the Forth API with Gforth. |
-| 69 | APL | Dyalog source package | Dyalog namespace package | library | BLOCKED | sshfling-apl-VERSION.tar.gz | BLOCKED runtime-validation: source publication passes, but the Dyalog interpreter is unavailable for package and consumer validation |
+| 69 | APL | GNU APL | GNU APL source package | library | PASS | sshfling-apl-VERSION.tar.gz | The per-language validator executes the pinned GNU APL runtime against a deterministic source archive. |
 | 70 | J | J package | J addon dependency and command | library + CLI | PASS | sshfling-j-VERSION.tar.gz | The per-language validator installs the deterministic archive as an isolated J addon and runs its external consumer. |
 | 71 | LabVIEW G | VIPM/LabVIEW project | System Exec VI integration | library VI + CLI adapter candidate | BLOCKED | none | BLOCKED runtime-validation: a licensed LabVIEW version/OS matrix and genuine VI package are required; no binary G source is fabricated |
 | 73 | Q/KDB+ | KX q package | q namespace package | library | BLOCKED | sshfling-q-VERSION.tar.gz | BLOCKED runtime-validation: source publication passes, but the q runtime is unavailable for package and consumer validation |

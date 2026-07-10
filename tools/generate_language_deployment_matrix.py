@@ -2167,6 +2167,32 @@ DEPLOYMENTS.append(
     )
 )
 
+DEPLOYMENTS.append(
+    validated_batch_package(
+        "apl-gnu-package",
+        "APL",
+        "GNU APL",
+        "GNU APL source package",
+        "library",
+        "sshfling-apl-VERSION.tar.gz",
+        "package-functional-languages",
+        "packaging/scientific-languages/apl",
+        [
+            "packaging/scientific-languages/apl/apl-package.json",
+            "packaging/scientific-languages/apl/src/sshfling.apl",
+            "packaging/scientific-languages/apl/test/consumer.apl",
+            "packaging/build-functional-languages.py",
+            "tools/provision-promoted-language-runtimes.sh",
+        ],
+        "apl-package.json declares the GNU APL interpreter boundary, package identity, source entry, and bundled runtime assets.",
+        "The per-language validator executes the pinned GNU APL runtime against a deterministic source archive.",
+        "The staged source package contains GNU APL source, consumer script, license, README, and the byte-checked canonical runtime bundle.",
+        "A clean external APL consumer loads the extracted package source outside the repository source tree.",
+        "SSHFling∆Run accepts a nested APL argument vector and returns the canonical runtime status.",
+        "The consumer validates version, init, invalid option, missing runtime, package removal, and import absence.",
+    )
+)
+
 
 FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Python", "PASS"),
@@ -2237,7 +2263,7 @@ FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("PureScript", "PASS"),
     ("Reason/ReScript", "PASS"),
     ("Forth", "PASS"),
-    ("APL", "BLOCKED"),
+    ("APL", "PASS"),
     ("J", "PASS"),
     ("LabVIEW G", "BLOCKED"),
     ("Scratch", "NOT_APPLICABLE"),
@@ -2341,7 +2367,7 @@ FUNCTIONAL_SOURCE_PACKAGES = (
     ("Scheme/Racket", "scheme", "GNU Guile/Autotools", "packaging/functional-languages/scheme"),
     ("Prolog", "prolog", "SWI-Prolog pack", "packaging/functional-languages/prolog"),
     ("Smalltalk", "smalltalk", "GNU Smalltalk package", "packaging/functional-languages/smalltalk"),
-    ("APL", "apl", "Dyalog source package", "packaging/scientific-languages/apl"),
+    ("APL", "apl", "GNU APL source package", "packaging/scientific-languages/apl"),
     ("J", "j", "J package", "packaging/scientific-languages/j"),
     ("Q/KDB+", "q", "KX q package", "packaging/scientific-languages/q"),
     ("Janet", "janet", "JPM", "packaging/functional-languages/janet"),
@@ -2535,14 +2561,14 @@ CATALOG_SURFACES.extend(
             ["packaging/systems-languages/webassembly-wasi/package.toml", "packaging/systems-languages/webassembly-wasi/wit/sshfling.wit", "packaging/build-systems-languages.sh"],
         ),
         blocked_runtime(
-            "apl-dyalog-runtime",
+            "apl-gnu-runtime",
             "APL",
-            "Dyalog source package",
-            "Dyalog namespace package",
+            "GNU APL",
+            "GNU APL source package",
             "library",
             "sshfling-apl-VERSION.tar.gz",
-            "source publication passes, but the Dyalog interpreter is unavailable for package and consumer validation",
-            ["packaging/scientific-languages/apl/apl-package.json", "packaging/scientific-languages/apl/src/SSHFling.dyalog", "packaging/build-functional-languages.py"],
+            "source publication passes, but the GNU APL interpreter is unavailable for package and consumer validation",
+            ["packaging/scientific-languages/apl/apl-package.json", "packaging/scientific-languages/apl/src/sshfling.apl", "packaging/build-functional-languages.py"],
         ),
         blocked_runtime(
             "j-package-runtime",
@@ -2695,6 +2721,7 @@ _PROMOTED_RUNTIME_SURFACES = {
     "cfml-commandbox-runtime",
     "hack-hhvm-runtime",
     "smalltalk-package-runtime",
+    "apl-gnu-runtime",
     "chapel-mason-runtime",
     "ballerina-package-runtime",
     "roc-package-runtime",
