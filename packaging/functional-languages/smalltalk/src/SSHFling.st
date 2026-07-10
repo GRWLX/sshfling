@@ -7,17 +7,25 @@ Object subclass: SSHFling [
         ^(value isNil or: [value isEmpty]) ifTrue: [fallback value] ifFalse: [value]
     ]
 
+    SSHFling class >> packageVersion [
+        ^'0.0.0'
+    ]
+
+    SSHFling class >> pathSeparator [
+        ^Directory pathSeparator asString
+    ]
+
     SSHFling class >> runtimePath [
         ^self configured: 'SSHFLING_RUNTIME' ifAbsent: [
             (self configured: 'SSHFLING_PACKAGE_ROOT' ifAbsent: [Directory working name]),
-            Directory pathSeparator, 'runtime', Directory pathSeparator, 'sshfling.py'
+            self pathSeparator, 'runtime', self pathSeparator, 'sshfling.py'
         ]
     ]
 
     SSHFling class >> templateDirectory [
         ^self configured: 'SSHFLING_TEMPLATE_DIR' ifAbsent: [
             (self configured: 'SSHFLING_PACKAGE_ROOT' ifAbsent: [Directory working name]),
-            Directory pathSeparator, 'runtime', Directory pathSeparator, 'templates'
+            self pathSeparator, 'runtime', self pathSeparator, 'templates'
         ]
     ]
 
@@ -33,10 +41,12 @@ Object subclass: SSHFling [
     ]
 
     SSHFling class >> run: arguments [
-        | python pieces quoted status |
+        | python runtime pieces quoted status |
         (arguments allSatisfy: [:each | each isString]) ifFalse: [^2].
         python := self configured: 'SSHFLING_PYTHON' ifAbsent: ['python3'].
-        pieces := {python. self runtimePath}, arguments.
+        runtime := self runtimePath.
+        (File exists: runtime) ifFalse: [^127].
+        pieces := {python. runtime}, arguments.
         quoted := pieces collect: [:each | self shellQuote: each].
         (quoted includes: nil) ifTrue: [^2].
         status := self system: (quoted inject: '' into: [:command :piece |

@@ -354,23 +354,24 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
         except ET.ParseError as error:
             raise ValidationFailure(f"smalltalk: invalid package.xml: {error}") from error
         package = tree.getroot()
-        if package.findtext("version") != "0.0.0" or package.findtext("filein") != "src/SSHFling.st":
+        if package.findtext("name") != "SSHFling":
             raise ValidationFailure("smalltalk: package identity/file-in contract is invalid")
         declared: set[str] = set()
+        package_files: set[str] = set()
         for node in package.findall("file"):
-            if node.text and node.text.startswith("runtime/"):
+            if not node.text:
+                continue
+            package_files.add(node.text)
+            if node.text.startswith("runtime/"):
                 declared.add(node.text.removeprefix("runtime/"))
-        for directory in package.findall("dir"):
-            name = directory.attrib.get("name", "")
-            for node in directory.findall("file"):
-                if node.text:
-                    declared.add(f"{name}/{node.text}".removeprefix("runtime/"))
+        if not {"src/SSHFling.st", "test/consumer.st"}.issubset(package_files):
+            raise ValidationFailure("smalltalk: package source/test files are not declared")
         if declared != canonical_files:
             raise ValidationFailure(
                 f"smalltalk: package bundle declaration differs: "
                 f"missing={sorted(canonical_files - declared)} extra={sorted(declared - canonical_files)}"
             )
-        require_tokens(root / "src/SSHFling.st", "SSHFling class >> run:", "SSHFLING_RUNTIME")
+        require_tokens(root / "src/SSHFling.st", "SSHFling class >> run:", "SSHFLING_RUNTIME", "packageVersion")
     elif identifier == "ballerina":
         metadata = require_toml(root / "Ballerina.toml")
         package = metadata.get("package")
@@ -1796,6 +1797,64 @@ class PackageRunner:
             expected=lambda status: status != 0,
         )
 
+    def validate_smalltalk(self) -> None:
+        self.probe("gst-version", [self.tools["gst"], "--version"])
+        self.probe("gst-package-version", [self.tools["gst-package"], "--version"])
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "source")
+        dist = self.work / "dist"
+        self.command(
+            "gst-package-dist",
+            [
+                self.tools["gst-package"],
+                f"--srcdir={source}",
+                "--dist",
+                "--copy",
+                "--all-files",
+                f"--distdir={dist}",
+                source / "package.xml",
+            ],
+            cwd=source,
+        )
+        package_root = dist / "SSHFling"
+        if not package_root.exists():
+            package_root = dist
+        self.check("gst-package-layout", (package_root / "src/SSHFling.st").is_file(), f"path={package_root}")
+        self.verify_runtime(package_root / "runtime")
+        consumer = self.work / "external-smalltalk-consumer.st"
+        consumer.write_text(
+            "ObjectMemory quit: (SSHFling run: Smalltalk arguments).\n",
+            encoding="utf-8",
+        )
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+        env = {"SSHFLING_PACKAGE_ROOT": str(package_root)}
+        command = lambda args: [
+            self.tools["gst"],
+            package_root / "src/SSHFling.st",
+            "-f",
+            consumer,
+            *args,
+        ]
+        self.run_status_cases(command, cwd=unrelated, env=env)
+        package_smoke = self.work / "package-consumer-smoke"
+        self.command(
+            "package-test-consumer",
+            [
+                self.tools["gst"],
+                package_root / "src/SSHFling.st",
+                "-f",
+                package_root / "test/consumer.st",
+                package_smoke,
+            ],
+            cwd=unrelated,
+            env=env,
+        )
+        self.verify_init(package_smoke)
+        shutil.rmtree(package_root)
+        self.check("package-removed", not package_root.exists(), f"path={package_root}")
+        self.check("import-absence", not (package_root / "src/SSHFling.st").exists(), f"path={package_root / 'src/SSHFling.st'}")
+
     def validate_r(self) -> None:
         self.probe("R-version", [self.tools["R"], "--version"])
         self.probe("Rscript-version", [self.tools["Rscript"], "--version"])
@@ -2078,6 +2137,7 @@ NATIVE_RUNNERS = {
     "common-lisp",
     "scheme",
     "prolog",
+    "smalltalk",
     "r",
     "erlang",
     "elixir",

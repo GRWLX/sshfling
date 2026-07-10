@@ -51,6 +51,12 @@ install_deb() {
   fi
 }
 
+extract_deb() {
+  local archive="$1"
+  local target="$2"
+  dpkg-deb -x "$archive" "$target"
+}
+
 ballerina_deb="$download_dir/ballerina-2201.12.0-swan-lake-linux-x64.deb"
 download \
   "https://github.com/ballerina-platform/ballerina-distribution/releases/download/v2201.12.0/ballerina-2201.12.0-swan-lake-linux-x64.deb" \
@@ -215,6 +221,42 @@ if [[ -z "$roc_root" || ! -x "$roc_root/roc" ]]; then
   exit 1
 fi
 
+smalltalk_root="$destination/smalltalk"
+rm -rf -- "$smalltalk_root"
+install -d "$smalltalk_root"
+smalltalk_debs=(
+  "https://deb.debian.org/debian/pool/main/g/gnu-smalltalk/gnu-smalltalk_3.2.5-1.3+b2_amd64.deb b39305547cb05754aecd94adf683e92f907cbb9259fd667e851651d69d558f35"
+  "https://deb.debian.org/debian/pool/main/g/gnu-smalltalk/libgst7_3.2.5-1.3+b2_amd64.deb 1e2973879aaf4a89555a10c7945b896348715c9c4b5da9cd10433c3ea8873af0"
+  "https://deb.debian.org/debian/pool/main/g/gnu-smalltalk/gnu-smalltalk-common_3.2.5-1.3_all.deb 24a86c61b9de359001729bf83600bb91eba1443dd114bd1eb8ba88167a641db4"
+  "https://deb.debian.org/debian/pool/main/libf/libffi/libffi7_3.3-6_amd64.deb 30ca89bfddae5fa6e0a2a044f22b6e50cd17c4bc6bc850c579819aeab7101f0f"
+  "https://deb.debian.org/debian/pool/main/g/gmp/libgmp10_6.2.1+dfsg-1+deb11u1_amd64.deb fc117ccb084a98d25021f7e01e4dfedd414fa2118fdd1e27d2d801d7248aebbc"
+  "https://deb.debian.org/debian/pool/main/libt/libtool/libltdl7_2.4.6-15_amd64.deb 52a0a21e06bb89038a3ab6949020228fbf9dd7897e027233cf0a8c2d111d6c10"
+  "https://deb.debian.org/debian/pool/main/r/readline/libreadline8_8.1-1_amd64.deb 162ba9fdcde81b5502953ed4d84b24e8ad4e380bbd02990ab1a0e3edffca3c22"
+  "https://deb.debian.org/debian/pool/main/libs/libsigsegv/libsigsegv2_2.13-1_amd64.deb c56a7108e1c6dca27b4db9cce5c7c2b0c9d961b3572a1d1fe89058388401bd2b"
+)
+for entry in "${smalltalk_debs[@]}"; do
+  read -r url sha256 <<<"$entry"
+  archive="$download_dir/${url##*/}"
+  download "$url" "$sha256" "$archive"
+  extract_deb "$archive" "$smalltalk_root"
+done
+install -d "$smalltalk_root/bin"
+cat >"$smalltalk_root/bin/gst" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LD_LIBRARY_PATH="$root/usr/lib/x86_64-linux-gnu:$root/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$root/usr/bin/gst" --kernel-directory "$root/usr/share/gnu-smalltalk/kernel" "$@"
+EOF
+cat >"$smalltalk_root/bin/gst-package" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LD_LIBRARY_PATH="$root/usr/lib/x86_64-linux-gnu:$root/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$root/usr/bin/gst-package" --kernel-dir="$root/usr/share/gnu-smalltalk/kernel" -I "$root/usr/lib/gnu-smalltalk/gst.im" "$@"
+EOF
+chmod +x "$smalltalk_root/bin/gst" "$smalltalk_root/bin/gst-package"
+
 path_entries=(
   "$destination/julia/julia-1.10.10/bin"
   "$destination/j/j9.6/bin"
@@ -228,10 +270,11 @@ path_entries=(
   "$destination/ring/bin"
   "$destination/red/bin"
   "$roc_root"
+  "$destination/smalltalk/bin"
   "/usr/bin"
 )
 
-for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring red roc bal chpl mason; do
+for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring red roc gst gst-package bal chpl mason; do
   found=0
   for entry in "${path_entries[@]}"; do
     if [[ -x "$entry/$executable" ]]; then

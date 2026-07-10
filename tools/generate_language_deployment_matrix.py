@@ -2142,6 +2142,31 @@ _roc_deployment["validation_evidence"] = (
 )
 DEPLOYMENTS.append(_roc_deployment)
 
+DEPLOYMENTS.append(
+    validated_batch_package(
+        "smalltalk-gnu-package",
+        "Smalltalk",
+        "GNU Smalltalk package",
+        "Smalltalk package dependency",
+        "library + CLI",
+        "sshfling-smalltalk-VERSION.tar.gz",
+        "package-functional-languages",
+        "packaging/functional-languages/smalltalk",
+        [
+            "packaging/functional-languages/smalltalk/package.xml",
+            "packaging/functional-languages/smalltalk/src/SSHFling.st",
+            "packaging/functional-languages/smalltalk/test/consumer.st",
+            "packaging/build-functional-languages.py",
+        ],
+        "package.xml declares the GNU Smalltalk package files, source file-in, test consumer, and bundled runtime assets.",
+        "The per-language validator runs gst-package --dist and executes GNU Smalltalk consumers with the pinned GST runtime.",
+        "The staged package distribution contains the Smalltalk source, consumer, and byte-checked canonical runtime bundle.",
+        "A clean external Smalltalk consumer files in the package source outside the source tree.",
+        "SSHFling class>>run: accepts a Smalltalk argument collection and returns the canonical runtime status.",
+        "The consumer validates version, init, invalid option, missing runtime, package removal, and import absence.",
+    )
+)
+
 
 FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Python", "PASS"),
@@ -2196,7 +2221,7 @@ FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Common Lisp", "PASS"),
     ("Scheme/Racket", "PASS"),
     ("Prolog", "PASS"),
-    ("Smalltalk", "BLOCKED"),
+    ("Smalltalk", "PASS"),
     ("Tcl", "PASS"),
     ("AWK", "PASS"),
     ("sed", "PASS"),
@@ -2669,6 +2694,7 @@ _PROMOTED_RUNTIME_SURFACES = {
     "pony-corral-runtime",
     "cfml-commandbox-runtime",
     "hack-hhvm-runtime",
+    "smalltalk-package-runtime",
     "chapel-mason-runtime",
     "ballerina-package-runtime",
     "roc-package-runtime",

@@ -223,7 +223,7 @@ my $status = SSHFling::run('--version');
 
 ## Generated First-91 Library Surface Index
 
-This index contains 78 explicit library/module surfaces: 72 PASS and 6 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
+This index contains 78 explicit library/module surfaces: 73 PASS and 5 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
 
 | Order | Language | Package manager | Deployment | Interface | Status | Artifact | Evidence or blocker |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
@@ -279,7 +279,7 @@ This index contains 78 explicit library/module surfaces: 72 PASS and 6 BLOCKED. 
 | 50 | Common Lisp | ASDF/Quicklisp | ASDF system dependency | library | PASS | sshfling-VERSION ASDF source archive | The per-language validator compiles the ASDF system from an isolated source registry. |
 | 51 | Scheme/Racket | GNU Guile/Autotools | Guile module source package | library + CLI | PASS | sshfling-guile-VERSION.tar.gz | The per-language validator builds a dist archive, configures it, runs checks, and installs to an isolated prefix. |
 | 52 | Prolog | SWI-Prolog pack | Prolog pack dependency | library | PASS | sshfling-VERSION.tgz Prolog pack | The per-language validator archives and pack-installs the package into an isolated directory. |
-| 53 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | BLOCKED | sshfling-smalltalk-VERSION.tar.gz | BLOCKED runtime-validation: source publication passes, but gst and gst-package are unavailable for install and consumer validation |
+| 53 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | PASS | sshfling-smalltalk-VERSION.tar.gz | The per-language validator runs gst-package --dist and executes GNU Smalltalk consumers with the pinned GST runtime. |
 | 54 | Tcl | Tcl package archive | versioned source package | library + CLI | PASS | sshfling-tcl-VERSION.tar.gz | The package-scripting-languages validator supplies the detailed PASS evidence below. |
 | 55 | AWK | source archive | mawk-compatible source package | library + CLI | PASS | sshfling-awk-VERSION.tar.gz | The package-scripting-languages validator supplies the detailed PASS evidence below. |
 | 57 | Zsh | source archive | sourceable shell module package | source module + CLI | PASS | sshfling-zsh-VERSION.tar.gz | The package-scripting-languages validator supplies the detailed PASS evidence below. |

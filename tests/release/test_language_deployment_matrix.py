@@ -92,7 +92,6 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             by_language.setdefault(cell["language"], []).append(cell)
 
         for language in (
-            "Smalltalk",
             "APL",
             "Q/KDB+",
         ):
@@ -135,6 +134,7 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "Ballerina",
             "Roc",
             "Hack",
+            "Smalltalk",
         ):
             cells = by_language[language]
             self.assertEqual(matrix.derived_catalog_status(cells), "PASS", language)
@@ -203,6 +203,7 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "Angular",
             "HTML/CSS",
             "Hack",
+            "Smalltalk",
             "Tcl",
             "AWK",
             "Lua",

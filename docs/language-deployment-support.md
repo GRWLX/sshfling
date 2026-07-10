@@ -5,8 +5,8 @@ an explicit package manager or distribution mechanism, deployment type, interfac
 and artifact boundary. Maven and Gradle are separate JVM deployments, and real
 importable library surfaces are named rather than inferred from language names.
 
-Catalog outcomes: **66 PASS**, **9 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **142 explicit surface cells** (117 PASS, 9 BLOCKED, 16 NOT_APPLICABLE).
-Fully implemented runtime deployments retain **736 detailed PASS cells** across **92 surfaces**, including **75 validated library-capable surfaces**.
+Catalog outcomes: **67 PASS**, **8 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **142 explicit surface cells** (118 PASS, 8 BLOCKED, 16 NOT_APPLICABLE).
+Fully implemented runtime deployments retain **744 detailed PASS cells** across **93 surfaces**, including **76 validated library-capable surfaces**.
 
 A source-archive publication PASS proves deterministic archive creation and inventory
 only. It is deliberately separate from install, library-consumer, CLI, and runtime
@@ -108,8 +108,8 @@ TODO status audit: **0 row(s) differ** from current package evidence (none). The
 | C91-051-02 | 51 | Scheme/Racket | GNU Guile/Autotools | versioned source-archive publication | source package | sshfling-scheme-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for scheme are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
 | C91-052-01 | 52 | Prolog | SWI-Prolog pack | Prolog pack dependency | library | sshfling-VERSION.tgz Prolog pack | PASS | PASS | PASS | The per-language validator archives and pack-installs the package into an isolated directory. |
 | C91-052-02 | 52 | Prolog | SWI-Prolog pack | versioned source-archive publication | source package | sshfling-prolog-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for prolog are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
-| C91-053-01 | 53 | Smalltalk | GNU Smalltalk package | versioned source-archive publication | source package | sshfling-smalltalk-VERSION.tar.gz | PASS | BLOCKED | BLOCKED | PASS published-source-archive and published-source-inventory rows for smalltalk are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
-| C91-053-02 | 53 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | sshfling-smalltalk-VERSION.tar.gz | BLOCKED | BLOCKED | BLOCKED | BLOCKED runtime-validation: source publication passes, but gst and gst-package are unavailable for install and consumer validation |
+| C91-053-01 | 53 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | sshfling-smalltalk-VERSION.tar.gz | PASS | PASS | PASS | The per-language validator runs gst-package --dist and executes GNU Smalltalk consumers with the pinned GST runtime. |
+| C91-053-02 | 53 | Smalltalk | GNU Smalltalk package | versioned source-archive publication | source package | sshfling-smalltalk-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for smalltalk are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
 | C91-054-01 | 54 | Tcl | Tcl package archive | versioned source package | library + CLI | sshfling-tcl-VERSION.tar.gz | PASS | PASS | PASS | The package-scripting-languages validator supplies the detailed PASS evidence below. |
 | C91-055-01 | 55 | AWK | source archive | mawk-compatible source package | library + CLI | sshfling-awk-VERSION.tar.gz | PASS | PASS | PASS | The package-scripting-languages validator supplies the detailed PASS evidence below. |
 | C91-056-01 | 56 | sed | source archive | sed command-file package | command file + CLI | sshfling-sed-VERSION.tar.gz | PASS | PASS | PASS | The package-scripting-languages validator supplies the detailed PASS evidence below. |
@@ -261,6 +261,7 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | red-redsystem-cli | Red | Red/System compiler | Red/System source package | CLI | sshfling-red-VERSION.tar.gz | `package-systems-languages` |
 | object-pascal-fpc-package | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | sshfling-object-pascal-VERSION.tar.gz | `package-systems-languages` |
 | roc-source-package | Roc | Roc source package | Roc package and application | library + CLI | sshfling-roc-VERSION.tar.gz | `package-functional-languages` |
+| smalltalk-gnu-package | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | sshfling-smalltalk-VERSION.tar.gz | `package-functional-languages` |
 
 ## Detailed Eight-Check Verification Cells
 
@@ -1002,3 +1003,11 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | LD-92-06 | Roc | Roc source package | Roc package and application | library + CLI | Public interface | PASS | The module exposes run!, runtime_path!, template_directory!, and package_version while the package also builds a CLI application. |
 | LD-92-07 | Roc | Roc source package | Roc package and application | library + CLI | Version contract | PASS | The Roc consumer and CLI print the exact SSHFling release version. |
 | LD-92-08 | Roc | Roc source package | Roc package and application | library + CLI | Runtime assets/workflow | PASS | The consumer validates init assets, invalid option status, missing runtime status, package removal, and import absence. |
+| LD-93-01 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Source surface | PASS | Tracked Smalltalk package sources and its public surface live under packaging/functional-languages/smalltalk. |
+| LD-93-02 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Package metadata | PASS | package.xml declares the GNU Smalltalk package files, source file-in, test consumer, and bundled runtime assets. |
+| LD-93-03 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Package build | PASS | The per-language validator runs gst-package --dist and executes GNU Smalltalk consumers with the pinned GST runtime. |
+| LD-93-04 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Artifact contents | PASS | The staged package distribution contains the Smalltalk source, consumer, and byte-checked canonical runtime bundle. |
+| LD-93-05 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Isolated consumer | PASS | A clean external Smalltalk consumer files in the package source outside the source tree. |
+| LD-93-06 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Public interface | PASS | SSHFling class>>run: accepts a Smalltalk argument collection and returns the canonical runtime status. |
+| LD-93-07 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Version contract | PASS | The focused Smalltalk consumer must print the exact SSHFling release version. |
+| LD-93-08 | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | Runtime assets/workflow | PASS | The consumer validates version, init, invalid option, missing runtime, package removal, and import absence. |

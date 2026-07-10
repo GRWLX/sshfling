@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 
-FUNCTIONAL_LANGUAGES = ("julia", "j", "janet", "ring", "ballerina", "roc")
+FUNCTIONAL_LANGUAGES = ("julia", "j", "janet", "ring", "ballerina", "roc", "smalltalk")
 SCRIPTING_LANGUAGES = ("guix-scheme",)
 SCRIPTING_LIFECYCLE_PHASES = (
     "package-archive",
