@@ -1,0 +1,16 @@
+{
+  "name": "sshfling",
+  "version": "0.0.0",
+  "interpreter": "Mathics3",
+  "wolfram_engine_runtime": "not claimed",
+  "source": "src/SSHFling.wl",
+  "wrapper": "bin/sshfling-mathics-runner",
+  "assets": [
+    "runtime"
+  ],
+  "metadata": {
+    "description": "Mathics3-validated Wolfram Language-compatible launcher for the bundled SSHFling runtime",
+    "license": "MIT",
+    "repository": "https://github.com/GRWLX/sshfling"
+  }
+}

@@ -1,0 +1,37 @@
+#!/usr/bin/env sh
+set -u
+
+arg_file="${SSHFLING_MATHICS_ARG_FILE:-}"
+runtime="${SSHFLING_RUNTIME:-}"
+templates="${SSHFLING_TEMPLATE_DIR:-}"
+python="${SSHFLING_PYTHON:-python3}"
+
+if [ -z "$arg_file" ] || [ ! -f "$arg_file" ]; then
+    exit 2
+fi
+
+exec "$python" - "$runtime" "$arg_file" "$templates" <<'PY'
+import binascii
+import os
+import subprocess
+import sys
+
+runtime, arg_file, templates = sys.argv[1:4]
+if not runtime or not os.path.isfile(runtime):
+    raise SystemExit(127)
+
+arguments = []
+try:
+    with open(arg_file, "r", encoding="ascii") as stream:
+        for line in stream:
+            value = line.rstrip("\n")
+            arguments.append(binascii.unhexlify(value.encode("ascii")).decode("utf-8"))
+except (OSError, UnicodeDecodeError, binascii.Error):
+    raise SystemExit(2)
+
+environment = os.environ.copy()
+if templates:
+    environment["SSHFLING_TEMPLATE_DIR"] = templates
+
+raise SystemExit(subprocess.call([sys.executable, runtime, *arguments], env=environment))
+PY

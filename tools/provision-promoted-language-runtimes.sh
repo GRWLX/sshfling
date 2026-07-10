@@ -267,6 +267,46 @@ rm -rf -- "$apl_root"
 install -d "$apl_root"
 extract_deb "$apl_deb" "$apl_root"
 
+mathics_root="$destination/mathics"
+rm -rf -- "$mathics_root"
+python3 -m venv "$mathics_root"
+mathics_requirements="$download_dir/mathics3-requirements.txt"
+cat >"$mathics_requirements" <<'EOF'
+mathics3==10.0.1 --hash=sha256:9358266ed80c530a930bd3457f270cc7dc65edc27f9cf91ba33b4efd831a1d9f
+Mathics3-Scanner==10.0.1 --hash=sha256:42db9d33d7592998177915d8fb5a01a7a82de9cfa5dfd6b63161c2b1d576996e
+packaging==26.0 --hash=sha256:b36f1fef9334a5588b4166f8bcd26a14e521f2b55e6b9de3aaa80d3ff7a37529
+mpmath==1.3.0 --hash=sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c
+numpy==2.5.1 --hash=sha256:59fda5e192b570217ec2580c96f00e9a7e12ef6866a900eb089b62c1a32545ca
+palettable==3.3.3 --hash=sha256:74e9e7d7fe5a9be065e02397558ed1777b2df0b793a6f4ce1a5ee74f74fb0caa
+Pillow==12.3.0 --hash=sha256:78cb2c6865a35ab8ff8b75fd122f6033b92a62c82801110e48ddd6c936a45d91
+Pint==0.25.3 --hash=sha256:27eb25143bd5de9fcc4d5a4b484f16faf6b4615aa93ece6b3373a8c1a3c1b97d
+Pympler==1.1 --hash=sha256:5b223d6027d0619584116a0cbc28e8d2e378f7a79c1e5e024f9ff3b673c58506
+python-dateutil==2.9.0.post0 --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
+requests==2.34.2 --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+scipy==1.18.0 --hash=sha256:1f55797419e16e7f30cf88ffb3113ce0467f00cfe3f70d5c281730b21769bfc2
+setuptools==83.0.0 --hash=sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3
+sympy==1.14.0 --hash=sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5
+Timed-Threads==2.0.0 --hash=sha256:974272e35bef835f61283a4682cafd62ba9f77fd71a8afc817122526705237e0
+PyYAML==6.0.3 --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc
+chardet==7.4.3 --hash=sha256:9a4904dd5f071b7a7d7f50b4a67a86db3c902d243bf31708f1d5cde2f68239cb
+click==8.4.2 --hash=sha256:e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76
+flexcache==0.3 --hash=sha256:d43c9fea82336af6e0115e308d9d33a185390b8346a017564611f1466dcd2e32
+flexparser==0.4 --hash=sha256:3738b456192dcb3e15620f324c447721023c0293f6af9955b481e91d00179846
+platformdirs==4.10.0 --hash=sha256:fb516cdb12eb0d857d0cd85a7c57cea4d060bee4578d6cf5a14dfdf8cbf8784a
+typing-extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+six==1.17.0 --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+charset-normalizer==3.4.9 --hash=sha256:5e226f6218febc71f6c1fc2fafb91c226f75bdc1d8fb12d66823716e891608fd
+idna==3.18 --hash=sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2
+urllib3==2.7.0 --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
+certifi==2026.6.17 --hash=sha256:2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db
+EOF
+"$mathics_root/bin/python" -m pip install \
+  --disable-pip-version-check \
+  --no-input \
+  --require-hashes \
+  --only-binary=:all: \
+  -r "$mathics_requirements" >&2
+
 path_entries=(
   "$destination/julia/julia-1.10.10/bin"
   "$destination/j/j9.6/bin"
@@ -282,10 +322,11 @@ path_entries=(
   "$roc_root"
   "$destination/smalltalk/bin"
   "$destination/apl/usr/bin"
+  "$destination/mathics/bin"
   "/usr/bin"
 )
 
-for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring red roc gst gst-package apl bal chpl mason; do
+for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring red roc gst gst-package apl mathics bal chpl mason; do
   found=0
   for entry in "${path_entries[@]}"; do
     if [[ -x "$entry/$executable" ]]; then

@@ -54,6 +54,12 @@ kernel exposed by `wolframscript`, which is absent here. The command-list and
 result behavior is defined by the official [RunProcess documentation](https://reference.wolfram.com/language/ref/RunProcess.html?view=all).
 No Paclet archive is emitted.
 
+The PASS row for Wolfram Language is a separate Mathics3-validated
+Wolfram Language-compatible source package under
+`packaging/scientific-languages/wolfram-language`. It uses a package-local
+runner bridge because Mathics3 does not implement `RunProcess`, and it does not
+claim Wolfram Engine or Paclet conformance.
+
 <!-- target:autohotkey -->
 ### AutoHotkey
 

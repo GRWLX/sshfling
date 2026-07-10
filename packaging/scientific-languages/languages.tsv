@@ -5,3 +5,4 @@ julia	Julia	julia	julia	julia	Project.toml	src/SSHFling.jl	test/runtests.jl	runt
 matlab	MATLAB	octave-cli	matlab	matlab	matlab-package.json	+sshfling/packageVersion.m,+sshfling/runtimePath.m,+sshfling/templateDirectory.m,+sshfling/run.m	test/consumer.m	runtime
 r	R	R+Rscript	r	r	DESCRIPTION,NAMESPACE	R/sshfling.R	tests/check-api.R	inst/runtime
 q	Q_KDB	q	q	q	manifest.yaml	src/sshfling.q	test/consumer.q	runtime
+wolfram-language	Wolfram_Language	mathics	wolfram_language	wolfram-language	mathics-package.json	src/SSHFling.wl,bin/sshfling-mathics-runner	test/consumer.wl	runtime

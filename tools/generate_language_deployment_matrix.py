@@ -2220,6 +2220,33 @@ DEPLOYMENTS.append(
     )
 )
 
+DEPLOYMENTS.append(
+    validated_batch_package(
+        "wolfram-language-mathics-package",
+        "Wolfram Language",
+        "Mathics3",
+        "Mathics-compatible source package",
+        "library",
+        "sshfling-wolfram-language-VERSION.tar.gz",
+        "package-functional-languages",
+        "packaging/scientific-languages/wolfram-language",
+        [
+            "packaging/scientific-languages/wolfram-language/mathics-package.json",
+            "packaging/scientific-languages/wolfram-language/src/SSHFling.wl",
+            "packaging/scientific-languages/wolfram-language/bin/sshfling-mathics-runner",
+            "packaging/scientific-languages/wolfram-language/test/consumer.wl",
+            "packaging/build-functional-languages.py",
+            "tools/provision-promoted-language-runtimes.sh",
+        ],
+        "mathics-package.json declares the Mathics3 validation boundary and explicitly does not claim Wolfram Engine runtime conformance.",
+        "The per-language validator executes Mathics3 against a deterministic Wolfram Language-compatible source archive.",
+        "The staged source package contains Wolfram Language package source, the Mathics runner bridge, consumer script, license, README, and the byte-checked canonical runtime bundle.",
+        "A clean external Mathics consumer imports the extracted SSHFling package outside the repository source tree.",
+        "SSHFling`RunSSHFling accepts a Wolfram string list, hex-encodes arguments for the packaged runner bridge, and returns the canonical runtime status.",
+        "The consumer validates argument boundaries, version, init, invalid option, missing runtime, package removal, and import absence.",
+    )
+)
+
 
 FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Python", "PASS"),
@@ -2297,7 +2324,7 @@ FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Q/KDB+", "BLOCKED"),
     ("Hack", "PASS"),
     ("CFML", "PASS"),
-    ("Wolfram Language", "BLOCKED"),
+    ("Wolfram Language", "PASS"),
     ("Verilog", "NOT_APPLICABLE"),
     ("VHDL", "NOT_APPLICABLE"),
     ("SystemVerilog", "NOT_APPLICABLE"),
@@ -2387,6 +2414,7 @@ FUNCTIONAL_SOURCE_PACKAGES = (
     ("R", "r", "R CMD", "packaging/scientific-languages/r"),
     ("Julia", "julia", "Julia Pkg", "packaging/scientific-languages/julia"),
     ("MATLAB", "matlab", "GNU Octave", "packaging/scientific-languages/matlab"),
+    ("Wolfram Language", "wolfram-language", "Mathics3", "packaging/scientific-languages/wolfram-language"),
     ("Elixir", "elixir", "Mix", "packaging/beam-languages/elixir"),
     ("Erlang", "erlang", "OTP/rebar3", "packaging/beam-languages/erlang"),
     ("Haskell", "haskell", "Cabal", "packaging/functional-languages/haskell"),
@@ -2751,6 +2779,7 @@ _PROMOTED_RUNTIME_SURFACES = {
     "smalltalk-package-runtime",
     "apl-gnu-runtime",
     "matlab-package-folder-runtime",
+    "wolfram-paclet-runtime",
     "chapel-mason-runtime",
     "ballerina-package-runtime",
     "roc-package-runtime",

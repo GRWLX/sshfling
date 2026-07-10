@@ -194,8 +194,8 @@ def load_languages() -> list[Language]:
                         bundle=row["bundle"],
                     )
                 )
-    if len(languages) != 19:
-        raise ValidationFailure(f"expected 19 language records, found {len(languages)}")
+    if len(languages) != 20:
+        raise ValidationFailure(f"expected 20 language records, found {len(languages)}")
     for group, declared in declared_by_group.items():
         actual = {path.name for path in group.iterdir() if path.is_dir()}
         if actual != declared:
@@ -508,6 +508,37 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
             "status = 127",
         )
         require_tokens(root / "test/consumer.m", "argv()", "sshfling.run(args)", "exit(status)")
+    elif identifier == "wolfram-language":
+        metadata = require_json(root / "mathics-package.json")
+        if (
+            metadata.get("version") != "0.0.0"
+            or metadata.get("interpreter") != "Mathics3"
+            or metadata.get("wolfram_engine_runtime") != "not claimed"
+            or metadata.get("source") != "src/SSHFling.wl"
+            or metadata.get("wrapper") != "bin/sshfling-mathics-runner"
+            or "runtime" not in metadata.get("assets", [])
+        ):
+            raise ValidationFailure("wolfram-language: package version/runtime contract is invalid")
+        api = require_tokens(
+            root / "src/SSHFling.wl",
+            "BeginPackage[\"SSHFling`\"]",
+            "RunSSHFling[arguments_List]",
+            "ToCharacterCode[value, \"UTF8\"]",
+            "SSHFLING_MATHICS_ARG_FILE",
+            "SetEnvironment",
+            "Run[wrapper]",
+        )
+        if "RunProcess" in api:
+            raise ValidationFailure("wolfram-language: Mathics package must not claim RunProcess support")
+        runner = require_tokens(
+            root / "bin/sshfling-mathics-runner",
+            "binascii.unhexlify",
+            "subprocess.call([sys.executable, runtime, *arguments]",
+            "raise SystemExit(127)",
+        )
+        if not os.access(root / "bin/sshfling-mathics-runner", os.X_OK) or "shell=True" in runner:
+            raise ValidationFailure("wolfram-language: runner wrapper is not executable or uses shell execution")
+        require_tokens(root / "test/consumer.wl", "Get[FileNameJoin", "SSHFling`RunSSHFling", "Rest[$ScriptCommandLine]")
     elif identifier == "r":
         description = require_tokens(
             root / "DESCRIPTION",
@@ -1320,6 +1351,102 @@ class PackageRunner:
         self.command(
             "import-absence",
             [*octave, consumer, "--", "--version"],
+            cwd=unrelated,
+            env=env,
+            expected=lambda status: status != 0,
+        )
+
+    def validate_wolfram_language(self) -> None:
+        self.probe("mathics-version", [self.tools["mathics"], "--version"])
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "source with spaces")
+        self.verify_runtime(source / "runtime")
+        env = {
+            "SSHFLING_PACKAGE_ROOT": str(source),
+            "MATHICS3_HISTFILE": str(self.work / "mathics-history"),
+        }
+        mathics = [self.tools["mathics"], "--quiet", "--file"]
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+
+        consumer = self.work / "external-consumer.wl"
+        consumer.write_text(
+            f"Get[{json.dumps(str(source / 'src/SSHFling.wl'))}]\n"
+            "status = SSHFling`RunSSHFling[Rest[$ScriptCommandLine]];\n"
+            "Exit[If[IntegerQ[status], status, 1]];\n",
+            encoding="utf-8",
+        )
+
+        fake_runtime = self.work / "fake runtime.py"
+        fake_runtime.write_text(
+            "import sys\n"
+            "expected = ['argument with spaces', 'literal;$()&', 'quote\\'and\"double']\n"
+            "if sys.argv[1:] != expected:\n"
+            "    print(repr(sys.argv[1:]), file=sys.stderr)\n"
+            "    raise SystemExit(41)\n"
+            "print('argv ok')\n"
+            "raise SystemExit(23)\n",
+            encoding="utf-8",
+        )
+        boundary = self.command(
+            "argument-boundaries",
+            [
+                *mathics,
+                consumer,
+                "--",
+                "argument with spaces",
+                "literal;$()&",
+                "quote'and\"double",
+            ],
+            cwd=unrelated,
+            env={**env, "SSHFLING_RUNTIME": str(fake_runtime)},
+            expected={23},
+        )
+        self.check(
+            "argument-boundary-output",
+            boundary.stdout == "argv ok\n",
+            f"stdout={boundary.stdout!r}",
+        )
+
+        zero_runtime = self.work / "fake zero runtime.py"
+        zero_runtime.write_text(
+            "import sys\n"
+            "if sys.argv[1:]:\n"
+            "    print(repr(sys.argv[1:]), file=sys.stderr)\n"
+            "    raise SystemExit(42)\n"
+            "print('zero argv ok')\n"
+            "raise SystemExit(24)\n",
+            encoding="utf-8",
+        )
+        zero = self.command(
+            "zero-argument-boundary",
+            [*mathics, consumer, "--"],
+            cwd=unrelated,
+            env={**env, "SSHFLING_RUNTIME": str(zero_runtime)},
+            expected={24},
+        )
+        self.check(
+            "zero-argument-output",
+            zero.stdout == "zero argv ok\n",
+            f"stdout={zero.stdout!r}",
+        )
+
+        command = lambda args: [*mathics, consumer, "--", *args]
+        self.run_status_cases(command, cwd=unrelated, env=env)
+
+        packaged_version = self.command(
+            "packaged-consumer-version",
+            [*mathics, source / "test/consumer.wl", "--", "--version"],
+            cwd=unrelated,
+            env=env,
+        )
+        self.assert_version_output(packaged_version)
+
+        shutil.rmtree(source)
+        self.check("package-removed", not source.exists(), f"path={source}")
+        self.command(
+            "import-absence",
+            [*mathics, consumer, "--", "--version"],
             cwd=unrelated,
             env=env,
             expected=lambda status: status != 0,
@@ -2287,6 +2414,7 @@ TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "j": ("jconsole",),
     "julia": ("julia",),
     "matlab": ("octave-cli",),
+    "wolfram-language": ("mathics",),
     "r": ("R", "Rscript"),
     "q": ("q",),
     "erlang": ("erl", "erlc"),
@@ -2305,6 +2433,7 @@ NATIVE_RUNNERS = {
     "j",
     "julia",
     "matlab",
+    "wolfram-language",
     "ocaml",
     "common-lisp",
     "scheme",

@@ -56,7 +56,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             clang curl fish fp-compiler fp-units-fcl gcc gcc-multilib git guile-3.0 guix liblua5.1-0-dev liblua5.4-dev libc6-dev-i386 libc6-i386 lua5.1 lua5.4 \
             libcairo2 libfftw3-double3 libglib2.0-0 libgsl27 libgtk-3-0 libpcre2-32-0 libpng16-16 libpq5 libsqlite3-0 libx11-6 libx11-xcb1 libxcb1 \
-            openjdk-21-jre-headless \
+            openjdk-21-jre-headless python3-venv \
             luarocks make mawk octave sed tcl unzip xz-utils zsh
           /usr/lib/jvm/java-21-openjdk-amd64/bin/java -version
 

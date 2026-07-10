@@ -19,6 +19,7 @@ FUNCTIONAL_LANGUAGES = (
     "smalltalk",
     "apl",
     "matlab",
+    "wolfram-language",
 )
 SCRIPTING_LANGUAGES = ("guix-scheme",)
 SCRIPTING_LIFECYCLE_PHASES = (

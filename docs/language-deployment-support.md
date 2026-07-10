@@ -5,8 +5,8 @@ an explicit package manager or distribution mechanism, deployment type, interfac
 and artifact boundary. Maven and Gradle are separate JVM deployments, and real
 importable library surfaces are named rather than inferred from language names.
 
-Catalog outcomes: **69 PASS**, **6 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **143 explicit surface cells** (121 PASS, 6 BLOCKED, 16 NOT_APPLICABLE).
-Fully implemented runtime deployments retain **760 detailed PASS cells** across **95 surfaces**, including **78 validated library-capable surfaces**.
+Catalog outcomes: **70 PASS**, **5 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **144 explicit surface cells** (123 PASS, 5 BLOCKED, 16 NOT_APPLICABLE).
+Fully implemented runtime deployments retain **768 detailed PASS cells** across **96 surfaces**, including **79 validated library-capable surfaces**.
 
 A source-archive publication PASS proves deterministic archive creation and inventory
 only. It is deliberately separate from install, library-consumer, CLI, and runtime
@@ -140,7 +140,8 @@ TODO status audit: **0 row(s) differ** from current package evidence (none). The
 | C91-073-02 | 73 | Q/KDB+ | KX q package | q namespace package | library | sshfling-q-VERSION.tar.gz | BLOCKED | BLOCKED | BLOCKED | BLOCKED runtime-validation: source publication passes, but the q runtime is unavailable for package and consumer validation |
 | C91-074-01 | 74 | Hack | npm | server-side Hack adapter project | library consumer | sshfling-VERSION.tgz | PASS | PASS | PASS | HHVM 4.172 executes src/main.hack inside the hhvm/hhvm container with Node v22.23.1 after the Node bridge verifies the packed SSHFling npm API. |
 | C91-075-01 | 75 | CFML | npm | server-side CFML adapter project | library consumer | sshfling-VERSION.tgz | PASS | PASS | PASS | CommandBox executes the CFML template after the Node bridge verifies the packed SSHFling npm API. |
-| C91-076-01 | 76 | Wolfram Language | Wolfram Paclet | RunProcess-based Paclet candidate | library | tracked Paclet source; publication disabled | BLOCKED | BLOCKED | BLOCKED | BLOCKED runtime-validation: a licensed Wolfram kernel exposed through wolframscript is required for conformance |
+| C91-076-01 | 76 | Wolfram Language | Mathics3 | Mathics-compatible source package | library | sshfling-wolfram-language-VERSION.tar.gz | PASS | PASS | PASS | The per-language validator executes Mathics3 against a deterministic Wolfram Language-compatible source archive. |
+| C91-076-02 | 76 | Wolfram Language | Mathics3 | versioned source-archive publication | source package | sshfling-wolfram-language-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for wolfram-language are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
 | C91-077-01 | 77 | Verilog | HDL simulator project | synthesizable hardware description | no library or CLI surface | none | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE: simulator system tasks are not deployable or synthesizable SSHFling libraries |
 | C91-078-01 | 78 | VHDL | HDL simulator project | synthesizable hardware description | no library or CLI surface | none | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE: foreign/simulator interfaces do not form a synthesizable host launcher |
 | C91-079-01 | 79 | SystemVerilog | HDL simulator project | synthesizable hardware description | no library or CLI surface | none | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE: DPI and system tasks are simulator mechanisms, not deployable SSHFling packages |
@@ -265,6 +266,7 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | smalltalk-gnu-package | Smalltalk | GNU Smalltalk package | Smalltalk package dependency | library + CLI | sshfling-smalltalk-VERSION.tar.gz | `package-functional-languages` |
 | apl-gnu-package | APL | GNU APL | GNU APL source package | library | sshfling-apl-VERSION.tar.gz | `package-functional-languages` |
 | matlab-octave-package | MATLAB | GNU Octave | MATLAB-compatible source package | library | sshfling-matlab-VERSION.tar.gz | `package-functional-languages` |
+| wolfram-language-mathics-package | Wolfram Language | Mathics3 | Mathics-compatible source package | library | sshfling-wolfram-language-VERSION.tar.gz | `package-functional-languages` |
 
 ## Detailed Eight-Check Verification Cells
 
@@ -1030,3 +1032,11 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | LD-95-06 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Public interface | PASS | sshfling.run accepts a cell array of character-vector arguments and returns the canonical runtime status. |
 | LD-95-07 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Version contract | PASS | The focused MATLAB consumer must print the exact SSHFling release version. |
 | LD-95-08 | MATLAB | GNU Octave | MATLAB-compatible source package | library | Runtime assets/workflow | PASS | The consumer validates version, init, invalid option, missing runtime, package removal, and import absence. |
+| LD-96-01 | Wolfram Language | Mathics3 | Mathics-compatible source package | library | Source surface | PASS | Tracked Wolfram Language package sources and its public surface live under packaging/scientific-languages/wolfram-language. |
+| LD-96-02 | Wolfram Language | Mathics3 | Mathics-compatible source package | library | Package metadata | PASS | mathics-package.json declares the Mathics3 validation boundary and explicitly does not claim Wolfram Engine runtime conformance. |
+| LD-96-03 | Wolfram Language | Mathics3 | Mathics-compatible source package | library | Package build | PASS | The per-language validator executes Mathics3 against a deterministic Wolfram Language-compatible source archive. |
+| LD-96-04 | Wolfram Language | Mathics3 | Mathics-compatible source package | library | Artifact contents | PASS | The staged source package contains Wolfram Language package source, the Mathics runner bridge, consumer script, license, README, and the byte-checked canonical runtime bundle. |
+| LD-96-05 | Wolfram Language | Mathics3 | Mathics-compatible source package | library | Isolated consumer | PASS | A clean external Mathics consumer imports the extracted SSHFling package outside the repository source tree. |
+| LD-96-06 | Wolfram Language | Mathics3 | Mathics-compatible source package | library | Public interface | PASS | SSHFling`RunSSHFling accepts a Wolfram string list, hex-encodes arguments for the packaged runner bridge, and returns the canonical runtime status. |
+| LD-96-07 | Wolfram Language | Mathics3 | Mathics-compatible source package | library | Version contract | PASS | The focused Wolfram Language consumer must print the exact SSHFling release version. |
+| LD-96-08 | Wolfram Language | Mathics3 | Mathics-compatible source package | library | Runtime assets/workflow | PASS | The consumer validates argument boundaries, version, init, invalid option, missing runtime, package removal, and import absence. |
