@@ -195,6 +195,14 @@ if [[ ! -x "$ring_bin" ]] || ! "$ring_bin" -version 2>/dev/null | grep -F "Ring 
   )
 fi
 
+red_binary="$download_dir/red-toolchain-066"
+download \
+  "https://static.red-lang.org/dl/linux/red-toolchain-066" \
+  "95c75a49f8b3d15b8ae1ddf10f9589bc0fd0eecf84d432bad163191f900cb23c" \
+  "$red_binary"
+install -d "$destination/red/bin"
+install -m 0755 "$red_binary" "$destination/red/bin/red"
+
 path_entries=(
   "$destination/julia/julia-1.10.10/bin"
   "$destination/j/j9.6/bin"
@@ -206,10 +214,11 @@ path_entries=(
   "$destination/ponyc/bin"
   "$destination/harbour/bin"
   "$destination/ring/bin"
+  "$destination/red/bin"
   "/usr/bin"
 )
 
-for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring bal chpl mason; do
+for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring red bal chpl mason; do
   found=0
   for entry in "${path_entries[@]}"; do
     if [[ -x "$entry/$executable" ]]; then

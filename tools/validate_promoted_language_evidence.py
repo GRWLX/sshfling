@@ -22,7 +22,7 @@ SCRIPTING_LIFECYCLE_PHASES = (
     "removal-source",
 )
 SYSTEM_LANGUAGES = ("v", "webassembly-wasi", "odin", "pony", "swift", "chapel")
-SYSTEM_BUILD_LANGUAGES = ("zig", "harbour")
+SYSTEM_BUILD_LANGUAGES = ("zig", "harbour", "red")
 SYSTEM_LIFECYCLE_PHASES = (
     "source-archive",
     "install",

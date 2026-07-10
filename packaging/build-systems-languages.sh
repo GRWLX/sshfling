@@ -478,6 +478,17 @@ detect_language() {
         GATE_REASON="the red command is not a compatible Red/System compiler"
         return 1
       fi
+      local red_cc
+      red_cc="$(common_cc || true)"
+      if [[ -z "$red_cc" ]]; then
+        GATE_REASON="gcc or clang is required for the Red/System launcher ABI"
+        return 1
+      fi
+      if ! printf 'int main(void){return 0;}\n' |
+          "$red_cc" -m32 -x c - -o "$probe_dir/elf32-probe" >/dev/null 2>&1; then
+        GATE_REASON="$red_cc with 32-bit multilib support is required for the Red/System launcher ABI"
+        return 1
+      fi
       ;;
     swift)
       command -v swift >/dev/null 2>&1 || { GATE_REASON="SwiftPM (swift) is required"; return 1; }
@@ -913,10 +924,11 @@ build_harbour() {
 build_red() {
   local out="$1"
   local cc
+  local package="${package_roots[red]}"
   cc="$(common_cc)"
-  "$cc" -std=c11 -fPIC "$version_define" -I"$systems_root/common" \
-    -shared "$systems_root/common/sshfling_launcher.c" -o "$out/libsshfling_launcher.so"
-  red -r -o "$out/sshfling-red" "$systems_root/red/src/main.reds"
+  "$cc" -m32 -std=c11 -fPIC "$version_define" -I"$package/common" \
+    -shared "$package/common/sshfling_launcher.c" -o "$out/libsshfling_launcher.so"
+  red -r -o "$out/sshfling-red" "$package/src/main.reds"
   LD_LIBRARY_PATH="$out${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     test_native_cli "$out/sshfling-red" red
 }

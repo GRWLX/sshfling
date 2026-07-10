@@ -98,6 +98,25 @@ PROGRAM
 esac
 '''.replace("@RUNTIME@", FAKE_RUNTIME.rstrip())
 
+FAKE_RED = r'''#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while (($# > 0)); do
+  if [[ "$1" == "-o" ]]; then
+    output="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+[[ -n "$output" ]]
+mkdir -p "$(dirname "$output")"
+cat >"$output" <<'PROGRAM'
+@RUNTIME@
+PROGRAM
+chmod 0755 "$output"
+'''.replace("@RUNTIME@", FAKE_RUNTIME.rstrip())
+
 FAKE_ODIN = r'''#!/usr/bin/env bash
 set -euo pipefail
 collection=""
@@ -241,6 +260,28 @@ class SystemsLanguageEvidenceTests(unittest.TestCase):
         self.assertEqual(runtime["status"], "BLOCKED")
         self.assertIn("not a compatible Red/System compiler", runtime["detail"])
         self.assertNotIn("RUNTIME\tred\tFAIL", completed.stdout)
+
+    def test_red_compatible_compiler_records_build_only_pass(self) -> None:
+        with validator_fixture() as repo:
+            completed = run_validator(
+                repo,
+                "red",
+                {"gcc": FAKE_COMPILER, "red": FAKE_RED},
+            )
+            rows = read_evidence(repo)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        runtime = next(
+            row for row in rows if row["subject"] == "red" and row["phase"] == "runtime-validation"
+        )
+        fields = detail_fields(runtime)
+        self.assertEqual(runtime["status"], "PASS")
+        self.assertEqual(fields["mode"], "build-only")
+        self.assertEqual(
+            set(fields["capabilities"].split(",")),
+            {"compile", "cli-runtime", "init-workflow", "exit-workflow"},
+        )
+        self.assertIn("RUNTIME\tred\tPASS", completed.stdout)
 
     def test_swift_consumer_uses_a_stable_local_package_name(self) -> None:
         manifest = (

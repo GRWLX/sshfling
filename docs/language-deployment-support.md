@@ -6,7 +6,7 @@ and artifact boundary. Maven and Gradle are separate JVM deployments, and real
 importable library surfaces are named rather than inferred from language names.
 
 Catalog outcomes: **63 PASS**, **12 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **141 explicit surface cells** (113 PASS, 12 BLOCKED, 16 NOT_APPLICABLE).
-Fully implemented runtime deployments retain **704 detailed PASS cells** across **88 surfaces**, including **72 validated library-capable surfaces**.
+Fully implemented runtime deployments retain **712 detailed PASS cells** across **89 surfaces**, including **72 validated library-capable surfaces**.
 
 A source-archive publication PASS proves deterministic archive creation and inventory
 only. It is deliberately separate from install, library-consumer, CLI, and runtime
@@ -256,6 +256,7 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | chapel-mason-library | Chapel | Mason | Chapel module and executable package | library + CLI | sshfling-chapel-VERSION.tar.gz | `package-systems-languages` |
 | harbour-hbmk2-cli | Harbour | hbmk2 | Harbour CLI package | CLI | sshfling-harbour-VERSION.tar.gz | `package-systems-languages` |
 | ring-source-library | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | sshfling-ring-VERSION.tar.gz | `package-functional-languages` |
+| red-redsystem-cli | Red | Red/System compiler | Red/System source package | CLI | sshfling-red-VERSION.tar.gz | `package-systems-languages` |
 
 ## Detailed Eight-Check Verification Cells
 
@@ -965,3 +966,11 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | LD-88-06 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Public interface | PASS | lib.ring exposes argument-list execution; bin/sshfling-ring maps the Ring-reported status to a POSIX command status. |
 | LD-88-07 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Version contract | PASS | The focused Ring consumer must print the exact SSHFling release version. |
 | LD-88-08 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Runtime assets/workflow | PASS | The consumer and command validate exact version output, init assets, invalid option status, missing runtime status, removal, and import absence. |
+| LD-89-01 | Red | Red/System compiler | Red/System source package | CLI | Source surface | PASS | A Red/System package source and CLI entry point are tracked under packaging/systems-languages/red. |
+| LD-89-02 | Red | Red/System compiler | Red/System source package | CLI | Package metadata | PASS | package.toml declares the Red/System package name, version, launcher ABI, library source, CLI source, and shared-library dependency. |
+| LD-89-03 | Red | Red/System compiler | Red/System source package | CLI | Package build | PASS | The systems validator compiles the CLI with the pinned Red/System toolchain from an isolated source archive. |
+| LD-89-04 | Red | Red/System compiler | Red/System source package | CLI | Artifact contents | PASS | The source archive contains Red/System sources, common launcher sources, runtime, templates, and inventory manifest. |
+| LD-89-05 | Red | Red/System compiler | Red/System source package | CLI | Isolated consumer | PASS | The validator runs the compiled command from a temporary output directory with a matching 32-bit launcher shared object. |
+| LD-89-06 | Red | Red/System compiler | Red/System source package | CLI | Public interface | PASS | The CLI delegates argv handling to the shared launcher ABI through the Red/System import declarations. |
+| LD-89-07 | Red | Red/System compiler | Red/System source package | CLI | Version contract | PASS | The CLI prints the exact SSHFling release version. |
+| LD-89-08 | Red | Red/System compiler | Red/System source package | CLI | Runtime assets/workflow | PASS | The CLI validates init assets, invalid option status, missing runtime status, and clean temporary workspace behavior. |

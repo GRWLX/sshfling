@@ -2029,6 +2029,39 @@ DEPLOYMENTS.append(
     )
 )
 
+_red_deployment = deployment(
+    "red-redsystem-cli",
+    "Red",
+    "Red/System compiler",
+    "Red/System source package",
+    "CLI",
+    "sshfling-red-VERSION.tar.gz",
+    "package-systems-languages",
+    [
+        "packaging/systems-languages/red/package.toml",
+        "packaging/systems-languages/red/src/sshfling.reds",
+        "packaging/systems-languages/red/src/main.reds",
+        "packaging/build-systems-languages.sh",
+        "tools/provision-promoted-language-runtimes.sh",
+        "tools/validate_promoted_language_evidence.py",
+    ],
+    (
+        "A Red/System package source and CLI entry point are tracked under packaging/systems-languages/red.",
+        "package.toml declares the Red/System package name, version, launcher ABI, library source, CLI source, and shared-library dependency.",
+        "The systems validator compiles the CLI with the pinned Red/System toolchain from an isolated source archive.",
+        "The source archive contains Red/System sources, common launcher sources, runtime, templates, and inventory manifest.",
+        "The validator runs the compiled command from a temporary output directory with a matching 32-bit launcher shared object.",
+        "The CLI delegates argv handling to the shared launcher ABI through the Red/System import declarations.",
+        "The CLI prints the exact SSHFling release version.",
+        "The CLI validates init assets, invalid option status, missing runtime status, and clean temporary workspace behavior.",
+    ),
+)
+_red_deployment["validation_evidence"] = (
+    "The systems-language validator records RUNTIME red PASS with build-only "
+    "mode and compile, CLI runtime, init workflow, and exit workflow capabilities."
+)
+DEPLOYMENTS.append(_red_deployment)
+
 
 FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Python", "PASS"),
