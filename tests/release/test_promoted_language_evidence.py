@@ -326,7 +326,9 @@ class PromotedLanguageEvidenceTests(unittest.TestCase):
         )
         self.assertIn("907daf191ad3f1cf7e5190ec4f44eb29cd54ba21", provisioner)
         self.assertIn("11c4df319b18ed26946962883e7646e3d510c63b19dafb064a5060b792e549e0", provisioner)
+        self.assertIn("f88d95236319460327b05efcfdab7c342caa7d22", provisioner)
         self.assertIn("janet jpm zig", provisioner)
+        self.assertIn("hbmk2 ring bal", provisioner)
 
         for relative in (
             ".github/workflows/release-packages.yml",

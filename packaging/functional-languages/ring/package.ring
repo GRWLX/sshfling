@@ -9,6 +9,6 @@ aPackageInfo = [
     :ringversion = "1.24",
     :versions = [[:version = "0.0.0", :branch = "main"]],
     :libs = [],
-    :files = ["lib.ring", "main.ring", "runtime", "LICENSE", "README.md"],
+    :files = ["lib.ring", "main.ring", "bin", "runtime", "LICENSE", "README.md"],
     :ringfolderfiles = []
 ]

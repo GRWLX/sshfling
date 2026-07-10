@@ -409,16 +409,31 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
             raise ValidationFailure("janet: default resource lookup still depends on CWD")
         require_tokens(root / "bin/sshfling", "import sshfling", "sshfling/run")
     elif identifier == "ring":
-        require_tokens(root / "package.ring", ':version = "0.0.0"', ':files = ["lib.ring"')
+        require_tokens(
+            root / "package.ring",
+            ':version = "0.0.0"',
+            ':files = ["lib.ring"',
+            '"bin"',
+        )
         api = require_tokens(
             root / "lib.ring",
             "sysget(cName)",
-            "justfilepath(filename())",
+            "func pathdirectory cPath",
             "fexists(runtimepath())",
+            "SSHFLING_TEMPLATE_DIR",
+            "func normalizedstatus nStatus",
             "func run aArgs",
         )
         if "cValue = get(cName)" in api:
             raise ValidationFailure("ring: environment lookup still uses variable get()")
+        launcher = require_tokens(
+            root / "bin/sshfling-ring",
+            "SSHFLING_RING_STATUS_FILE",
+            "SSHFLING_PACKAGE_ROOT",
+            "exec ring main.ring",
+        )
+        if not os.access(root / "bin/sshfling-ring", os.X_OK) or "exit \"$status\"" not in launcher:
+            raise ValidationFailure("ring: POSIX status wrapper is not executable/complete")
     elif identifier == "apl":
         metadata = require_json(root / "apl-package.json")
         if metadata.get("version") != "0.0.0" or "runtime" not in metadata.get("assets", []):
@@ -1254,6 +1269,92 @@ class PackageRunner:
         )
         self.check("package-removed", not installed_runtime.exists(), f"path={installed_runtime}")
 
+    def write_ring_status_wrapper(self, path: Path, script: Path, package_root: Path) -> None:
+        ring = shlex.quote(self.tools["ring"])
+        script_arg = shlex.quote(str(script))
+        package_arg = shlex.quote(str(package_root))
+        path.write_text(
+            "#!/usr/bin/env sh\n"
+            "set -u\n"
+            'status_file="${TMPDIR:-/tmp}/sshfling-ring-status.$$"\n'
+            "cleanup() {\n"
+            '    rm -f -- "$status_file"\n'
+            "}\n"
+            "trap cleanup EXIT HUP INT TERM\n"
+            "SSHFLING_RING_STATUS_FILE=\"$status_file\" \\\n"
+            f"SSHFLING_PACKAGE_ROOT=\"${{SSHFLING_PACKAGE_ROOT:-{package_arg}}}\" \\\n"
+            f"{ring} {script_arg} \"$@\"\n"
+            "ring_status=$?\n"
+            'if [ "$ring_status" -ne 0 ]; then\n'
+            '    exit "$ring_status"\n'
+            "fi\n"
+            'if [ ! -s "$status_file" ]; then\n'
+            "    exit 1\n"
+            "fi\n"
+            "status=$(sed -n '1p' \"$status_file\")\n"
+            'case "$status" in\n'
+            "    ''|*[!0-9]*)\n"
+            "        exit 1\n"
+            "        ;;\n"
+            "esac\n"
+            'exit "$status"\n',
+            encoding="utf-8",
+        )
+        path.chmod(0o755)
+
+    def validate_ring(self) -> None:
+        self.probe("ring-version", [self.tools["ring"], "-version"])
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "installed-source")
+        self.command("ring-package-metadata", [self.tools["ring"], source / "package.ring"], cwd=source)
+        self.verify_runtime(source / "runtime")
+
+        ring_path = Path(self.tools["ring"]).resolve()
+        path_env = {"PATH": f"{ring_path.parent}:{self.base_env.get('PATH', '')}"}
+        unrelated = self.work / "unrelated-cwd"
+        unrelated.mkdir()
+
+        cli = source / "bin/sshfling-ring"
+        cli_version = self.command("installed-cli-version", [cli, "--version"], cwd=unrelated, env=path_env)
+        self.assert_version_output(cli_version)
+        self.command(
+            "installed-cli-invalid-option",
+            [cli, "--definitely-invalid"],
+            cwd=unrelated,
+            env=path_env,
+            expected={2},
+        )
+
+        consumer = self.work / "external-ring-consumer.ring"
+        consumer.write_text(
+            f"load {json.dumps(str(source / 'lib.ring'))}\n"
+            "func commandarguments\n"
+            "    aArgs = []\n"
+            "    if len(sysargv) >= 3\n"
+            "        for nIndex = 3 to len(sysargv) add(aArgs, sysargv[nIndex]) next\n"
+            "    ok\n"
+            "    return aArgs\n"
+            "\n"
+            "func main\n"
+            "    nStatus = run(commandarguments())\n"
+            "    cStatusFile = sysget(\"SSHFLING_RING_STATUS_FILE\")\n"
+            "    if cStatusFile != \"\" write(cStatusFile, \"\" + nStatus) ok\n",
+            encoding="utf-8",
+        )
+        wrapper = self.work / "external-ring-consumer"
+        self.write_ring_status_wrapper(wrapper, consumer, source)
+        self.run_status_cases(lambda args: [wrapper, *args], cwd=unrelated)
+
+        shutil.rmtree(source)
+        self.check("cli-removed", not cli.exists(), f"path={cli}")
+        self.command(
+            "import-absence",
+            [wrapper, "--version"],
+            cwd=unrelated,
+            expected=lambda status: status != 0,
+        )
+        self.check("package-removed", not source.exists(), f"path={source}")
+
     def validate_j(self) -> None:
         self.probe(
             "j-version",
@@ -1886,7 +1987,7 @@ TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ballerina": ("bal",),
     "roc": ("roc",),
     "janet": ("janet", "jpm"),
-    "ring": ("ring", "ringpm"),
+    "ring": ("ring",),
     "apl": ("dyalog",),
     "j": ("jconsole",),
     "julia": ("julia",),
@@ -1901,6 +2002,7 @@ TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {
 NATIVE_RUNNERS = {
     "haskell",
     "janet",
+    "ring",
     "ballerina",
     "j",
     "julia",

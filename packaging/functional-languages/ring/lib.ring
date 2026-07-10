@@ -1,5 +1,17 @@
-cSSHFlingRoot = justfilepath(filename())
-if cSSHFlingRoot = "" cSSHFlingRoot = currentdir() ok
+func pathdirectory cPath
+    nLast = 0
+    for nIndex = 1 to len(cPath)
+        cCharacter = substr(cPath, nIndex, 1)
+        if cCharacter = "/" nLast = nIndex ok
+        if cCharacter = "\\" nLast = nIndex ok
+    next
+    if nLast = 0 return "" ok
+    return substr(cPath, 1, nLast)
+
+func packageroot
+    cRoot = pathdirectory(filename())
+    if cRoot = "" cRoot = currentdir() ok
+    return cRoot
 
 func configuredor cName, cDefault
     cValue = sysget(cName)
@@ -13,12 +25,17 @@ func safearg cValue
     return "'" + cValue + "'"
 
 func runtimepath
-    cRoot = configuredor("SSHFLING_PACKAGE_ROOT", cSSHFlingRoot)
+    cRoot = configuredor("SSHFLING_PACKAGE_ROOT", packageroot())
     return configuredor("SSHFLING_RUNTIME", cRoot + "/runtime/sshfling.py")
 
 func templatedirectory
-    cRoot = configuredor("SSHFLING_PACKAGE_ROOT", cSSHFlingRoot)
+    cRoot = configuredor("SSHFLING_PACKAGE_ROOT", packageroot())
     return configuredor("SSHFLING_TEMPLATE_DIR", cRoot + "/runtime/templates")
+
+func normalizedstatus nStatus
+    if nStatus < 0 return 127 ok
+    if nStatus > 255 return floor(nStatus / 256) ok
+    return nStatus
 
 func run aArgs
     if fexists(runtimepath()) = 0 return 127 ok
@@ -31,5 +48,6 @@ func run aArgs
         if cCommand != "" cCommand += " " ok
         cCommand += cQuoted
     next
-    # SSHFLING_TEMPLATE_DIR is normally found beside SSHFLING_RUNTIME.
-    return system(cCommand)
+    cTemplate = safearg(templatedirectory())
+    if cTemplate = "" return 2 ok
+    return normalizedstatus(system("SSHFLING_TEMPLATE_DIR=" + cTemplate + " PYTHONUNBUFFERED='1' " + cCommand))

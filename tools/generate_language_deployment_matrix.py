@@ -2001,6 +2001,34 @@ _harbour_deployment["validation_evidence"] = (
 )
 DEPLOYMENTS.append(_harbour_deployment)
 
+DEPLOYMENTS.append(
+    validated_batch_package(
+        "ring-source-library",
+        "Ring",
+        "Ring source package",
+        "Ring library and POSIX status-wrapper command",
+        "library + CLI",
+        "sshfling-ring-VERSION.tar.gz",
+        "package-functional-languages",
+        "packaging/functional-languages/ring",
+        [
+            "packaging/functional-languages/ring/package.ring",
+            "packaging/functional-languages/ring/lib.ring",
+            "packaging/functional-languages/ring/main.ring",
+            "packaging/functional-languages/ring/bin/sshfling-ring",
+            "packaging/functional-languages/ring/test/consumer.ring",
+            "packaging/build-functional-languages.py",
+            "tools/validate_promoted_language_evidence.py",
+        ],
+        "package.ring declares the Ring package metadata while the library, main script, command wrapper, and consumer are tracked separately.",
+        "The functional-language validator extracts the deterministic archive, parses package metadata with Ring, and executes a clean external Ring consumer.",
+        "The source archive contains Ring source, package metadata, the status-preserving command wrapper, and the canonical runtime bundle.",
+        "A separate Ring consumer loads only the extracted package library outside the source checkout.",
+        "lib.ring exposes argument-list execution; bin/sshfling-ring maps the Ring-reported status to a POSIX command status.",
+        "The consumer and command validate exact version output, init assets, invalid option status, missing runtime status, removal, and import absence.",
+    )
+)
+
 
 FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Python", "PASS"),

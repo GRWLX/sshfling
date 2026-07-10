@@ -8,4 +8,4 @@ smalltalk	Smalltalk	gst+gst-package	smalltalk	smalltalk	package.xml	src/SSHFling
 ballerina	Ballerina	bal	ballerina	ballerina	Ballerina.toml,Dependencies.toml	sshfling.bal	tests/sshfling_test.bal	resources/runtime
 roc	Roc	roc	roc	roc	package.roc,main.roc	SSHFling.roc	test/consumer.roc	runtime
 janet	Janet	janet+jpm	janet	janet	project.janet	src/sshfling/init.janet	test/consumer.janet	runtime
-ring	Ring	ring+ringpm	ring	ring	package.ring	lib.ring	test/consumer.ring	runtime
+ring	Ring	ring	ring	ring	package.ring	lib.ring	test/consumer.ring	runtime

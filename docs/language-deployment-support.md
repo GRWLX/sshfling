@@ -6,7 +6,7 @@ and artifact boundary. Maven and Gradle are separate JVM deployments, and real
 importable library surfaces are named rather than inferred from language names.
 
 Catalog outcomes: **63 PASS**, **12 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **141 explicit surface cells** (113 PASS, 12 BLOCKED, 16 NOT_APPLICABLE).
-Fully implemented runtime deployments retain **696 detailed PASS cells** across **87 surfaces**, including **71 validated library-capable surfaces**.
+Fully implemented runtime deployments retain **704 detailed PASS cells** across **88 surfaces**, including **72 validated library-capable surfaces**.
 
 A source-archive publication PASS proves deterministic archive creation and inventory
 only. It is deliberately separate from install, library-consumer, CLI, and runtime
@@ -255,6 +255,7 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | ballerina-package-library | Ballerina | Ballerina package | Ballerina module dependency | library | sshfling-ballerina-VERSION.tar.gz and grwlx-sshfling-any-VERSION.bala | `package-functional-languages` |
 | chapel-mason-library | Chapel | Mason | Chapel module and executable package | library + CLI | sshfling-chapel-VERSION.tar.gz | `package-systems-languages` |
 | harbour-hbmk2-cli | Harbour | hbmk2 | Harbour CLI package | CLI | sshfling-harbour-VERSION.tar.gz | `package-systems-languages` |
+| ring-source-library | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | sshfling-ring-VERSION.tar.gz | `package-functional-languages` |
 
 ## Detailed Eight-Check Verification Cells
 
@@ -956,3 +957,11 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | LD-87-06 | Harbour | hbmk2 | Harbour CLI package | CLI | Public interface | PASS | The Harbour procedure accepts argv with hb_AParams and delegates to the C bridge. |
 | LD-87-07 | Harbour | hbmk2 | Harbour CLI package | CLI | Version contract | PASS | The CLI prints the exact SSHFling release version. |
 | LD-87-08 | Harbour | hbmk2 | Harbour CLI package | CLI | Runtime assets/workflow | PASS | The CLI validates init assets, invalid option status, missing runtime status, and clean temporary workspace behavior. |
+| LD-88-01 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Source surface | PASS | Tracked Ring package sources and its public surface live under packaging/functional-languages/ring. |
+| LD-88-02 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Package metadata | PASS | package.ring declares the Ring package metadata while the library, main script, command wrapper, and consumer are tracked separately. |
+| LD-88-03 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Package build | PASS | The functional-language validator extracts the deterministic archive, parses package metadata with Ring, and executes a clean external Ring consumer. |
+| LD-88-04 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Artifact contents | PASS | The source archive contains Ring source, package metadata, the status-preserving command wrapper, and the canonical runtime bundle. |
+| LD-88-05 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Isolated consumer | PASS | A separate Ring consumer loads only the extracted package library outside the source checkout. |
+| LD-88-06 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Public interface | PASS | lib.ring exposes argument-list execution; bin/sshfling-ring maps the Ring-reported status to a POSIX command status. |
+| LD-88-07 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Version contract | PASS | The focused Ring consumer must print the exact SSHFling release version. |
+| LD-88-08 | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | Runtime assets/workflow | PASS | The consumer and command validate exact version output, init assets, invalid option status, missing runtime status, removal, and import absence. |

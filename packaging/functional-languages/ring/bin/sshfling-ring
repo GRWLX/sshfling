@@ -1,0 +1,31 @@
+#!/usr/bin/env sh
+set -u
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+package_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+status_file="${TMPDIR:-/tmp}/sshfling-ring-status.$$"
+
+cleanup() {
+    rm -f -- "$status_file"
+}
+trap cleanup EXIT HUP INT TERM
+
+SSHFLING_RING_STATUS_FILE="$status_file" \
+SSHFLING_PACKAGE_ROOT="${SSHFLING_PACKAGE_ROOT:-$package_root}" \
+sh -c 'cd "$1" || exit 1; shift; exec ring main.ring "$@"' sh "$package_root" "$@"
+ring_status=$?
+if [ "$ring_status" -ne 0 ]; then
+    exit "$ring_status"
+fi
+
+if [ ! -s "$status_file" ]; then
+    exit 1
+fi
+
+status=$(sed -n '1p' "$status_file")
+case "$status" in
+    ''|*[!0-9]*)
+        exit 1
+        ;;
+esac
+exit "$status"

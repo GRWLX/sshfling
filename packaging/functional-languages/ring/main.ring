@@ -1,7 +1,13 @@
 load "lib.ring"
 
-func main
-    nStatus = run(sysargv[3:len(sysargv)])
-    if nStatus != 0
-        raise("SSHFling exited with status " + nStatus)
+func commandarguments
+    aArgs = []
+    if len(sysargv) >= 3
+        for nIndex = 3 to len(sysargv) add(aArgs, sysargv[nIndex]) next
     ok
+    return aArgs
+
+func main
+    nStatus = run(commandarguments())
+    cStatusFile = sysget("SSHFLING_RING_STATUS_FILE")
+    if cStatusFile != "" write(cStatusFile, "" + nStatus) ok

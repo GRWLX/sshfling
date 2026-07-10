@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 
 destination="${1:-${RUNNER_TEMP:-$PWD/build}/promoted-language-runtimes}"
+install -d "$destination"
+destination="$(cd "$destination" && pwd)"
 download_dir="$destination/downloads"
 install -d "$download_dir"
 
@@ -165,6 +167,34 @@ if [[ ! -x "$destination/harbour/bin/harbour" || ! -x "$destination/harbour/bin/
   )
 fi
 
+ring_commit="f88d95236319460327b05efcfdab7c342caa7d22"
+ring_source="$destination/ring-src"
+ring_bin="$destination/ring/bin/ring"
+if [[ ! -x "$ring_bin" ]] || ! "$ring_bin" -version 2>/dev/null | grep -F "Ring version 1.27.0" >/dev/null; then
+  rm -rf -- "$ring_source" "$destination/ring"
+  git clone --depth 1 --filter=blob:none --sparse --branch v1.27 \
+    https://github.com/ring-lang/ring.git "$ring_source" >&2
+  (
+    cd "$ring_source"
+    if [[ "$(git rev-parse HEAD)" != "$ring_commit" ]]; then
+      echo "Ring v1.27 commit verification failed" >&2
+      exit 1
+    fi
+    git sparse-checkout set language/src language/include bin/load >&2
+    install -d "$(dirname "$ring_bin")"
+    cp -a bin/load "$(dirname "$ring_bin")/load"
+    cd language/src
+    gcc -O2 \
+      ring.c general.c state.c ext.c hashlib.c rhtable.c vmgc.c os_e.c rstring.c \
+      rlist.c ritem.c ritems.c scanner.c parser.c stmt.c expr.c codegen.c vm.c \
+      vmerror.c vmeval.c vmthread.c vmexpr.c vmvars.c vmlists.c vmfuncs.c \
+      ringapi.c vmoop.c vmtry.c vmstr.c vmjump.c vmrange.c list_e.c meta_e.c \
+      vminfo_e.c vmperf.c vmexit.c vmstack.c vmstate.c genlib_e.c math_e.c \
+      file_e.c dll_e.c objfile.c \
+      -I "$PWD/../include" -o "$ring_bin" -lm -ldl >&2
+  )
+fi
+
 path_entries=(
   "$destination/julia/julia-1.10.10/bin"
   "$destination/j/j9.6/bin"
@@ -175,10 +205,11 @@ path_entries=(
   "$destination/odin"
   "$destination/ponyc/bin"
   "$destination/harbour/bin"
+  "$destination/ring/bin"
   "/usr/bin"
 )
 
-for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 bal chpl mason; do
+for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 ring bal chpl mason; do
   found=0
   for entry in "${path_entries[@]}"; do
     if [[ -x "$entry/$executable" ]]; then
