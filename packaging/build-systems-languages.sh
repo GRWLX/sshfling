@@ -98,6 +98,7 @@ declare -Ar validation_modes=(
   [assembly]="build-only"
   [objective-c]="build-only"
   [fortran]="build-only"
+  [object-pascal]="build-only"
   [cobol]="build-only"
   [ada]="build-only"
   [zig]="build-only"
@@ -118,6 +119,7 @@ declare -Ar validation_capabilities=(
   [assembly]="compile,library-build,library-consumer,cli-runtime,init-workflow,exit-workflow,binary-format"
   [objective-c]="compile,library-build,library-consumer,cli-runtime,init-workflow,exit-workflow"
   [fortran]="compile,cli-runtime,init-workflow,exit-workflow"
+  [object-pascal]="compile,library-consumer,cli-runtime,init-workflow,exit-workflow"
   [cobol]="compile,cli-runtime,init-workflow,exit-workflow"
   [ada]="compile,cli-runtime,init-workflow,exit-workflow"
   [zig]="compile,library-build,cli-runtime,init-workflow,exit-workflow"
@@ -224,6 +226,22 @@ selected_slug() {
   ((${#requested[@]} == 0)) || [[ -n "${requested[$slug]:-}" ]]
 }
 
+canonical_system_slug() {
+  case "$1" in
+    Red) printf '%s\n' red ;;
+    "Delphi/Object Pascal") printf '%s\n' object-pascal ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+canonical_system_language() {
+  case "$1" in
+    red) printf '%s\n' Red ;;
+    object-pascal) printf '%s\n' "Delphi/Object Pascal" ;;
+    *) printf '%s\n' "$2" ;;
+  esac
+}
+
 validate_sources() {
   python3 - "$systems_root" <<'PY'
 import csv
@@ -235,8 +253,8 @@ import tomllib
 root = pathlib.Path(sys.argv[1])
 expected = {
     "assembly", "objective-c", "fortran", "cobol", "ada", "zig", "nim", "d",
-    "v", "crystal", "webassembly-wasi", "forth", "odin", "pony", "chapel",
-    "harbour", "red", "swift",
+    "object-pascal", "v", "crystal", "webassembly-wasi", "forth", "odin",
+    "pony", "chapel", "harbour", "red", "swift",
 }
 rows = []
 with (root / "packages.tsv").open(encoding="utf-8", newline="") as handle:
@@ -289,7 +307,7 @@ PY
 
 declare -a inventory_tools=(
   gcc clang cc objcopy llvm-objcopy as ld
-  gfortran flang-new flang cobc gnatmake gprbuild zig nim nimble
+  gfortran flang-new flang fpc cobc gnatmake gprbuild zig nim nimble
   ldc2 dmd gdc v crystal wat2wasm wasm-ld wasmtime gforth odin ponyc
   node chpl mason harbour hbmk2 red swift swiftc
 )
@@ -406,6 +424,16 @@ detect_language() {
       fi
       if ! printf 'program p\nend program p\n' | "$FORTRAN_CC" -x f95 - -o "$probe_dir/probe" >/dev/null 2>&1; then
         GATE_REASON="$FORTRAN_CC failed the Fortran compile/link probe"
+        return 1
+      fi
+      ;;
+    object-pascal)
+      command -v fpc >/dev/null 2>&1 || { GATE_REASON="Free Pascal fpc is required"; return 1; }
+      install -d "$probe_dir/units"
+      printf 'program probe;\nbegin\n  Halt(0);\nend.\n' >"$probe_dir/probe.pas"
+      if ! fpc -Mobjfpc -Sh -FU"$probe_dir/units" -FE"$probe_dir" \
+          -o"$probe_dir/probe" "$probe_dir/probe.pas" >/dev/null 2>&1; then
+        GATE_REASON="Free Pascal failed the Object Pascal compile/link probe"
         return 1
       fi
       ;;
@@ -646,6 +674,23 @@ build_fortran() {
   "$FORTRAN_CC" -std=f2018 -Wall -Wextra -Werror -I"$out" \
     "$systems_root/fortran/app/main.f90" "$out/sshfling.o" "$out/launcher.o" -o "$out/sshfling-fortran"
   test_native_cli "$out/sshfling-fortran" fortran
+}
+
+build_object_pascal() {
+  local out="$1"
+  local package="${package_roots[object-pascal]}"
+  local consumer="$out/sshfling-object-pascal-consumer"
+  local output
+  install -d "$out/cli-units" "$out/consumer-units"
+  fpc -Mobjfpc -Sh -Fu"$package/src" -FU"$out/cli-units" \
+    -FE"$out" -o"$out/sshfling-object-pascal" "$package/app/main.pas" >/dev/null
+  fpc -Mobjfpc -Sh -Fu"$package/src" -FU"$out/consumer-units" \
+    -FE"$out" -o"$consumer" "$package/consumers/main.pas" >/dev/null
+  output="$(SSHFLING_RUNTIME_DIR="$runtime_dir" "$consumer")"
+  [[ "$output" == "sshfling $version" ]]
+  record_validation object-pascal isolated-consumer PASS \
+    "unit=SSHFling;compiler=fpc;output=$output"
+  test_native_cli "$out/sshfling-object-pascal" object-pascal
 }
 
 build_cobol() {
@@ -970,6 +1015,7 @@ build_language() {
     assembly) build_assembly "$out" ;;
     objective-c) build_objective_c "$out" ;;
     fortran) build_fortran "$out" ;;
+    object-pascal) build_object_pascal "$out" ;;
     cobol) build_cobol "$out" ;;
     ada) build_ada "$out" ;;
     zig) build_zig "$out" ;;
@@ -991,8 +1037,8 @@ build_language() {
 print_inventory
 printf '%s\n' 'SOURCE VALIDATION'
 validate_sources
-printf '%s\n' 'VALIDATED metadata/source registry (18 packages)'
-record_validation batch source-registry PASS "packages=18;metadata_and_declared_sources=validated"
+printf '%s\n' 'VALIDATED metadata/source registry (19 packages)'
+record_validation batch source-registry PASS "packages=19;metadata_and_declared_sources=validated"
 
 if ((${#requested[@]} > 0)); then
   while IFS= read -r slug; do
@@ -1020,6 +1066,8 @@ declare -a failed_languages=()
 printf '%s\n' 'BUILD AND RUNTIME VALIDATION'
 while IFS='|' read -r slug language _toolchains _metadata _sources; do
   [[ "$slug" == \#* || -z "$slug" ]] && continue
+  slug="$(canonical_system_slug "$slug")"
+  language="$(canonical_system_language "$slug" "$language")"
   selected_slug "$slug" || continue
 
   if ! detect_language "$slug"; then

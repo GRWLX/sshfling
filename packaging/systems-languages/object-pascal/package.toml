@@ -1,0 +1,9 @@
+schema_version = 1
+name = "sshfling-object-pascal"
+version = "0.0.0"
+language = "Object Pascal"
+compiler = "Free Pascal"
+abi = "sshfling-process-launcher-v1"
+unit_source = "src/sshfling.pas"
+cli_source = "app/main.pas"
+

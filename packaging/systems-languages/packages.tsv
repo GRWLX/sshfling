@@ -2,6 +2,7 @@
 assembly|Assembly|gcc,clang,objcopy|package.toml|src/sshfling.S,src/main.S,include/sshfling_assembly.h,consumers/c/main.c
 objective-c|Objective-C|clang,gcc|CMakeLists.txt|include/SSHFling/SSHFling.h,src/SSHFling.m,src/main.m,consumers/main.m
 fortran|Fortran|gfortran,flang-new,flang|fpm.toml|src/sshfling.f90,app/main.f90,consumers/main.f90
+object-pascal|Delphi/Object Pascal|fpc|package.toml|src/sshfling.pas,app/main.pas,consumers/main.pas
 cobol|COBOL|cobc|package.toml|src/sshfling.cob,app/main.cob,consumers/main.cob
 ada|Ada|gnatmake,gprbuild|alire.toml|src/sshfling.ads,src/sshfling.adb,app/sshfling_main.adb,consumers/main.adb
 zig|Zig|zig|build.zig.zon|build.zig,src/sshfling.zig,src/main.zig

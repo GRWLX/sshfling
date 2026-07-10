@@ -54,7 +54,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            clang curl fish gcc gcc-multilib git guile-3.0 guix liblua5.1-0-dev liblua5.4-dev libc6-dev-i386 libc6-i386 lua5.1 lua5.4 \
+            clang curl fish fp-compiler fp-units-fcl gcc gcc-multilib git guile-3.0 guix liblua5.1-0-dev liblua5.4-dev libc6-dev-i386 libc6-i386 lua5.1 lua5.4 \
             openjdk-21-jre-headless \
             luarocks make mawk sed tcl unzip xz-utils zsh
           /usr/lib/jvm/java-21-openjdk-amd64/bin/java -version

@@ -5,8 +5,8 @@ an explicit package manager or distribution mechanism, deployment type, interfac
 and artifact boundary. Maven and Gradle are separate JVM deployments, and real
 importable library surfaces are named rather than inferred from language names.
 
-Catalog outcomes: **63 PASS**, **12 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **141 explicit surface cells** (113 PASS, 12 BLOCKED, 16 NOT_APPLICABLE).
-Fully implemented runtime deployments retain **712 detailed PASS cells** across **89 surfaces**, including **72 validated library-capable surfaces**.
+Catalog outcomes: **64 PASS**, **11 BLOCKED**, and **16 NOT_APPLICABLE**. The catalog expands to **142 explicit surface cells** (115 PASS, 11 BLOCKED, 16 NOT_APPLICABLE).
+Fully implemented runtime deployments retain **720 detailed PASS cells** across **90 surfaces**, including **73 validated library-capable surfaces**.
 
 A source-archive publication PASS proves deterministic archive creation and inventory
 only. It is deliberately separate from install, library-consumer, CLI, and runtime
@@ -63,7 +63,8 @@ TODO status audit: **0 row(s) differ** from current package evidence (none). The
 | C91-025-02 | 25 | Objective-C | CMake/source build | versioned source-archive publication | source package | sshfling-objective-c-VERSION.tar.gz | PASS | PASS | PASS | A PASS source-archive row for objective-c, including inventory digest and repeat-build identity, is recorded in dist/sshfling-systems-languages-VERSION-validation.tsv. |
 | C91-026-01 | 26 | Groovy | Maven | Groovy/JVM dependency | library | io.sshfling:sshfling-cli:VERSION | PASS | PASS | PASS | The package-java validator supplies the detailed PASS evidence below. |
 | C91-026-02 | 26 | Groovy | Gradle | Groovy/JVM dependency | library | io.sshfling:sshfling-cli:VERSION | PASS | PASS | PASS | The package-java validator supplies the detailed PASS evidence below. |
-| C91-027-01 | 27 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable candidate | library + CLI | tracked Pascal units; publication disabled | BLOCKED | BLOCKED | BLOCKED | BLOCKED runtime-validation: Free Pascal validation cannot establish Delphi compiler compatibility or a supported dual-toolchain package |
+| C91-027-01 | 27 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | sshfling-object-pascal-VERSION.tar.gz | PASS | PASS | PASS | The systems-language validator records RUNTIME object-pascal PASS with build-only mode plus Free Pascal compile, library consumer, CLI runtime, init workflow, and exit workflow capabilities. |
+| C91-027-02 | 27 | Delphi/Object Pascal | Free Pascal units | versioned source-archive publication | source package | sshfling-object-pascal-VERSION.tar.gz | PASS | PASS | PASS | A PASS source-archive row for object-pascal, including inventory digest and repeat-build identity, is recorded in dist/sshfling-systems-languages-VERSION-validation.tsv. |
 | C91-028-01 | 28 | Julia | Julia Pkg | Julia package dependency and command | library + CLI | sshfling-julia-VERSION.tar.gz | PASS | PASS | PASS | The per-language validator installs and precompiles the package, runs Pkg.test, and executes an external consumer at VERSION=0.1.16. |
 | C91-028-02 | 28 | Julia | Julia Pkg | versioned source-archive publication | source package | sshfling-julia-VERSION.tar.gz | PASS | PASS | PASS | PASS published-source-archive and published-source-inventory rows for julia are recorded in dist/sshfling-functional-languages-VERSION-validation.tsv. |
 | C91-029-01 | 29 | HCL/Terraform | Terraform module | declarative infrastructure module | no library or CLI surface | none | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE | NOT_APPLICABLE: local-exec would be an unsafe shell-string side effect, not a typed launcher |
@@ -257,6 +258,7 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | harbour-hbmk2-cli | Harbour | hbmk2 | Harbour CLI package | CLI | sshfling-harbour-VERSION.tar.gz | `package-systems-languages` |
 | ring-source-library | Ring | Ring source package | Ring library and POSIX status-wrapper command | library + CLI | sshfling-ring-VERSION.tar.gz | `package-functional-languages` |
 | red-redsystem-cli | Red | Red/System compiler | Red/System source package | CLI | sshfling-red-VERSION.tar.gz | `package-systems-languages` |
+| object-pascal-fpc-package | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | sshfling-object-pascal-VERSION.tar.gz | `package-systems-languages` |
 
 ## Detailed Eight-Check Verification Cells
 
@@ -974,3 +976,11 @@ These surfaces alone receive the detailed eight-check lifecycle grid.
 | LD-89-06 | Red | Red/System compiler | Red/System source package | CLI | Public interface | PASS | The CLI delegates argv handling to the shared launcher ABI through the Red/System import declarations. |
 | LD-89-07 | Red | Red/System compiler | Red/System source package | CLI | Version contract | PASS | The CLI prints the exact SSHFling release version. |
 | LD-89-08 | Red | Red/System compiler | Red/System source package | CLI | Runtime assets/workflow | PASS | The CLI validates init assets, invalid option status, missing runtime status, and clean temporary workspace behavior. |
+| LD-90-01 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Source surface | PASS | A Free Pascal-compatible Object Pascal unit, CLI, and consumer are tracked under packaging/systems-languages/object-pascal. |
+| LD-90-02 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Package metadata | PASS | package.toml declares the package identity, Free Pascal compiler boundary, unit source, CLI source, and launcher ABI. |
+| LD-90-03 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Package build | PASS | The systems validator compiles the package CLI and isolated consumer with fpc in objfpc mode. |
+| LD-90-04 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Artifact contents | PASS | The source archive contains Object Pascal sources, runtime, templates, license, and inventory manifest. |
+| LD-90-05 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Isolated consumer | PASS | A clean consumer compiles against the extracted SSHFling unit outside the repository source tree. |
+| LD-90-06 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Public interface | PASS | The unit exposes RunSSHFling for argument-array execution and the package includes a CLI. |
+| LD-90-07 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Version contract | PASS | The consumer and CLI print the exact SSHFling release version. |
+| LD-90-08 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | Runtime assets/workflow | PASS | The consumer and CLI validate version, init, invalid option, and missing runtime behavior; Delphi compiler compatibility is not claimed. |

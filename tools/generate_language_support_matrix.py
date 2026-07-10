@@ -399,7 +399,13 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         PASS_JVM_CONSUMER_EVIDENCE,
         "The clean Groovy application invokes SSHFling.run and validates the bundled runtime workflow.",
     ),
-    domain_blocked("Delphi/Object Pascal", "A Free Pascal/Object Pascal launcher candidate is tracked under packaging/domain-languages/object-pascal.", "Free Pascal validation does not establish Delphi compiler compatibility; both toolchain matrices remain external."),
+    row(
+        "Delphi/Object Pascal",
+        "PASS",
+        "A Free Pascal-compatible Object Pascal unit, CLI, and external consumer are tracked under packaging/systems-languages/object-pascal.",
+        PASS_SYSTEM_LANGUAGES_EVIDENCE,
+        "Free Pascal validates the Object Pascal unit, isolated consumer, CLI/runtime behavior, init workflow, invalid option, and missing-runtime exit behavior; Delphi compiler compatibility is not claimed.",
+    ),
     row(
         "Julia",
         "PASS",

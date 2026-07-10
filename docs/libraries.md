@@ -223,7 +223,7 @@ my $status = SSHFling::run('--version');
 
 ## Generated First-91 Library Surface Index
 
-This index contains 77 explicit library/module surfaces: 69 PASS and 8 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
+This index contains 77 explicit library/module surfaces: 70 PASS and 7 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
 
 | Order | Language | Package manager | Deployment | Interface | Status | Artifact | Evidence or blocker |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
@@ -258,7 +258,7 @@ This index contains 77 explicit library/module surfaces: 69 PASS and 8 BLOCKED. 
 | 25 | Objective-C | CMake/source build | Objective-C shared-library dependency | library + CLI | PASS | libsshfling_objc.so and sshfling-objective-c validation artifacts | The focused systems validator compiles warning-clean shared-library, CLI, and consumer binaries. |
 | 26 | Groovy | Maven | Groovy/JVM dependency | library | PASS | io.sshfling:sshfling-cli:VERSION | The package-java validator supplies the detailed PASS evidence below. |
 | 26 | Groovy | Gradle | Groovy/JVM dependency | library | PASS | io.sshfling:sshfling-cli:VERSION | The package-java validator supplies the detailed PASS evidence below. |
-| 27 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable candidate | library + CLI | BLOCKED | tracked Pascal units; publication disabled | BLOCKED runtime-validation: Free Pascal validation cannot establish Delphi compiler compatibility or a supported dual-toolchain package |
+| 27 | Delphi/Object Pascal | Free Pascal units | Object Pascal unit and executable package | library + CLI | PASS | sshfling-object-pascal-VERSION.tar.gz | The systems-language validator records RUNTIME object-pascal PASS with build-only mode plus Free Pascal compile, library consumer, CLI runtime, init workflow, and exit workflow capabilities. |
 | 28 | Julia | Julia Pkg | Julia package dependency and command | library + CLI | PASS | sshfling-julia-VERSION.tar.gz | The per-language validator installs and precompiles the package, runs Pkg.test, and executes an external consumer at VERSION=0.1.16. |
 | 30 | Assembly | GNU/Clang toolchain | x86_64 ELF source package | library + CLI | PASS | libsshfling_assembly.so and sshfling-assembly validation artifacts | The focused systems validator compiles PIC assembly, links a shared library and CLI, and extracts debug data. |
 | 31 | COBOL | GnuCOBOL | free-format COBOL source package | library module + CLI | PASS | COBOL object module and sshfling-cobol validation command | The focused systems validator compiles the module and links the CLI with warnings treated as errors. |

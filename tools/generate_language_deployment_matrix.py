@@ -2062,6 +2062,40 @@ _red_deployment["validation_evidence"] = (
 )
 DEPLOYMENTS.append(_red_deployment)
 
+_object_pascal_deployment = deployment(
+    "object-pascal-fpc-package",
+    "Delphi/Object Pascal",
+    "Free Pascal units",
+    "Object Pascal unit and executable package",
+    "library + CLI",
+    "sshfling-object-pascal-VERSION.tar.gz",
+    "package-systems-languages",
+    [
+        "packaging/systems-languages/object-pascal/package.toml",
+        "packaging/systems-languages/object-pascal/src/sshfling.pas",
+        "packaging/systems-languages/object-pascal/app/main.pas",
+        "packaging/systems-languages/object-pascal/consumers/main.pas",
+        "packaging/build-systems-languages.sh",
+        "tools/validate_promoted_language_evidence.py",
+    ],
+    (
+        "A Free Pascal-compatible Object Pascal unit, CLI, and consumer are tracked under packaging/systems-languages/object-pascal.",
+        "package.toml declares the package identity, Free Pascal compiler boundary, unit source, CLI source, and launcher ABI.",
+        "The systems validator compiles the package CLI and isolated consumer with fpc in objfpc mode.",
+        "The source archive contains Object Pascal sources, runtime, templates, license, and inventory manifest.",
+        "A clean consumer compiles against the extracted SSHFling unit outside the repository source tree.",
+        "The unit exposes RunSSHFling for argument-array execution and the package includes a CLI.",
+        "The consumer and CLI print the exact SSHFling release version.",
+        "The consumer and CLI validate version, init, invalid option, and missing runtime behavior; Delphi compiler compatibility is not claimed.",
+    ),
+)
+_object_pascal_deployment["validation_evidence"] = (
+    "The systems-language validator records RUNTIME object-pascal PASS with "
+    "build-only mode plus Free Pascal compile, library consumer, CLI runtime, "
+    "init workflow, and exit workflow capabilities."
+)
+DEPLOYMENTS.append(_object_pascal_deployment)
+
 
 FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Python", "PASS"),
@@ -2090,7 +2124,7 @@ FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("MATLAB", "BLOCKED"),
     ("Objective-C", "PASS"),
     ("Groovy", "PASS"),
-    ("Delphi/Object Pascal", "BLOCKED"),
+    ("Delphi/Object Pascal", "PASS"),
     ("Julia", "PASS"),
     ("HCL/Terraform", "NOT_APPLICABLE"),
     ("Assembly", "PASS"),
@@ -2251,6 +2285,7 @@ SYSTEMS_SOURCE_PACKAGES = (
     ("Assembly", "assembly", "GNU/Clang toolchain", "packaging/systems-languages/assembly"),
     ("COBOL", "cobol", "GnuCOBOL", "packaging/systems-languages/cobol"),
     ("Fortran", "fortran", "fpm/source build", "packaging/systems-languages/fortran"),
+    ("Delphi/Object Pascal", "object-pascal", "Free Pascal units", "packaging/systems-languages/object-pascal"),
     ("Zig", "zig", "Zig build", "packaging/systems-languages/zig"),
     ("Nim", "nim", "Nimble", "packaging/systems-languages/nim"),
     ("Crystal", "crystal", "Shards/Crystal", "packaging/systems-languages/crystal"),
@@ -2357,16 +2392,6 @@ CATALOG_SURFACES.extend(
             "tracked +sshfling candidate; publication disabled",
             "a licensed MATLAB runtime and configured JVM are required for conformance",
             ["packaging/domain-languages/matlab/+sshfling/run.m", "packaging/domain-languages/matlab/test_launcher.m", "packaging/build-domain-languages.sh"],
-        ),
-        blocked_runtime(
-            "object-pascal-unit-runtime",
-            "Delphi/Object Pascal",
-            "Free Pascal units",
-            "Object Pascal unit and executable candidate",
-            "library + CLI",
-            "tracked Pascal units; publication disabled",
-            "Free Pascal validation cannot establish Delphi compiler compatibility or a supported dual-toolchain package",
-            ["packaging/domain-languages/object-pascal/sshfling.pas", "packaging/domain-languages/object-pascal/sshfling_cli.pas", "packaging/build-domain-languages.sh"],
         ),
         blocked_runtime(
             "julia-pkg-runtime",

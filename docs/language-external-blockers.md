@@ -96,14 +96,11 @@ on a current Windows worker. No Windows artifact is emitted.
 <!-- target:delphi-object-pascal -->
 ### Delphi/Object Pascal
 
-The Object Pascal unit uses Free Pascal's `TProcess`, passes parameters through
-the process API, inherits the host console, waits, and returns `ExitStatus`. The
-gate requires `fpc`, compiles only into a temporary directory, and probes a fake
-SSHFling executable. `fpc` is absent here. Passing this gate would establish a
-Free Pascal surface only; it would not establish Delphi compatibility. A Delphi
-claim additionally requires an Embarcadero-supported compiler/platform matrix
-and license, neither of which is available in this repository. No archive is
-emitted.
+The promoted Object Pascal surface is validated with Free Pascal under
+`packaging/systems-languages/object-pascal`. That establishes a Free
+Pascal-compatible unit, CLI, archive, and consumer only. A Delphi compiler claim
+additionally requires an Embarcadero-supported compiler/platform matrix and
+license, neither of which is available in this repository.
 
 ## Database and infrastructure DSL blockers
 
