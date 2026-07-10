@@ -1302,6 +1302,8 @@ class PackageRunner:
 
     def validate_ballerina(self) -> None:
         self.probe("bal-version", [self.tools["bal"], "version"])
+        java = os.environ.get("SSHFLING_JAVA", "java")
+        self.probe("java-version", [java, "-version"])
         archive = self.source_archive()
         source = extract_single_root(archive, self.work / "source")
         env = {
@@ -1456,7 +1458,7 @@ class PackageRunner:
         )
         version_output = self.command(
             "consumer-version-output",
-            ["java", "-jar", executables[0]],
+            [java, "-jar", executables[0]],
             cwd=self.work,
             env=env,
         )

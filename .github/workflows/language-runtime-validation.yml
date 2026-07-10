@@ -55,7 +55,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             clang curl fish gcc guile-3.0 guix liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 \
+            openjdk-21-jre-headless \
             luarocks make mawk sed tcl unzip xz-utils zsh
+          /usr/lib/jvm/java-21-openjdk-amd64/bin/java -version
 
       - name: Provision pinned promoted-language runtimes
         run: |
@@ -67,6 +69,7 @@ jobs:
       - name: Build catalog and require promoted runtime evidence
         env:
           SSHFLING_VERSION: ${{ steps.version.outputs.version }}
+          SSHFLING_JAVA: /usr/lib/jvm/java-21-openjdk-amd64/bin/java
         run: |
           set -euo pipefail
           sudo rm -f /var/guix/daemon-socket/socket
