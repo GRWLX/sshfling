@@ -884,12 +884,12 @@ build_chapel() {
   cp -a "$prefix/consumers/." "$consumer_root/"
   compile_common_object "$out/launcher.o" "$prefix/common"
   if command -v mason >/dev/null 2>&1; then
-    (cd "$prefix" && mason check >/dev/null)
-    record_validation chapel package-metadata PASS "mason_check=yes"
+    (cd "$prefix" && mason modules >/dev/null)
+    record_validation chapel package-metadata PASS "mason_modules=yes"
   fi
-  chpl "$prefix/lib/chapel/SSHFling.chpl" "$prefix/src/main.chpl" \
+  chpl --ccflags "-I$prefix/common" "$prefix/lib/chapel/SSHFling.chpl" "$prefix/src/main.chpl" \
     "$out/launcher.o" -o "$cli"
-  chpl "$prefix/lib/chapel/SSHFling.chpl" "$consumer_root/main.chpl" \
+  chpl --ccflags "-I$prefix/common" "$prefix/lib/chapel/SSHFling.chpl" "$consumer_root/main.chpl" \
     "$out/launcher.o" -o "$consumer"
   output="$(SSHFLING_RUNTIME_DIR="$prefix/runtime" "$consumer" "$version")"
   [[ "$output" == "sshfling $version" ]]
@@ -897,14 +897,16 @@ build_chapel() {
     "module=SSHFling;package_version=$version;runtime_version=$version;output=$output"
   test_native_cli "$cli" chapel "$prefix/runtime"
   test_package_removal chapel "$prefix" "$cli" "$prefix/lib/chapel/SSHFling.chpl"
-  expect_failure chpl "$prefix/lib/chapel/SSHFling.chpl" "$consumer_root/main.chpl" \
+  expect_failure chpl --ccflags "-I$prefix/common" "$prefix/lib/chapel/SSHFling.chpl" "$consumer_root/main.chpl" \
     "$out/launcher.o" -o "$out/post-remove-consumer"
   record_validation chapel uninstall-import PASS "module_compile_fails_after_removal=yes"
 }
 
 build_harbour() {
   local out="$1"
-  (cd "$systems_root/harbour" && hbmk2 sshfling.hbp -o"$out/sshfling-harbour")
+  local prefix="$out/install"
+  install_source_package harbour "$prefix"
+  (cd "$prefix" && hbmk2 sshfling.hbp -o"$out/sshfling-harbour")
   test_native_cli "$out/sshfling-harbour" harbour
 }
 

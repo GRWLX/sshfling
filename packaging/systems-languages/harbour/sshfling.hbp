@@ -1,4 +1,5 @@
 -osshfling-harbour
+-gtstd
 -Icommon
 src/sshfling.prg
 src/bridge.c

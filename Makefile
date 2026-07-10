@@ -11,7 +11,7 @@ RELEASE_MATRIX_VALIDATE_FLAGS ?=
 RELEASE_SCANNER_BIN_DIR ?= $(if $(RUNNER_TEMP),$(RUNNER_TEMP),$(CURDIR)/build)/release-scanners/bin
 ENTERPRISE_RELEASE_OUTPUT_DIR ?= docs/release
 ENTERPRISE_RELEASE_EVIDENCE_DIR ?= docs/release/enterprise-release-evidence
-WEB_LANGUAGE_CONSUMERS ?= react vue svelte angular elm purescript rescript html-css
+WEB_LANGUAGE_CONSUMERS ?= react vue svelte angular elm purescript rescript html-css cfml
 
 .PHONY: install-local uninstall-local test test-native test-containers test-release-security-scan language-deployment-matrix release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-readiness-artifacts release-readiness-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet package-java package-node package-python package-go package-rust package-php package-ruby package-native-libraries package-perl package-functional-languages package-systems-languages package-scripting-languages clean
 .PHONY: package-web-language-consumers package-dart-consumer package-language-catalog package-language-catalog-strict package-scripting-languages audit-domain-languages

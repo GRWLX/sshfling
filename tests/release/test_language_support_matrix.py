@@ -255,10 +255,10 @@ class LanguageSupportMatrixTests(unittest.TestCase):
             "Reason/ReScript": "packaging/node/consumers/rescript/src/Main.res",
             "HTML/CSS": "packaging/node/consumers/html-css/src/styles.css",
             "Dart": "packaging/node/consumers/dart/bin/sshfling_consumer.dart",
+            "CFML": "packaging/node/consumers/cfml/test.cfm",
         }
         blocked_sources = {
             "Hack": "packaging/node/consumers/hack/src/main.hack",
-            "CFML": "packaging/node/consumers/cfml/test.cfm",
         }
 
         for language, source_path in pass_sources.items():

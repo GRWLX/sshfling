@@ -95,8 +95,6 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "Smalltalk",
             "APL",
             "Q/KDB+",
-            "Chapel",
-            "Ballerina",
             "Roc",
         ):
             cells = by_language[language]
@@ -133,6 +131,9 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "Pony",
             "Janet",
             "Odin",
+            "CFML",
+            "Chapel",
+            "Ballerina",
         ):
             cells = by_language[language]
             self.assertEqual(matrix.derived_catalog_status(cells), "PASS", language)
@@ -259,6 +260,7 @@ class LanguageDeploymentMatrixTests(unittest.TestCase):
             "purescript",
             "rescript",
             "html-css",
+            "cfml",
         ):
             item = deployments[f"{consumer}-npm-consumer"]
             self.assertEqual(item["build_target"], "package-web-language-consumers")

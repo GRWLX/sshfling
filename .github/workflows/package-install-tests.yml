@@ -876,6 +876,21 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Install CommandBox for CFML consumer
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl gnupg openjdk-21-jre-headless
+          curl -fsSL https://downloads.ortussolutions.com/debs/gpg |
+            gpg --dearmor >"$RUNNER_TEMP/ortussolutions.gpg"
+          sudo install -m 0644 "$RUNNER_TEMP/ortussolutions.gpg" \
+            /usr/share/keyrings/ortussolutions.gpg
+          echo "deb [signed-by=/usr/share/keyrings/ortussolutions.gpg] https://downloads.ortussolutions.com/debs/noarch /" |
+            sudo tee /etc/apt/sources.list.d/commandbox.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends commandbox
+          box version
+
       - name: Download and validate published npm package
         run: |
           set -euo pipefail
@@ -901,7 +916,7 @@ jobs:
           )
           SSHFLING_NPM_PACKAGE="$tmp/sshfling-${version}.tgz" \
             bash packaging/build-web-language-consumers.sh \
-              react vue svelte angular elm purescript rescript html-css
+              react vue svelte angular elm purescript rescript html-css cfml
           npm uninstall --prefix "$tmp/app" sshfling >/dev/null
           test ! -e "$tmp/app/node_modules/.bin/sshfling"
 

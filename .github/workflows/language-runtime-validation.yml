@@ -54,8 +54,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            clang curl fish guile-3.0 guix liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 \
-            luarocks mawk sed tcl unzip xz-utils zsh
+            clang curl fish gcc guile-3.0 guix liblua5.1-0-dev liblua5.4-dev lua5.1 lua5.4 \
+            luarocks make mawk sed tcl unzip xz-utils zsh
 
       - name: Provision pinned promoted-language runtimes
         run: |

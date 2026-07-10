@@ -3,11 +3,11 @@
 
 #include "sshfling_launcher.h"
 
-HB_FUNC(SSHFLINGVERSION) {
+HB_FUNC(SSHFLINGNATIVEVERSION) {
     hb_retc(sshfling_launcher_version());
 }
 
-HB_FUNC(SSHFLINGRUN) {
+HB_FUNC(SSHFLINGNATIVERUN) {
     PHB_ITEM arguments = hb_param(1, HB_IT_ARRAY);
     const HB_SIZE count = arguments == NULL ? 0 : hb_arrayLen(arguments);
     const char **values;

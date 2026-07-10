@@ -101,6 +101,11 @@ PASS_DART_EVIDENCE = (
     "library offline, enforces dart format and dart analyze, compiles the typed adapter to a "
     "native executable, and validates the trusted Node bridge execution"
 )
+PASS_CFML_EVIDENCE = (
+    "make package-node VERSION=0.1.16; SSHFLING_NPM_PACKAGE=dist/sshfling-0.1.16.tgz "
+    "bash packaging/build-web-language-consumers.sh cfml; CommandBox 6.3.3 executes the "
+    "CFML template after the Node bridge validates the packed SSHFling API"
+)
 BLOCKED_WEB_TOOLCHAIN_EVIDENCE = (
     "tracked package/source and a passing SSHFling Node bridge exist under packaging/node/consumers, "
     "but the required external language runtime is unavailable on the validation host"
@@ -505,10 +510,10 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     ),
     row(
         "CFML",
-        "BLOCKED",
-        "CFML source, CommandBox metadata, and a validated Node bridge are tracked under packaging/node/consumers/cfml.",
-        BLOCKED_WEB_TOOLCHAIN_EVIDENCE,
-        "Promotion requires CommandBox/CFML execution; the batch validator fails closed while box is unavailable.",
+        "PASS",
+        "CFML source, CommandBox metadata, template-relative bridge, and a validated Node bridge are tracked under packaging/node/consumers/cfml.",
+        PASS_CFML_EVIDENCE,
+        "CommandBox executes the server-side CFML template, which delegates to a trusted Node bridge consuming the packed SSHFling npm library.",
     ),
     domain_blocked("Wolfram Language", "A RunProcess-based Paclet source candidate is tracked under packaging/domain-languages/wolfram-language.", "A licensed Wolfram kernel exposed through wolframscript is required for conformance evidence."),
     domain_not_applicable("Verilog", "A simulator system task is a nonsynthesizable testbench escape, not a deployable SSHFling library.", "hardware description language"),
@@ -519,16 +524,16 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     domain_not_applicable("GLSL", "Shader stages have no host process API."),
     domain_not_applicable("HLSL", "Shader stages have no host process API."),
     domain_not_applicable("WGSL", "WebGPU shader stages have no host process API."),
-    row("Chapel", "BLOCKED", "Chapel package/build metadata are tracked under packaging/systems-languages/chapel.", BLOCKED_TOOLCHAIN_EVIDENCE, "Chapel validation is blocked until chpl compiler/runtime is available."),
+    row("Chapel", "PASS", "Chapel package/build metadata, module source, CLI, and external consumer are tracked under packaging/systems-languages/chapel.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Chapel validates Mason metadata, module import, CLI/runtime behavior, external consumption, removal, and post-removal import failure."),
     row("Pony", "PASS", "Pony package/build metadata and an external consumer are tracked under packaging/systems-languages/pony.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Pony package build, runtime, external-consumer, exit-contract, and removal checks are validated."),
     row("Janet", "PASS", "Janet package/build metadata, command source, runtime assets, and an external consumer are tracked under packaging/functional-languages/janet.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Janet package installation, module import, command execution, external consumption, and removal are validated."),
     row("Odin", "PASS", "Odin collection/build metadata and an external consumer are tracked under packaging/systems-languages/odin.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Odin package build, collection import, runtime, external-consumer, exit-contract, and removal checks are validated."),
-    row("Ballerina", "BLOCKED", "Ballerina package/build metadata are tracked under packaging/functional-languages/ballerina.", BLOCKED_TOOLCHAIN_EVIDENCE, "Ballerina validation is blocked until bal toolchain is available."),
+    row("Ballerina", "PASS", "Ballerina package/build metadata, public module, BALA resources, and external consumer tests are tracked under packaging/functional-languages/ballerina.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Ballerina validates bal test, BALA packaging, local-repository install, external package consumption, exact output capture, removal, and import absence."),
     row("Gleam", "PASS", "Gleam package/build metadata are tracked under packaging/beam-languages/gleam.", PASS_FUNCTIONAL_LANGUAGES_EVIDENCE, "Gleam package/build and external-consumer validation are confirmed."),
     row("Roc", "BLOCKED", "Roc package/build metadata are tracked under packaging/functional-languages/roc.", BLOCKED_TOOLCHAIN_EVIDENCE, "Roc validation is blocked until Roc runtime/toolchain is available."),
     row("Red", "BLOCKED", "Red package/build metadata are tracked under packaging/systems-languages/red.", BLOCKED_TOOLCHAIN_EVIDENCE, "Red validation is blocked until Red runtime/toolchain is available."),
     row("Ring", "BLOCKED", "Ring package/build metadata are tracked under packaging/functional-languages/ring.", BLOCKED_TOOLCHAIN_EVIDENCE, "Ring validation is blocked until Ring toolchain is available."),
-    row("Harbour", "BLOCKED", "Harbour package/build metadata are tracked under packaging/systems-languages/harbour.", BLOCKED_TOOLCHAIN_EVIDENCE, "Harbour validation is blocked until Harbour toolchain is available."),
+    row("Harbour", "PASS", "Harbour package/build metadata, xBase source, C bridge, CLI target, and runtime assets are tracked under packaging/systems-languages/harbour.", PASS_SYSTEM_LANGUAGES_EVIDENCE, "Harbour validates hbmk2 build, CLI/runtime behavior, init workflow, invalid option, and missing-runtime exit behavior."),
     domain_blocked("Xojo", "The audit records Xojo as a proprietary-toolchain blocker without fabricating a project.", "A licensed Xojo compiler and supported target matrix are unavailable."),
     domain_blocked("AutoHotkey", "An AutoHotkey v2 launcher candidate is tracked under packaging/domain-languages/autohotkey.", "AutoHotkey v2 on Windows is required for argument and status conformance evidence.", "automation language"),
     domain_blocked("AutoIt", "An AutoIt launcher candidate is tracked under packaging/domain-languages/autoit.", "AutoIt on Windows and its external licensing/toolchain are required for conformance evidence.", "automation language"),

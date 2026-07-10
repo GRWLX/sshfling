@@ -223,7 +223,7 @@ my $status = SSHFling::run('--version');
 
 ## Generated First-91 Library Surface Index
 
-This index contains 76 explicit library/module surfaces: 66 PASS and 10 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
+This index contains 77 explicit library/module surfaces: 69 PASS and 8 BLOCKED. Source-archive publication rows are excluded because publication alone is not library runtime evidence.
 
 | Order | Language | Package manager | Deployment | Interface | Status | Artifact | Evidence or blocker |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
@@ -295,12 +295,13 @@ This index contains 76 explicit library/module surfaces: 66 PASS and 10 BLOCKED.
 | 70 | J | J package | J addon dependency and command | library + CLI | PASS | sshfling-j-VERSION.tar.gz | The per-language validator installs the deterministic archive as an isolated J addon and runs its external consumer. |
 | 71 | LabVIEW G | VIPM/LabVIEW project | System Exec VI integration | library VI + CLI adapter candidate | BLOCKED | none | BLOCKED runtime-validation: a licensed LabVIEW version/OS matrix and genuine VI package are required; no binary G source is fabricated |
 | 73 | Q/KDB+ | KX q package | q namespace package | library | BLOCKED | sshfling-q-VERSION.tar.gz | BLOCKED runtime-validation: source publication passes, but the q runtime is unavailable for package and consumer validation |
+| 75 | CFML | npm | server-side CFML adapter project | library consumer | PASS | sshfling-VERSION.tgz | CommandBox executes the CFML template after the Node bridge verifies the packed SSHFling npm API. |
 | 76 | Wolfram Language | Wolfram Paclet | RunProcess-based Paclet candidate | library | BLOCKED | tracked Paclet source; publication disabled | BLOCKED runtime-validation: a licensed Wolfram kernel exposed through wolframscript is required for conformance |
-| 85 | Chapel | Mason | Chapel module and executable package | library + CLI | BLOCKED | sshfling-chapel-VERSION.tar.gz | BLOCKED runtime-validation: source publication passes, but chpl is unavailable for package and runtime validation |
+| 85 | Chapel | Mason | Chapel module and executable package | library + CLI | PASS | sshfling-chapel-VERSION.tar.gz | The systems-language validator extracts the deterministic archive, runs mason modules, compiles the package and external consumer with chpl, and executes both. |
 | 86 | Pony | Corral | Pony package and executable | library + CLI | PASS | sshfling-pony-VERSION.tar.gz | The systems validator extracts the deterministic archive, compiles with ponyc, and runs an isolated consumer. |
 | 87 | Janet | JPM | Janet module package and command | library + CLI | PASS | sshfling-janet-VERSION.tar.gz | The per-language validator installs from the deterministic archive into an isolated JPM tree and compiles the external consumer. |
 | 88 | Odin | Odin source package | Odin collection and executable | library + CLI | PASS | sshfling-odin-VERSION.tar.gz | The systems validator extracts the archive, builds the Odin collection and command, and executes an isolated consumer. |
-| 89 | Ballerina | Ballerina package | Ballerina module dependency | library | BLOCKED | sshfling-ballerina-VERSION.tar.gz | BLOCKED runtime-validation: source publication passes, but bal is unavailable for package test and consumer validation |
+| 89 | Ballerina | Ballerina package | Ballerina module dependency | library | PASS | sshfling-ballerina-VERSION.tar.gz and grwlx-sshfling-any-VERSION.bala | The functional-language validator runs bal test, bal pack, local repository push, external consumer tests, and removal/import-failure checks. |
 | 90 | Gleam | Gleam/Hex | Hex library package | library | PASS | sshfling-VERSION Hex tarball | The per-language validator runs gleam check, exports a Hex tarball, and builds an external consumer. |
 | 91 | Roc | Roc source package | Roc package and application | library + CLI | BLOCKED | sshfling-roc-VERSION.tar.gz | BLOCKED runtime-validation: source publication passes, but the Roc toolchain is unavailable for package and consumer validation |
 

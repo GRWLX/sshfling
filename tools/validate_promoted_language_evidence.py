@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 
-FUNCTIONAL_LANGUAGES = ("julia", "j", "janet")
+FUNCTIONAL_LANGUAGES = ("julia", "j", "janet", "ballerina")
 SCRIPTING_LANGUAGES = ("guix-scheme",)
 SCRIPTING_LIFECYCLE_PHASES = (
     "package-archive",
@@ -21,8 +21,8 @@ SCRIPTING_LIFECYCLE_PHASES = (
     "removal",
     "removal-source",
 )
-SYSTEM_LANGUAGES = ("v", "webassembly-wasi", "odin", "pony", "swift")
-SYSTEM_BUILD_LANGUAGES = ("zig",)
+SYSTEM_LANGUAGES = ("v", "webassembly-wasi", "odin", "pony", "swift", "chapel")
+SYSTEM_BUILD_LANGUAGES = ("zig", "harbour")
 SYSTEM_LIFECYCLE_PHASES = (
     "source-archive",
     "install",
@@ -84,6 +84,17 @@ SYSTEM_LIFECYCLE_CAPABILITIES = {
         "post-removal-import-failure",
     ),
     "swift": (
+        "compile",
+        "library-consumer",
+        "cli-runtime",
+        "init-workflow",
+        "exit-workflow",
+        "archive-install",
+        "isolated-consumer",
+        "remove",
+        "post-removal-import-failure",
+    ),
+    "chapel": (
         "compile",
         "library-consumer",
         "cli-runtime",

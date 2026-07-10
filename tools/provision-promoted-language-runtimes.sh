@@ -37,6 +37,36 @@ install_tar_xz() {
   tar -xJf "$archive" -C "$target"
 }
 
+install_deb() {
+  local archive="$1"
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    apt-get install -y --no-install-recommends "$archive" >&2
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo apt-get install -y --no-install-recommends "$archive" >&2
+  else
+    echo "sudo or root privileges are required to install $archive" >&2
+    exit 1
+  fi
+}
+
+ballerina_deb="$download_dir/ballerina-2201.12.0-swan-lake-linux-x64.deb"
+download \
+  "https://github.com/ballerina-platform/ballerina-distribution/releases/download/v2201.12.0/ballerina-2201.12.0-swan-lake-linux-x64.deb" \
+  "ba6e36d8da15ee3c244f5485ad40b3db5b7bdaa9220263f8fdd0e9276fc81734" \
+  "$ballerina_deb"
+if ! command -v bal >/dev/null 2>&1 || ! bal version 2>/dev/null | grep -F "Ballerina 2201.12.0" >/dev/null; then
+  install_deb "$ballerina_deb"
+fi
+
+chapel_deb="$download_dir/chapel-2.4.0-1.ubuntu24.amd64.deb"
+download \
+  "https://github.com/chapel-lang/chapel/releases/download/2.4.0/chapel-2.4.0-1.ubuntu24.amd64.deb" \
+  "368809ea039c5a04e282237e210ff9d7f7edabdc15706f008707ca65698349f1" \
+  "$chapel_deb"
+if ! command -v chpl >/dev/null 2>&1 || ! chpl --version 2>/dev/null | grep -F "chpl version 2.4.0" >/dev/null; then
+  install_deb "$chapel_deb"
+fi
+
 julia_archive="$download_dir/julia-1.10.10-linux-x86_64.tar.gz"
 download \
   "https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-1.10.10-linux-x86_64.tar.gz" \
@@ -117,6 +147,24 @@ download \
   "$pony_archive"
 install_tar "$pony_archive" "$destination/ponyc" 1
 
+harbour_archive="$download_dir/harbour-core-6df4c08b98c808904e0c19effbc09523af010ed6.tar.gz"
+download \
+  "https://codeload.github.com/harbour/core/tar.gz/6df4c08b98c808904e0c19effbc09523af010ed6" \
+  "0316216fe12af25a0275f31349dc9538b05720b018b6e0230a21ffa8649f457e" \
+  "$harbour_archive"
+if [[ ! -x "$destination/harbour/bin/harbour" || ! -x "$destination/harbour/bin/hbmk2" ]]; then
+  install_tar "$harbour_archive" "$destination/harbour-src" 1
+  (
+    cd "$destination/harbour-src"
+    make -j"${HARBOUR_BUILD_JOBS:-$(nproc)}" install \
+      HB_INSTALL_PREFIX="$destination/harbour" \
+      HB_BUILD_CONTRIBS=no \
+      HB_BUILD_3RDEXT=no \
+      HB_BUILD_SHARED=no \
+      HB_BUILD_STRIP=bin >&2
+  )
+fi
+
 path_entries=(
   "$destination/julia/julia-1.10.10/bin"
   "$destination/j/j9.6/bin"
@@ -126,9 +174,11 @@ path_entries=(
   "$destination/bin"
   "$destination/odin"
   "$destination/ponyc/bin"
+  "$destination/harbour/bin"
+  "/usr/bin"
 )
 
-for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc; do
+for executable in julia jconsole janet jpm zig v sshfling-wasi-clang odin ponyc harbour hbmk2 bal chpl mason; do
   found=0
   for entry in "${path_entries[@]}"; do
     if [[ -x "$entry/$executable" ]]; then

@@ -1,3 +1,5 @@
+import ballerina/io;
+import ballerina/file;
 import ballerina/os;
 
 const string packageVersion = "0.0.0";
@@ -32,14 +34,56 @@ public function templateDirectory() returns string {
     return installedResourceRoot() + "/templates";
 }
 
+public type RunResult record {|
+    int status;
+    string stdout;
+    string stderr;
+|};
+
+function commandArgs(string[] args) returns string[] {
+    return [runtimePath(), ...args];
+}
+
+function runtimeAvailable(string path) returns boolean {
+    boolean|file:Error result = file:test(path, file:EXISTS);
+    return result is boolean && result;
+}
+
+public function runAndCapture(string[] args) returns RunResult {
+    string python = os:getEnv("SSHFLING_PYTHON");
+    if python == "" {
+        python = "python3";
+    }
+    string runtime = runtimePath();
+    if !runtimeAvailable(runtime) {
+        return {status: 127, stdout: "", stderr: "SSHFling runtime is unavailable"};
+    }
+    os:Process|os:Error process = os:exec(
+        {value: python, arguments: commandArgs(args)},
+        SSHFLING_TEMPLATE_DIR = templateDirectory(),
+        PYTHONUNBUFFERED = "1"
+    );
+    if process is os:Error {
+        return {status: 127, stdout: "", stderr: process.message()};
+    }
+    byte[]|os:Error stdoutBytes = process.output();
+    byte[]|os:Error stderrBytes = process.output(io:stderr);
+    int|os:Error status = process.waitForExit();
+    string stdout = stdoutBytes is byte[] ? checkpanic string:fromBytes(stdoutBytes) : "";
+    string stderr = stderrBytes is byte[] ? checkpanic string:fromBytes(stderrBytes) : "";
+    return {status: status is int ? status : 1, stdout, stderr};
+}
+
 public function run(string[] args) returns int {
     string python = os:getEnv("SSHFLING_PYTHON");
     if python == "" {
         python = "python3";
     }
-    string[] commandArgs = [runtimePath(), ...args];
+    if !runtimeAvailable(runtimePath()) {
+        return 127;
+    }
     os:Process|os:Error process = os:exec(
-        {value: python, arguments: commandArgs},
+        {value: python, arguments: commandArgs(args)},
         SSHFLING_TEMPLATE_DIR = templateDirectory(),
         PYTHONUNBUFFERED = "1"
     );

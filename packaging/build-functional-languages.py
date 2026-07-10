@@ -376,7 +376,7 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
         package = metadata.get("package")
         if not isinstance(package, dict) or package.get("name") != "sshfling" or package.get("version") != "0.0.0":
             raise ValidationFailure("ballerina: package identity/version is invalid")
-        if package.get("include") != ["resources/**"]:
+        if package.get("include") != ["resources/**", "README.md", "LICENSE"]:
             raise ValidationFailure("ballerina: BALA resources are not explicitly included")
         dependencies = require_toml(root / "Dependencies.toml")
         if dependencies.get("ballerina", {}).get("distribution-version") != "2201.12.0":
@@ -385,6 +385,9 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
             root / "sshfling.bal",
             'const string packageVersion = "0.0.0"',
             "/repositories/local/bala/grwlx/sshfling/",
+            "public type RunResult record",
+            "file:test(path, file:EXISTS)",
+            "public function runAndCapture(string[] args) returns RunResult",
             "public function run(string[] args) returns int",
         )
     elif identifier == "roc":
@@ -1297,6 +1300,179 @@ class PackageRunner:
             env=env,
         )
 
+    def validate_ballerina(self) -> None:
+        self.probe("bal-version", [self.tools["bal"], "version"])
+        archive = self.source_archive()
+        source = extract_single_root(archive, self.work / "source")
+        env = {
+            "SSHFLING_PACKAGE_ROOT": str(source),
+            "JAVA_OPTS": f"-Duser.home={self.base_env['HOME']}",
+            "_JAVA_OPTIONS": f"-Duser.home={self.base_env['HOME']}",
+        }
+        self.command(
+            "ballerina-package-test",
+            [self.tools["bal"], "test", "--offline", "--sticky", source],
+            cwd=self.work,
+            env=env,
+        )
+        self.command(
+            "ballerina-pack",
+            [self.tools["bal"], "pack", "--offline", "--sticky", source],
+            cwd=self.work,
+            env=env,
+        )
+        bala_archives = sorted((source / "target/bala").glob("*.bala"))
+        self.check(
+            "bala-archive-count",
+            len(bala_archives) == 1,
+            f"archives={[path.name for path in bala_archives]}",
+        )
+        self.record_archive("bala-archive", bala_archives[0])
+        self.command(
+            "local-repository-push",
+            [self.tools["bal"], "push", "--repository=local", bala_archives[0]],
+            cwd=self.work,
+            env=env,
+        )
+        local_package = (
+            Path(self.base_env["HOME"])
+            / ".ballerina/repositories/local/bala/grwlx/sshfling"
+            / self.version
+            / "any"
+        )
+        self.check(
+            "local-repository-install",
+            local_package.is_dir(),
+            f"path={local_package};version={self.version}",
+        )
+        installed_runtime = local_package / "resources/runtime"
+        expected_runtime = file_inventory(self.canonical)
+        actual_runtime = file_inventory(installed_runtime) if installed_runtime.is_dir() else {}
+        missing_runtime = sorted(set(expected_runtime) - set(actual_runtime))
+        digest_mismatches = sorted(
+            name
+            for name in set(expected_runtime) & set(actual_runtime)
+            if expected_runtime[name][0] != actual_runtime[name][0]
+        )
+        extra_runtime = sorted(set(actual_runtime) - set(expected_runtime))
+        self.check(
+            "installed-resources",
+            not missing_runtime and not digest_mismatches,
+            f"root={installed_runtime};files={len(actual_runtime)};"
+            f"canonical_files={len(expected_runtime)};"
+            f"missing={','.join(missing_runtime) or 'none'};"
+            f"digest_mismatches={','.join(digest_mismatches) or 'none'};"
+            f"extra={','.join(extra_runtime) or 'none'};mode_normalized_by_bala=yes",
+        )
+
+        consumer = self.work / "external-ballerina-consumer"
+        tests = consumer / "tests"
+        tests.mkdir(parents=True)
+        (consumer / "Ballerina.toml").write_text(
+            "[package]\n"
+            "org = \"external\"\n"
+            "name = \"consumer\"\n"
+            "version = \"0.1.0\"\n"
+            "distribution = \"2201.12.0\"\n\n"
+            "[[dependency]]\n"
+            "org = \"grwlx\"\n"
+            "name = \"sshfling\"\n"
+            f"version = \"{self.version}\"\n"
+            "repository = \"local\"\n",
+            encoding="utf-8",
+        )
+        (consumer / "main.bal").write_text(
+            "import ballerina/io;\n"
+            "import grwlx/sshfling;\n\n"
+            "public function main() {\n"
+            "    sshfling:RunResult result = sshfling:runAndCapture([\"--version\"]);\n"
+            "    io:print(result.stdout);\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        smoke = self.work / "smoke"
+        tests.joinpath("consumer_test.bal").write_text(
+            "import ballerina/test;\n"
+            "import grwlx/sshfling;\n\n"
+            "@test:Config {}\n"
+            "function versionStatus() {\n"
+            "    test:assertEquals(sshfling:run([\"--version\"]), 0);\n"
+            "}\n\n"
+            "@test:Config {}\n"
+            "function invalidStatus() {\n"
+            "    test:assertEquals(sshfling:run([\"--definitely-invalid\"]), 2);\n"
+            "}\n\n"
+            "@test:Config {}\n"
+            "function initStatus() {\n"
+            f"    test:assertEquals(sshfling:run([\"init\", {json.dumps(str(smoke))}, \"--force\", \"--session-seconds\", \"60\"]), 0);\n"
+            "}\n\n"
+            "@test:Config {}\n"
+            "function missingRuntimeStatus() {\n"
+            "    test:assertEquals(sshfling:run([]), 127);\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        self.command(
+            "external-consumer-test",
+            [
+                self.tools["bal"],
+                "test",
+                "--offline",
+                "--sticky",
+                "--tests",
+                "versionStatus,invalidStatus,initStatus",
+                consumer,
+            ],
+            cwd=self.work,
+            env=env,
+        )
+        self.verify_init(smoke)
+        missing_env = {**env, "SSHFLING_RUNTIME": str(self.work / "missing-runtime.py")}
+        self.command(
+            "consumer-missing-runtime",
+            [
+                self.tools["bal"],
+                "test",
+                "--offline",
+                "--sticky",
+                "--tests",
+                "missingRuntimeStatus",
+                consumer,
+            ],
+            cwd=self.work,
+            env=missing_env,
+        )
+        self.command(
+            "external-consumer-build",
+            [self.tools["bal"], "build", "--offline", "--sticky", consumer],
+            cwd=self.work,
+            env=env,
+        )
+        executables = sorted((consumer / "target/bin").glob("*.jar"))
+        self.check(
+            "external-consumer-executable",
+            len(executables) == 1,
+            f"executables={[path.name for path in executables]}",
+        )
+        version_output = self.command(
+            "consumer-version-output",
+            ["java", "-jar", executables[0]],
+            cwd=self.work,
+            env=env,
+        )
+        self.assert_version_output(version_output)
+
+        shutil.rmtree(local_package)
+        shutil.rmtree(consumer / "target", ignore_errors=True)
+        self.command(
+            "import-absence",
+            [self.tools["bal"], "build", "--offline", "--sticky", consumer],
+            cwd=self.work,
+            env=env,
+            expected=lambda status: status != 0,
+        )
+        self.check("package-removed", not local_package.exists(), f"path={local_package}")
+
     def validate_common_lisp(self) -> None:
         self.probe("sbcl-version", [self.tools["sbcl"], "--version"])
         archive = self.source_archive()
@@ -1723,6 +1899,7 @@ TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {
 NATIVE_RUNNERS = {
     "haskell",
     "janet",
+    "ballerina",
     "j",
     "julia",
     "ocaml",

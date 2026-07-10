@@ -1904,6 +1904,103 @@ DEPLOYMENTS.append(
     )
 )
 
+DEPLOYMENTS.append(
+    node_language_consumer(
+        "cfml-npm-consumer",
+        "CFML",
+        "server-side CFML adapter project",
+        ["box.json", "test.cfm", "bridge.cjs", "test-bridge.cjs"],
+        "CommandBox executes the CFML template after the Node bridge verifies the packed SSHFling npm API.",
+        "The CFML template invokes a template-relative Node bridge from a server-side process boundary.",
+    )
+)
+
+DEPLOYMENTS.append(
+    validated_batch_package(
+        "ballerina-package-library",
+        "Ballerina",
+        "Ballerina package",
+        "Ballerina module dependency",
+        "library",
+        "sshfling-ballerina-VERSION.tar.gz and grwlx-sshfling-any-VERSION.bala",
+        "package-functional-languages",
+        "packaging/functional-languages/ballerina",
+        [
+            "packaging/functional-languages/ballerina/Ballerina.toml",
+            "packaging/functional-languages/ballerina/Dependencies.toml",
+            "packaging/functional-languages/ballerina/sshfling.bal",
+            "packaging/functional-languages/ballerina/tests/sshfling_test.bal",
+            "packaging/build-functional-languages.py",
+            "tools/validate_promoted_language_evidence.py",
+        ],
+        "Ballerina.toml declares the grwlx/sshfling package, Ballerina 2201.12.0 distribution, bundled resources, README, and license.",
+        "The functional-language validator runs bal test, bal pack, local repository push, external consumer tests, and removal/import-failure checks.",
+        "The deterministic source archive plus generated BALA contain the public module, tests, canonical runtime, templates, README, and license.",
+        "A separate Ballerina package resolves grwlx/sshfling from the isolated local repository and imports only the installed package.",
+        "The module exposes run and runAndCapture APIs for child status and exact stdout validation.",
+        "The external consumer validates version, init, invalid option, missing runtime, local-repository install, removal, and import absence.",
+    )
+)
+
+DEPLOYMENTS.append(
+    validated_batch_package(
+        "chapel-mason-library",
+        "Chapel",
+        "Mason",
+        "Chapel module and executable package",
+        "library + CLI",
+        "sshfling-chapel-VERSION.tar.gz",
+        "package-systems-languages",
+        "packaging/systems-languages/chapel",
+        [
+            "packaging/systems-languages/chapel/Mason.toml",
+            "packaging/systems-languages/chapel/src/SSHFling.chpl",
+            "packaging/systems-languages/chapel/src/main.chpl",
+            "packaging/systems-languages/chapel/consumers/main.chpl",
+            "packaging/build-systems-languages.sh",
+            "tools/validate_promoted_language_evidence.py",
+        ],
+        "Mason.toml declares the Chapel package while the module binds the common C launcher through the verified header.",
+        "The systems-language validator extracts the deterministic archive, runs mason modules, compiles the package and external consumer with chpl, and executes both.",
+        "The source archive contains Chapel sources, Mason metadata, shared launcher sources, runtime, templates, and inventory manifest.",
+        "A clean consumer imports the extracted SSHFling module outside the repository source tree.",
+        "The Chapel module exposes launcher version and argument-array execution; the package also builds a CLI.",
+        "The consumer and CLI validate version, init, invalid option, missing runtime, uninstall, and import absence.",
+    )
+)
+
+_harbour_deployment = deployment(
+    "harbour-hbmk2-cli",
+    "Harbour",
+    "hbmk2",
+    "Harbour CLI package",
+    "CLI",
+    "sshfling-harbour-VERSION.tar.gz",
+    "package-systems-languages",
+    [
+        "packaging/systems-languages/harbour/sshfling.hbp",
+        "packaging/systems-languages/harbour/src/sshfling.prg",
+        "packaging/systems-languages/harbour/src/bridge.c",
+        "packaging/build-systems-languages.sh",
+        "tools/validate_promoted_language_evidence.py",
+    ],
+    (
+        "A Harbour/xBase package source and bridge are tracked under packaging/systems-languages/harbour.",
+        "sshfling.hbp declares the terminal target, include path, Harbour source, C bridge, and common launcher source.",
+        "The systems validator extracts the deterministic archive and builds the command with hbmk2 from an isolated source package.",
+        "The source archive contains Harbour source, C bridge, common launcher sources, runtime, templates, and inventory manifest.",
+        "The validator builds and runs the CLI from a temporary output directory without repository source paths.",
+        "The Harbour procedure accepts argv with hb_AParams and delegates to the C bridge.",
+        "The CLI prints the exact SSHFling release version.",
+        "The CLI validates init assets, invalid option status, missing runtime status, and clean temporary workspace behavior.",
+    ),
+)
+_harbour_deployment["validation_evidence"] = (
+    "The systems-language validator records RUNTIME harbour PASS with build-only "
+    "mode and compile, CLI runtime, init workflow, and exit workflow capabilities."
+)
+DEPLOYMENTS.append(_harbour_deployment)
+
 
 FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Python", "PASS"),
@@ -1980,7 +2077,7 @@ FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("Scratch", "NOT_APPLICABLE"),
     ("Q/KDB+", "BLOCKED"),
     ("Hack", "BLOCKED"),
-    ("CFML", "BLOCKED"),
+    ("CFML", "PASS"),
     ("Wolfram Language", "BLOCKED"),
     ("Verilog", "NOT_APPLICABLE"),
     ("VHDL", "NOT_APPLICABLE"),
@@ -1990,11 +2087,11 @@ FIRST_91_CATALOG: tuple[tuple[str, str], ...] = (
     ("GLSL", "NOT_APPLICABLE"),
     ("HLSL", "NOT_APPLICABLE"),
     ("WGSL", "NOT_APPLICABLE"),
-    ("Chapel", "BLOCKED"),
+    ("Chapel", "PASS"),
     ("Pony", "PASS"),
     ("Janet", "PASS"),
     ("Odin", "PASS"),
-    ("Ballerina", "BLOCKED"),
+    ("Ballerina", "PASS"),
     ("Gleam", "PASS"),
     ("Roc", "BLOCKED"),
 )
@@ -2438,6 +2535,9 @@ _PROMOTED_RUNTIME_SURFACES = {
     "wasi-module-runtime",
     "odin-source-runtime",
     "pony-corral-runtime",
+    "cfml-commandbox-runtime",
+    "chapel-mason-runtime",
+    "ballerina-package-runtime",
 }
 CATALOG_SURFACES = [
     item for item in CATALOG_SURFACES if item["id"] not in _PROMOTED_RUNTIME_SURFACES

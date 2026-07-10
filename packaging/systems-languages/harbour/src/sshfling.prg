@@ -1,11 +1,11 @@
 FUNCTION SSHFlingVersion()
-   RETURN SSHFLINGVERSION()
+   RETURN SSHFLINGNATIVEVERSION()
 
 FUNCTION SSHFlingRun( aArguments )
    IF ! HB_ISARRAY( aArguments )
       RETURN 2
    ENDIF
-   RETURN SSHFLINGRUN( aArguments )
+   RETURN SSHFLINGNATIVERUN( aArguments )
 
 PROCEDURE Main( ... )
    ErrorLevel( SSHFlingRun( hb_AParams() ) )

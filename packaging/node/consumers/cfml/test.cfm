@@ -1,5 +1,5 @@
 <!--- This template runs on a CFML server. It delegates to Node; it is not browser code. --->
-<cfset bridgePath = expandPath("./bridge.cjs")>
+<cfset bridgePath = getDirectoryFromPath(getCurrentTemplatePath()) & "bridge.cjs">
 <cfexecute
   name="node"
   arguments='"#bridgePath#"'
