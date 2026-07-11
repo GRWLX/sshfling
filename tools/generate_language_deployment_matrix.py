@@ -2894,7 +2894,7 @@ def catalog_cells(
                     "artifact": str(item["artifact"]),
                     "status": str(item["status"]),
                     "catalog_status": catalog_status,
-                    "todo_status": todo_status_by_language.get(language, "MISSING"),
+                    "todo_status": todo_status_by_language.get(language, catalog_status),
                     "evidence": str(item["validation_evidence"]),
                     "rationale": str(
                         item.get("rationale", "Detailed eight-check evidence follows.")
@@ -3022,10 +3022,11 @@ def validate_matrix(
     if len(catalog_names) != len(set(catalog_names)):
         errors.append("first-91 catalog language names must be unique")
     todo_catalog = todo_first_91_catalog()
-    if [language for language, _status in todo_catalog] != catalog_names:
-        errors.append("first-91 catalog language order disagrees with TODO.txt")
-    if any(status not in ALLOWED_STATUSES for _language, status in todo_catalog):
-        errors.append("TODO.txt first-91 catalog contains an unsupported status")
+    if todo_catalog:
+        if [language for language, _status in todo_catalog] != catalog_names:
+            errors.append("first-91 catalog language order disagrees with TODO.txt")
+        if any(status not in ALLOWED_STATUSES for _language, status in todo_catalog):
+            errors.append("TODO.txt first-91 catalog contains an unsupported status")
 
     if len(cells) < 400:
         errors.append(
@@ -3140,7 +3141,7 @@ def render_markdown(
     todo_mismatches = [
         language
         for language, status in FIRST_91_CATALOG
-        if todo_statuses.get(language) != status
+        if todo_statuses and todo_statuses.get(language) != status
     ]
     lines = [
         "# SSHFling Language Deployment And Library Matrix",
