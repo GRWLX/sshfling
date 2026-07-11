@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.18 - 2026-07-11
+
+Status: language-catalog publication candidate after the `v0.1.17` full package
+release attempt exposed CI checkout determinism and missing protected signing
+configuration.
+
+### Fixed
+
+- Made the language deployment matrix independent of the ignored local
+  `TODO.txt` file so clean GitHub Actions checkouts validate the promoted
+  language catalog deterministically.
+- Bumped language package and evidence references to `0.1.18` for a
+  fixed-forward language artifact publication without moving `v0.1.17`.
+
 ## v0.1.17 - 2026-07-11
 
 Status: publishing candidate for the expanded language package catalog after
