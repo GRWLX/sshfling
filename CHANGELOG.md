@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.17 - 2026-07-11
+
+Status: publishing candidate for the expanded language package catalog after
+`v0.1.16`.
+
+### Added
+
+- Promoted the expanded language catalog for publication, including the
+  validated functional, scientific, BEAM, systems, scripting, JVM/.NET, web,
+  and native library package surfaces.
+- Bumped release evidence references to `0.1.17` so package-site validation can
+  publish the current post-`v0.1.16` language artifacts without replacing a
+  previously published version.
+
 ## v0.1.14 - 2026-07-07
 
 Status: release-prep source update. This version is not tagged or published
