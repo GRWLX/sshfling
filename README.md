@@ -2,50 +2,51 @@
 
 `sshfling` grants temporary SSH access with standard OpenSSH. The server does not need an AI CLI, agent, SDK, or vendor daemon.
 
-## Server / Service Side
+## Install
 
-Install from the signed APT repository after confirming the target release has
-published package-site evidence, repository signing metadata, and a signing-key
-fingerprint:
+Debian or Ubuntu:
 
 ```bash
-BASE_URL="https://grwlx.github.io/sshfling"
-: "${APPROVED_REPO_FINGERPRINT:?set this from the approved release evidence}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL "$BASE_URL/sshfling-repo-fingerprint.txt" -o "$tmp/sshfling-repo-fingerprint.txt"
-published_fingerprint="$(tr -d '[:space:]' <"$tmp/sshfling-repo-fingerprint.txt" | tr '[:lower:]' '[:upper:]')"
-test "$published_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
-curl -fsSL "$BASE_URL/sshfling-repo.gpg" -o "$tmp/sshfling-repo.gpg"
-actual_fingerprint="$(gpg --batch --show-keys --with-colons "$tmp/sshfling-repo.gpg" | awk -F: '/^fpr:/ {print toupper($10); exit}')"
-test "$actual_fingerprint" = "$APPROVED_REPO_FINGERPRINT"
-sudo install -d -m 0755 /usr/share/keyrings
-sudo install -m 0644 "$tmp/sshfling-repo.gpg" /usr/share/keyrings/sshfling-repo.gpg
-echo "deb [signed-by=/usr/share/keyrings/sshfling-repo.gpg] $BASE_URL/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
-sudo apt update
-sudo apt install -y sshfling
+curl -fsSL https://grwlx.github.io/sshfling/install.sh -o "$tmp/install.sh"
+bash "$tmp/install.sh" apt
+sshfling --version
 ```
 
-Uninstall the package/CLI:
+RHEL, Fedora, Rocky Linux, AlmaLinux, or UBI:
 
 ```bash
-sudo apt remove -y sshfling
-sudo rm -f \
-  /etc/apt/sources.list.d/sshfling.list \
-  /etc/apt/preferences.d/sshfling \
-  /usr/share/keyrings/sshfling-repo.gpg
-sudo apt update
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL https://grwlx.github.io/sshfling/install.sh -o "$tmp/install.sh"
+bash "$tmp/install.sh" dnf
+sshfling --version
 ```
 
-See [Install and uninstall runbook](docs/install-uninstall.md) for DEB/RPM,
-public repository, .NET, Java, npm, Python, Go, Rust, PHP, Ruby, macOS, Windows,
-BSD/community, container, dependency, and original-state instructions. See
-[Repository and package registration](docs/repos.md) for package publishing
-details, [Library APIs](docs/libraries.md) for importable package examples,
-[OpenSSH dependency policy](docs/openssh-dependencies.md) for
-dependency ownership, version, install, uninstall, and original-state
-expectations, and [Uninstall and cleanup](#uninstall-and-cleanup) for host SSH
+macOS with Homebrew:
+
+```bash
+brew install https://grwlx.github.io/sshfling/homebrew/sshfling.rb
+sshfling --version
+```
+
+The installer configures the signed package repository and verifies the
+published repository key fingerprint:
+
+```text
+B4E094A1E54ABF674E3A5A055E3D7A952679C7E1
+```
+
+See [Install and uninstall runbook](docs/install-uninstall.md) for manual
+fingerprint verification, raw package downloads, uninstall commands, language
+packages, community manifests, dependency ownership, and original-state
+instructions. See [Repository and package registration](docs/repos.md) for
+publishing details, [Library APIs](docs/libraries.md) for importable package
+examples, and [Uninstall and cleanup](#uninstall-and-cleanup) for host SSH
 configuration and local state removal.
+
+## Server / Service Side
 
 Password access:
 
