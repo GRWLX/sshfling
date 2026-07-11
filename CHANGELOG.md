@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.19 - 2026-07-11
+
+Status: language-catalog publication candidate after `v0.1.18` exposed one
+remaining clean-checkout test assumption.
+
+### Fixed
+
+- Updated the language deployment unit tests to allow absent ignored `TODO.txt`
+  data in clean CI checkouts while still checking local TODO synchronization
+  when the file exists.
+- Bumped language package and evidence references to `0.1.19` for a
+  fixed-forward language artifact publication without moving `v0.1.18`.
+
 ## v0.1.18 - 2026-07-11
 
 Status: language-catalog publication candidate after the `v0.1.17` full package
