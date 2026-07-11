@@ -1,0 +1,19 @@
+Package: sshfling
+Version: 0.1.16
+Architecture: all
+Maintainer: SSHFling Maintainers <root@localhost>
+Depends: python3, openssh-client, passwd, procps, util-linux
+Suggests: openssh-server, rsync, docker.io | docker-ce | podman-docker
+Filename: ./sshfling_0.1.16_all.deb
+Size: 56820
+MD5sum: 28c8262267a8c36c1a608e86d1682d81
+SHA1: 086febaaf0400de354dcb797393d89e6c793cb58
+SHA256: b9ddb60503c45a4accc1e099446c3a20c63c2e82ba6c270bdac72e180a890e6c
+Section: utils
+Priority: optional
+Description: Temporary SSH access broker and CLI
+ SSHFling grants short-lived SSH access with default password grants, optional
+ OpenSSH user certificates, and a forced session wrapper so temporary SSH
+ sessions are capped by a server-side wall-clock timeout. Docker Compose files
+ are included as a test harness.
+

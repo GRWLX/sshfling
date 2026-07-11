@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SSHFling 0.1.11 packages</title>
+  <title>SSHFling 0.1.16 packages</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 920px; margin: 40px auto; padding: 0 20px; line-height: 1.5; }
     code, pre { background: #f4f4f5; border-radius: 6px; }
@@ -12,47 +12,31 @@
   </style>
 </head>
 <body>
-  <h1>SSHFling 0.1.11 packages</h1>
+  <h1>SSHFling 0.1.16 packages</h1>
   <p>SSHFling is proprietary commercial software. Installing, running, or redistributing these packages requires the rights described in the project LICENSE or a separate written agreement from GRWLX.</p>
-  <h2>Debian / Ubuntu</h2>
-  <pre><code>sudo rm -f /etc/apt/sources.list.d/fling.list /etc/apt/preferences.d/fling
-echo "deb [trusted=yes] https://grwlx.github.io/sshfling/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
-sudo tee /etc/apt/preferences.d/sshfling &gt;/dev/null &lt;&lt;'EOF'
-Package: sshfling
-Pin: origin grwlx.github.io
-Pin-Priority: 1001
-EOF
-sudo apt update
-sudo apt install -y sshfling</code></pre>
-  <p>Uninstall:</p>
-  <pre><code>curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall apt</code></pre>
-  <h2>RHEL / Fedora / Rocky / Alma</h2>
-  <pre><code>sudo rm -f /etc/yum.repos.d/fling.repo
-sudo tee /etc/yum.repos.d/sshfling.repo &gt;/dev/null &lt;&lt;'EOF'
-[sshfling]
-name=SSHFling
-baseurl=https://grwlx.github.io/sshfling/rpm
-enabled=1
-gpgcheck=0
-EOF
-sudo dnf install -y sshfling</code></pre>
-  <p>Uninstall:</p>
-  <pre><code>curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall dnf</code></pre>
-  <h2>Homebrew</h2>
-  <pre><code>brew install https://grwlx.github.io/sshfling/homebrew/sshfling.rb</code></pre>
-  <p>Uninstall:</p>
-  <pre><code>curl -fsSL https://grwlx.github.io/sshfling/install.sh | bash -s -- uninstall brew</code></pre>
-  <h2>macOS pkg</h2>
-  <pre><code>curl -fsSL https://grwlx.github.io/sshfling/macos/install-pkg.sh | sudo bash</code></pre>
-  <p>Uninstall:</p>
-  <pre><code>curl -fsSL https://grwlx.github.io/sshfling/macos/uninstall-pkg.sh | sudo bash</code></pre>
-  <h2>Windows MSI</h2>
-  <pre><code>irm https://grwlx.github.io/sshfling/windows/install.ps1 | iex</code></pre>
-  <p>Uninstall:</p>
-  <pre><code>irm https://grwlx.github.io/sshfling/windows/uninstall.ps1 | iex</code></pre>
-  <h2>More ecosystems</h2>
-  <p>Arch/AUR, Alpine, FreeBSD, OpenBSD, pkgsrc, Nix, Guix, Void, Gentoo, Slackware, openSUSE OBS, Snapcraft, Termux, AppImage, Scoop, winget, and Chocolatey manifests are under <a href="https://grwlx.github.io/sshfling/community.html">community package manifests</a>.</p>
+  <h2>Signed APT Repository</h2>
+  <p>Repository signing key fingerprint: <code>AED68865441FEBF6408765BBCC12D29464D19EA9</code>.</p>
+  <pre><code>expected_fingerprint="AED68865441FEBF6408765BBCC12D29464D19EA9"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL https://grwlx.github.io/sshfling/sshfling-repo.gpg -o "$tmp/sshfling-repo.gpg"
+actual_fingerprint="$(gpg --batch --show-keys --with-colons "$tmp/sshfling-repo.gpg" | awk -F: '/^fpr:/ {print toupper($10); exit}')"
+test "$actual_fingerprint" = "$expected_fingerprint"
+sudo install -d -m 0755 /usr/share/keyrings
+sudo install -m 0644 "$tmp/sshfling-repo.gpg" /usr/share/keyrings/sshfling-repo.gpg
+echo "deb [signed-by=/usr/share/keyrings/sshfling-repo.gpg] https://grwlx.github.io/sshfling/apt ./" | sudo tee /etc/apt/sources.list.d/sshfling.list
+sudo apt-get update
+sudo apt-get install -y sshfling
+sshfling --version</code></pre>
+  <h2>Convenience Installer</h2>
+  <pre><code>tmp="$(mktemp -d)"
+curl -fsSL https://grwlx.github.io/sshfling/install.sh -o "$tmp/install.sh"
+bash "$tmp/install.sh" apt</code></pre>
+  <h2>Uninstall</h2>
+  <pre><code>sudo apt-get remove -y sshfling
+sudo rm -f /etc/apt/sources.list.d/sshfling.list /etc/apt/preferences.d/sshfling /usr/share/keyrings/sshfling-repo.gpg
+sudo apt-get update || true</code></pre>
   <h2>Downloads</h2>
-  <p>Raw packages and checksums are under <a href="https://grwlx.github.io/sshfling/downloads/">downloads</a>.</p>
+  <p>The Debian package is available at <a href="https://grwlx.github.io/sshfling/apt/sshfling_0.1.16_all.deb"><code>apt/sshfling_0.1.16_all.deb</code></a>. Checksums are under <a href="https://grwlx.github.io/sshfling/apt/SHA256SUMS"><code>apt/SHA256SUMS</code></a>.</p>
 </body>
 </html>

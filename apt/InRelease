@@ -1,0 +1,37 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: SSHFling
+Label: SSHFling
+Suite: stable
+Codename: stable
+Architectures: all
+Components: main
+Description: SSHFling package repository
+Date: Sat, 11 Jul 2026 02:31:50 +0000
+MD5Sum:
+ 0bf9ef292843b8b290f618f9ec5b7efe              792 Packages
+ 71462bbbba380ec7166f23cc93922b30              529 Packages.gz
+ ec178a5bed234030e76ce053e73b43c2               90 SHA256SUMS
+SHA1:
+ afd5c207ed4aacaff73478498933ffff01cf34cb              792 Packages
+ 4e1d5d60d5ca700700a80145eef4624f457724cc              529 Packages.gz
+ 68e0e6eee1b87b53f13311ec9de8278910cde99c               90 SHA256SUMS
+SHA256:
+ 85f72eaa417fbb8d19c99dda77b78b580ebde16f60f2675509e42751c3bef2ca              792 Packages
+ be249e17561f7e3822951423a0bbb3284f22f71bb5b1936355c10588146a2efb              529 Packages.gz
+ 132bd03b8b64aa3d9813466ad2add86b3db78f1861bfd72b8c2ed59b64558fac               90 SHA256SUMS
+-----BEGIN PGP SIGNATURE-----
+
+iQGzBAEBCgAdFiEErtaIZUQf6/ZAh2W7zBLSlGTRnqkFAmpRqxYACgkQzBLSlGTR
+nqnEJgv9FTkao4liyjfZZ5mfYXwgIij0lNx5VsDF7N46WejwpJ+FqKwv1npjHNb9
+gAWOI550WXdYH1qzJdepcRRRVDNAY3OhsXO5Wdf4C91QRRtudV5DN5nR/sgxe7bO
+mb8TAgP+MgINFyzWMnhup7RJvzu7EWVlI4qItvs7skYS8PtQSnIMDuGcSP4dcyWL
+VWI3kYAGc3tLJIbLa8pu9ZIwoJrbj70vE543aUA2R1C9Mm4HZ6OnfBEp9Gk852Pw
+ErJqFO+TP3l3/NP2nqNMJMOXVDPxT6N5yi2Oo7EwvL7c4BimictS5Lc9N6qthL5M
+R/+1ZER3q3OHJCB9U4kFZooAmE/cAbojQJS8wALlDPgBJoT8q9KA5jQAdkLsFP74
+0/SlGKuWLJb48Tz/cv8rz40bOM51A0mgdSoYCWDvJt1gbxsn3SwH9FBrEsnxQs1D
+Q8vaKXI+i1/zvMbD3gDw2YtWmv0Z8DngKueIeSeCz/oQ4HgUAvfsZHgDAsXW/Cyg
+2OgW76xo
+=kJDc
+-----END PGP SIGNATURE-----
