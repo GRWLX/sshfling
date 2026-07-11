@@ -500,6 +500,7 @@ except module.SSHFlingError as exc:
             return Result()
 
         self.patch("run", safe_run)
+        self.patch("sshd_configuration_files", lambda: [])
         result = self.sshfling.validate_sshd_effective(
             "senv",
             require_safe_environment=True,

@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.20 - 2026-07-11
+
+Status: language-catalog publication candidate after `v0.1.19` exposed a
+runner-specific SSH config permission assumption in a unit test.
+
+### Fixed
+
+- Made SSHD environment validation tests hermetic by mocking the host
+  configuration-file scan when the test already supplies mocked `sshd -T`
+  output.
+- Bumped language package and evidence references to `0.1.20` for a
+  fixed-forward language artifact publication without moving `v0.1.19`.
+
 ## v0.1.19 - 2026-07-11
 
 Status: language-catalog publication candidate after `v0.1.18` exposed one

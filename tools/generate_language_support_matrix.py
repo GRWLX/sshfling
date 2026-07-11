@@ -75,39 +75,39 @@ def row(
 
 
 PASS_PACKAGE_EVIDENCE = (
-    "make test VERSION=0.1.19; make package-deb package-rpm package-dotnet "
+    "make test VERSION=0.1.20; make package-deb package-rpm package-dotnet "
     "package-java package-node package-python package-go package-rust package-php "
-    "package-ruby package-native-libraries package-perl VERSION=0.1.19; "
-    "GitHub release v0.1.19 artifacts"
+    "package-ruby package-native-libraries package-perl VERSION=0.1.20; "
+    "GitHub release v0.1.20 artifacts"
 )
 PASS_PYTHON_EVIDENCE = (
-    "make package-python VERSION=0.1.19; isolated pip and pipx install/import/CLI/uninstall "
+    "make package-python VERSION=0.1.20; isolated pip and pipx install/import/CLI/uninstall "
     "validation in packaging/build-python.sh"
 )
 PASS_FUNCTIONAL_EVIDENCE = (
     "./packaging/build-functional-languages.sh --allow-blocked --language haskell"
 )
 PASS_NODE_EVIDENCE = (
-    "make test VERSION=0.1.19; make package-node VERSION=0.1.19; npm "
+    "make test VERSION=0.1.20; make package-node VERSION=0.1.20; npm "
     "CommonJS/ESM import and run, strict TypeScript compile, bin, and uninstall validation"
 )
 PASS_WEB_CONSUMER_EVIDENCE = (
-    "make package-web-language-consumers VERSION=0.1.19; clean npm installation from the "
+    "make package-web-language-consumers VERSION=0.1.20; clean npm installation from the "
     "packed SSHFling artifact, language/framework compilation, trusted Node-side API execution, "
     "template discovery, and generated-output assertions"
 )
 PASS_DART_EVIDENCE = (
-    "make package-dart-consumer VERSION=0.1.19; Dart SDK 3.12.2 resolves the packed npm "
+    "make package-dart-consumer VERSION=0.1.20; Dart SDK 3.12.2 resolves the packed npm "
     "library offline, enforces dart format and dart analyze, compiles the typed adapter to a "
     "native executable, and validates the trusted Node bridge execution"
 )
 PASS_CFML_EVIDENCE = (
-    "make package-node VERSION=0.1.19; SSHFLING_NPM_PACKAGE=dist/sshfling-0.1.19.tgz "
+    "make package-node VERSION=0.1.20; SSHFLING_NPM_PACKAGE=dist/sshfling-0.1.20.tgz "
     "bash packaging/build-web-language-consumers.sh cfml; CommandBox 6.3.3 executes the "
     "CFML template after the Node bridge validates the packed SSHFling API"
 )
 PASS_HACK_EVIDENCE = (
-    "make package-node VERSION=0.1.19; SSHFLING_NPM_PACKAGE=dist/sshfling-0.1.19.tgz "
+    "make package-node VERSION=0.1.20; SSHFLING_NPM_PACKAGE=dist/sshfling-0.1.20.tgz "
     "bash packaging/build-web-language-consumers.sh hack; HHVM 4.172 executes the Hack "
     "adapter inside the hhvm/hhvm container with Node v22.23.1 after the Node bridge "
     "validates the packed SSHFling API"
@@ -118,73 +118,73 @@ BLOCKED_WEB_TOOLCHAIN_EVIDENCE = (
 )
 PASS_FUNCTIONAL_LANGUAGES_EVIDENCE = (
     "bash packaging/build-functional-languages.sh --allow-blocked; "
-    "dist/sshfling-functional-languages-0.1.19-validation.tsv"
+    "dist/sshfling-functional-languages-0.1.20-validation.tsv"
 )
 PASS_SYSTEM_LANGUAGES_EVIDENCE = (
     "bash packaging/build-systems-languages.sh --allow-blocked; "
-    "dist/sshfling-systems-languages-0.1.19-validation.tsv"
+    "dist/sshfling-systems-languages-0.1.20-validation.tsv"
 )
 PASS_SWIFT_EVIDENCE = (
     "GitHub Actions Language runtime validation run "
     "https://github.com/GRWLX/sshfling/actions/runs/29072584483 on commit "
     "8b52008f49d3d256cee5d3c0fbfed2b9d1fa5607; the ubuntu-24.04 strict catalog "
     "records RUNTIME swift PASS and exact SwiftPM archive-lifecycle evidence in "
-    "dist/sshfling-systems-languages-0.1.19-validation.tsv"
+    "dist/sshfling-systems-languages-0.1.20-validation.tsv"
 )
 BLOCKED_TOOLCHAIN_EVIDENCE = (
     "tracked package/source and a validated SSHFling surface are present under the language directory, "
     "but the required external runtime/toolchain is unavailable on the validation host"
 )
 PASS_JAVA_EVIDENCE = (
-    "make package-java VERSION=0.1.19; Maven clean install, Gradle clean build, "
+    "make package-java VERSION=0.1.20; Maven clean install, Gradle clean build, "
     "executable/source/Javadocs artifacts, and clean Java, Kotlin, Scala, and Groovy consumers"
 )
 PASS_JVM_CONSUMER_EVIDENCE = (
-    "make package-java VERSION=0.1.19; pinned Maven and Gradle compiler/build metadata, "
+    "make package-java VERSION=0.1.20; pinned Maven and Gradle compiler/build metadata, "
     "clean language-specific compilation at JVM 11, SSHFling.run API execution, init workflow, "
     "and published JAR/POM consumer validation"
 )
 PASS_CLOJURE_EVIDENCE = (
-    "make package-java VERSION=0.1.19; pinned Clojure 1.12 Maven and Gradle projects, "
+    "make package-java VERSION=0.1.20; pinned Clojure 1.12 Maven and Gradle projects, "
     "packaged namespace checks, isolated SSHFling dependency resolution, public Java API "
     "execution, exact version output, and init workflow validation"
 )
 PASS_DOTNET_EVIDENCE = (
-    "make package-dotnet VERSION=0.1.19; NuGet global tool plus SSHFling library pack, "
+    "make package-dotnet VERSION=0.1.20; NuGet global tool plus SSHFling library pack, "
     "isolated tool install plus C#, Visual Basic, and F# PackageReference restore, API run, "
     "and removal validation"
 )
 PASS_NATIVE_EVIDENCE = (
-    "make package-native-libraries VERSION=0.1.19; warning-clean C11/C++17 Ninja/Release "
+    "make package-native-libraries VERSION=0.1.20; warning-clean C11/C++17 Ninja/Release "
     "and Make/Debug builds, ASan/UBSan CTest, CMake shared/static and pkg-config consumers, "
     "CLI smoke test, install/removal validation"
 )
 PASS_PERL_EVIDENCE = (
-    "make package-perl VERSION=0.1.19; MakeMaker test/dist, archive inspection, isolated "
+    "make package-perl VERSION=0.1.20; MakeMaker test/dist, archive inspection, isolated "
     "INSTALL_BASE module/CLI execution, init workflow, and removal validation"
 )
 PASS_GO_EVIDENCE = (
-    "make package-go VERSION=0.1.19; go test/vet/install and archive validation in "
+    "make package-go VERSION=0.1.20; go test/vet/install and archive validation in "
     "packaging/build-go.sh"
 )
 PASS_RUST_EVIDENCE = (
-    "make package-rust VERSION=0.1.19; cargo fmt/test/clippy/package/install/uninstall and "
+    "make package-rust VERSION=0.1.20; cargo fmt/test/clippy/package/install/uninstall and "
     "publish dry-run evidence"
 )
 PASS_PHP_EVIDENCE = (
-    "make package-php VERSION=0.1.19; Composer validate/archive/install/autoload/CLI/remove "
+    "make package-php VERSION=0.1.20; Composer validate/archive/install/autoload/CLI/remove "
     "validation in packaging/build-php.sh"
 )
 PASS_RUBY_EVIDENCE = (
-    "make package-ruby VERSION=0.1.19; gem and Bundler install/CLI/uninstall validation in "
+    "make package-ruby VERSION=0.1.20; gem and Bundler install/CLI/uninstall validation in "
     "packaging/build-ruby.sh"
 )
 PASS_SCRIPT_EVIDENCE = (
-    "make test VERSION=0.1.19; shell syntax checks through release validation; "
+    "make test VERSION=0.1.20; shell syntax checks through release validation; "
     "container production test"
 )
 PASS_SCRIPTING_LANGUAGE_EVIDENCE = (
-    "make package-scripting-languages VERSION=0.1.19; versioned archive build, isolated "
+    "make package-scripting-languages VERSION=0.1.20; versioned archive build, isolated "
     "source/library import, canonical CLI execution, init asset verification, and removal "
     "evidence in packaging/build-scripting-languages.sh"
 )
@@ -589,7 +589,7 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
     row("Make",
         "PASS",
         "Top-level Makefile drives release validation and package targets.",
-        "make test VERSION=0.1.19; package build commands; release readiness commands",
+        "make test VERSION=0.1.20; package build commands; release readiness commands",
         "Make is a supported build orchestration surface for maintainers.",
         "build DSL",
     ),
@@ -597,7 +597,7 @@ LANGUAGE_SUPPORT: list[dict[str, str]] = [
         "Dockerfile",
         "PASS",
         "Tracked Dockerfiles build production and test container images.",
-        "docker build -f tests/docker/Dockerfile.production -t sshfling-production-test:0.1.19 .; docker run --rm sshfling-production-test:0.1.19",
+        "docker build -f tests/docker/Dockerfile.production -t sshfling-production-test:0.1.20 .; docker run --rm sshfling-production-test:0.1.20",
         "Dockerfile surfaces are part of validated container testing.",
         "container DSL",
     ),
