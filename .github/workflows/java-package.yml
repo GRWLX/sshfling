@@ -165,6 +165,26 @@ jobs:
                 <password>${GITHUB_TOKEN}</password>
               </server>
             </servers>
+            <profiles>
+              <profile>
+                <id>github-packages</id>
+                <repositories>
+                  <repository>
+                    <id>github</id>
+                    <url>${REGISTRY_URL}</url>
+                    <releases>
+                      <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                      <enabled>false</enabled>
+                    </snapshots>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>github-packages</activeProfile>
+            </activeProfiles>
           </settings>
           SETTINGS
           chmod 0600 "$settings_file"
@@ -193,7 +213,7 @@ jobs:
           java -jar "$artifact_dir/sshfling-cli-$VERSION.jar" --version | grep -Fx "sshfling $VERSION"
 
           cp -R packaging/java/consumers/maven "$verify_dir/maven-consumer"
-          mvn -B -f "$verify_dir/maven-consumer/pom.xml" \
+          mvn -B -s "$settings_file" -f "$verify_dir/maven-consumer/pom.xml" \
             -Dmaven.repo.local="$maven_repo" \
             -Dsshfling.version="$VERSION" package
           java -cp "$verify_dir/maven-consumer/target/classes:$artifact_dir/sshfling-cli-$VERSION.jar" \
