@@ -213,6 +213,27 @@ def package_validation_status() -> Check:
     )
 
 
+def official_distro_draft_validation_status() -> Check:
+    required = (
+        "packaging/validate-official-distro-drafts.sh",
+        ".github/workflows/official-distro-drafts.yml",
+    )
+    missing = [path for path in required if not exists(path)]
+    if missing:
+        return Check(
+            "Official distro draft validation",
+            WARN,
+            "Missing validation entry points: " + ", ".join(missing) + ".",
+            "Add repeatable validation for Debian source packaging and Fedora spec drafts.",
+        )
+    return Check(
+        "Official distro draft validation",
+        PASS,
+        "Repeatable local and CI validation exists for Debian and Fedora packaging drafts.",
+        "Run lintian, autopkgtest, rpmlint, mock, and fedora-review after the license and maintainer gates are resolved.",
+    )
+
+
 def checks() -> list[Check]:
     return [
         license_status(),
@@ -223,6 +244,7 @@ def checks() -> list[Check]:
         fedora_spec_license_status(),
         generated_rpm_license_status(),
         package_validation_status(),
+        official_distro_draft_validation_status(),
     ]
 
 

@@ -1,0 +1,42 @@
+name: Official distro packaging drafts
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to validate. Defaults to bin/sshfling VERSION."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: official-distro-drafts-${{ github.ref }}-${{ inputs.version || 'source' }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Debian and Fedora packaging drafts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install distro packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential debhelper rpm
+
+      - name: Validate packaging drafts
+        env:
+          INPUT_VERSION: ${{ inputs.version || '' }}
+        run: |
+          set -euo pipefail
+          version="$(bash packaging/resolve-version.sh "$INPUT_VERSION")"
+          make official-distro-draft-validate VERSION="$version"

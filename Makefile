@@ -13,7 +13,7 @@ ENTERPRISE_RELEASE_OUTPUT_DIR ?= docs/release
 ENTERPRISE_RELEASE_EVIDENCE_DIR ?= docs/release/enterprise-release-evidence
 WEB_LANGUAGE_CONSUMERS ?= react vue svelte angular elm purescript rescript html-css cfml hack
 
-.PHONY: install-local uninstall-local test test-native test-containers test-release-security-scan official-distro-readiness official-distro-readiness-strict language-deployment-matrix release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-readiness-artifacts release-readiness-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet package-java package-node package-python package-go package-rust package-php package-ruby package-native-libraries package-perl package-functional-languages package-systems-languages package-scripting-languages clean
+.PHONY: install-local uninstall-local test test-native test-containers test-release-security-scan official-distro-readiness official-distro-readiness-strict official-distro-draft-validate language-deployment-matrix release-package-rehearsal release-assets-evidence release-security-scan release-security-scan-local release-security-scan-optional release-security-scan-strict release-security-evidence-validate release-readiness-artifacts release-readiness-validate release-matrix-validate check-package-version package package-deb package-rpm package-msi package-pkg package-dotnet package-java package-node package-python package-go package-rust package-php package-ruby package-native-libraries package-perl package-functional-languages package-systems-languages package-scripting-languages clean
 .PHONY: package-web-language-consumers package-dart-consumer package-language-catalog package-language-catalog-strict package-scripting-languages audit-domain-languages
 
 install-local:
@@ -78,6 +78,9 @@ official-distro-readiness:
 
 official-distro-readiness-strict:
 	python3 tools/official_distro_readiness.py --check --fail-on-blocked
+
+official-distro-draft-validate: check-package-version
+	SSHFLING_VERSION="$(VERSION)" bash packaging/validate-official-distro-drafts.sh
 
 language-deployment-matrix:
 	python3 tools/generate_language_deployment_matrix.py --write --update-todo
