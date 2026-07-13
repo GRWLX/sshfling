@@ -1,0 +1,23 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: sshfling
+Source: https://github.com/GRWLX/sshfling
+Comment:
+ This draft packaging records the current upstream license state. Official
+ Debian or Ubuntu archive submission remains blocked until GRWLX provides a
+ distro-compatible redistribution grant or relicenses the project under terms
+ accepted by the target archive.
+
+Files: *
+Copyright: 2026 GRWLX
+License: LicenseRef-SSHFling-Commercial
+ SSHFling is proprietary software owned by GRWLX. Installing, running, copying
+ for operational use, modifying, hosting, providing access to, distributing for
+ use, embedding, or otherwise using this software requires a separate written
+ commercial license from GRWLX.
+ .
+ Redistribution, mirroring, packaging, sublicensing, resale, public hosting, or
+ inclusion in another product or service requires prior written permission from
+ GRWLX. Any permitted redistribution must include the upstream LICENSE file and
+ must not remove copyright, ownership, payment, or license notices.
+ .
+ The full license text is distributed in the upstream LICENSE file.

@@ -11,9 +11,11 @@ Status meanings:
 | Area | Status | Evidence | Required next action |
 | --- | --- | --- | --- |
 | License | BLOCKED | LICENSE declares SSHFling proprietary, not open source, paid-use, and redistribution-restricted. | Choose an OSI/DFSG/Fedora-acceptable open-source license or obtain a distro-specific redistribution grant before official archive submission. |
-| Debian/Ubuntu source packaging | BLOCKED | Missing official source package files: debian/control, debian/rules, debian/changelog, debian/copyright, debian/source/format. | Create a policy-compliant debian/ source package, build with dpkg-buildpackage, and validate with lintian/autopkgtest before mentors.debian.net or Ubuntu sponsorship. |
+| Debian/Ubuntu source packaging | WARN | Required debian/ source package files are present as a draft. | Build and lint the source package, then prepare WNPP/ITP and sponsorship materials. |
+| Debian/Ubuntu maintainer metadata | WARN | debian/control still uses placeholder Maintainer metadata. | Replace placeholder maintainer metadata with the accountable Debian/Ubuntu maintainer or team before upload. |
 | Generated DEB metadata | WARN | packaging/build-deb.sh still emits placeholder Maintainer metadata. | Replace placeholder maintainer metadata in generated packages and keep generated DEBs separate from official Debian source packaging. |
-| Fedora/EPEL source packaging | BLOCKED | No checked-in Fedora review spec file was found; packaging/build-rpm.sh generates a transient RPM spec. | Add a Fedora-compliant spec, build an SRPM, and validate with rpmlint/mock/fedora-review before Fedora package review. |
+| Fedora/EPEL source packaging | WARN | A checked-in RPM spec path exists as a draft. | Validate the spec with rpmlint/mock/fedora-review and submit a Fedora package review before EPEL branches. |
+| Fedora/EPEL spec license metadata | BLOCKED | packaging/fedora/sshfling.spec records LicenseRef-SSHFling-Commercial. | Change the Fedora spec License field only after the project license is changed or a Fedora-acceptable redistribution grant is approved. |
 | Generated RPM license metadata | BLOCKED | packaging/build-rpm.sh emits LicenseRef-SSHFling-Commercial. | Change RPM license metadata only after the project license is changed or an explicit redistribution grant is approved. |
 | Package build/test coverage | PASS | Generated DEB/RPM builders, local install validation, and package-install workflow are present. | Keep these as upstream smoke tests while adding distro-native source package tests. |
 

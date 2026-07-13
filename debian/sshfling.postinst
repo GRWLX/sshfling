@@ -1,0 +1,35 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+  if ! getent group sshflingd >/dev/null 2>&1; then
+    if command -v addgroup >/dev/null 2>&1; then
+      addgroup --system sshflingd
+    else
+      groupadd --system sshflingd
+    fi
+  fi
+
+  if ! getent passwd sshflingd >/dev/null 2>&1; then
+    nologin=/usr/sbin/nologin
+    if [ ! -x "$nologin" ]; then
+      nologin=/bin/false
+    fi
+    if command -v adduser >/dev/null 2>&1; then
+      adduser --system --ingroup sshflingd --home /var/lib/sshflingd --no-create-home --shell "$nologin" sshflingd
+    else
+      useradd --system --gid sshflingd --home-dir /var/lib/sshflingd --shell "$nologin" --no-create-home sshflingd
+    fi
+  fi
+
+  install -d -m 0750 -o root -g sshflingd /etc/sshfling
+  install -d -m 0750 -o sshflingd -g sshflingd /var/lib/sshflingd
+  if [ -f /etc/sshfling/sshflingd.env ] && [ ! -L /etc/sshfling/sshflingd.env ]; then
+    chown root:sshflingd /etc/sshfling/sshflingd.env
+    chmod 0640 /etc/sshfling/sshflingd.env
+  fi
+fi
+
+#DEBHELPER#
+
+exit 0

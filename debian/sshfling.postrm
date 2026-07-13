@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "purge" ]; then
+  rm -f /etc/sshfling/policy.json /etc/sshfling/sshflingd.env
+  rmdir /etc/sshfling 2>/dev/null || true
+fi
+
+#DEBHELPER#
+
+exit 0

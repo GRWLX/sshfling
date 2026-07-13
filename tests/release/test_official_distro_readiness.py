@@ -36,13 +36,17 @@ class OfficialDistroReadinessTests(unittest.TestCase):
         self.assertEqual(rpm_check.status, readiness.BLOCKED)
         self.assertIn("LicenseRef-SSHFling-Commercial", rpm_check.evidence)
 
-    def test_report_records_debian_and_fedora_source_packaging_gaps(self) -> None:
+    def test_report_records_draft_debian_and_fedora_source_packaging(self) -> None:
         checks = {item.area: item for item in readiness.checks()}
 
-        self.assertEqual(checks["Debian/Ubuntu source packaging"].status, readiness.BLOCKED)
-        self.assertIn("debian/control", checks["Debian/Ubuntu source packaging"].evidence)
-        self.assertEqual(checks["Fedora/EPEL source packaging"].status, readiness.BLOCKED)
-        self.assertIn("transient RPM spec", checks["Fedora/EPEL source packaging"].evidence)
+        self.assertEqual(checks["Debian/Ubuntu source packaging"].status, readiness.WARN)
+        self.assertIn("draft", checks["Debian/Ubuntu source packaging"].evidence)
+        self.assertEqual(checks["Debian/Ubuntu maintainer metadata"].status, readiness.WARN)
+        self.assertIn("placeholder", checks["Debian/Ubuntu maintainer metadata"].evidence)
+        self.assertEqual(checks["Fedora/EPEL source packaging"].status, readiness.WARN)
+        self.assertIn("draft", checks["Fedora/EPEL source packaging"].evidence)
+        self.assertEqual(checks["Fedora/EPEL spec license metadata"].status, readiness.BLOCKED)
+        self.assertIn("LicenseRef-SSHFling-Commercial", checks["Fedora/EPEL spec license metadata"].evidence)
 
     def test_markdown_report_has_stable_decision_gate(self) -> None:
         rendered = readiness.render_markdown(readiness.checks())

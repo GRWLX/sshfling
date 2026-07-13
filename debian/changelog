@@ -1,0 +1,7 @@
+sshfling (0.1.21-1) unstable; urgency=medium
+
+  * Initial draft Debian source package metadata.
+  * Not ready for official archive upload while the upstream license remains
+    proprietary and redistribution-restricted.
+
+ -- SSHFling Maintainers <root@localhost>  Mon, 13 Jul 2026 00:00:00 +0000

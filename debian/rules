@@ -1,0 +1,31 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+
+override_dh_auto_install:
+	install -d debian/sshfling/etc/sshfling
+	install -d debian/sshfling/lib/systemd/system
+	install -d debian/sshfling/usr/bin
+	install -d debian/sshfling/usr/libexec/sshfling
+	install -d debian/sshfling/usr/share/doc/sshfling
+	install -d debian/sshfling/usr/share/sshfling/templates
+	install -m 0755 bin/sshfling debian/sshfling/usr/bin/sshfling
+	install -m 0755 native/sshfling-linux-account debian/sshfling/usr/libexec/sshfling/sshfling-linux-account
+	install -m 0755 native/sshfling-unix-identity debian/sshfling/usr/libexec/sshfling/sshfling-unix-identity
+	install -m 0644 packaging/policy.json debian/sshfling/etc/sshfling/policy.json
+	install -m 0640 systemd/sshflingd.env.example debian/sshfling/etc/sshfling/sshflingd.env
+	bash -c 'source packaging/copy-templates.sh; copy_sshfling_templates "$$PWD" debian/sshfling/usr/share/sshfling/templates'
+	install -m 0644 README.md debian/sshfling/usr/share/doc/sshfling/README.md
+	install -m 0644 LICENSE debian/sshfling/usr/share/doc/sshfling/LICENSE
+	install -m 0644 systemd/sshflingd.env.example debian/sshfling/usr/share/doc/sshfling/sshflingd.env.example
+	install -m 0644 systemd/sshflingd.service debian/sshfling/lib/systemd/system/sshflingd.service
+	install -m 0644 systemd/sshfling-prune.service debian/sshfling/lib/systemd/system/sshfling-prune.service
+	install -m 0644 systemd/sshfling-prune.timer debian/sshfling/lib/systemd/system/sshfling-prune.timer
+
+override_dh_fixperms:
+	dh_fixperms
+	chmod 0750 debian/sshfling/etc/sshfling
+	chmod 0640 debian/sshfling/etc/sshfling/sshflingd.env

@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+sshfling --version
+sshfling --help >/dev/null

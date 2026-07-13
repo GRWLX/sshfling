@@ -1,0 +1,16 @@
+SSHFling Debian Source Package Draft
+====================================
+
+This directory is a packaging draft for Debian and Ubuntu review work. It is
+not an upload-ready official archive package while the upstream LICENSE remains
+proprietary, paid-use, and redistribution-restricted.
+
+Before upload, resolve the legal gate recorded in
+docs/official-distro-readiness.md, replace placeholder maintainer metadata, and
+run the normal distro validation path:
+
+* dpkg-buildpackage
+* lintian
+* autopkgtest
+* WNPP/ITP and sponsor review for Debian
+* Ubuntu sponsorship or sync review where applicable

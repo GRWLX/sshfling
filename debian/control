@@ -1,0 +1,39 @@
+Source: sshfling
+Section: non-free/admin
+Priority: optional
+Maintainer: SSHFling Maintainers <root@localhost>
+Build-Depends:
+ bash,
+ debhelper-compat (= 13)
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://github.com/GRWLX/sshfling
+Vcs-Browser: https://github.com/GRWLX/sshfling
+Vcs-Git: https://github.com/GRWLX/sshfling.git
+
+Package: sshfling
+Architecture: all
+Depends:
+ bash,
+ jq,
+ openssh-client,
+ openssl,
+ passwd,
+ procps,
+ python3:any,
+ util-linux,
+ ${misc:Depends}
+Recommends:
+ openssh-server,
+ rsync
+Suggests:
+ docker.io | podman-docker
+Description: temporary SSH access broker and CLI
+ SSHFling grants short-lived SSH access with default password grants,
+ optional OpenSSH user certificates, and a forced session wrapper so
+ temporary SSH sessions are capped by a server-side wall-clock timeout.
+ Docker Compose files are included as a test harness.
+ .
+ This draft source package is not ready for official Debian or Ubuntu
+ upload while the upstream license remains proprietary and
+ redistribution-restricted.

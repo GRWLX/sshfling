@@ -80,9 +80,26 @@ def debian_source_packaging_status() -> Check:
         )
     return Check(
         "Debian/Ubuntu source packaging",
-        PASS,
-        "Required debian/ source package files are present.",
+        WARN,
+        "Required debian/ source package files are present as a draft.",
         "Build and lint the source package, then prepare WNPP/ITP and sponsorship materials.",
+    )
+
+
+def debian_maintainer_status() -> Check:
+    text = read_text("debian/control") if exists("debian/control") else ""
+    if "root@localhost" in text:
+        return Check(
+            "Debian/Ubuntu maintainer metadata",
+            WARN,
+            "debian/control still uses placeholder Maintainer metadata.",
+            "Replace placeholder maintainer metadata with the accountable Debian/Ubuntu maintainer or team before upload.",
+        )
+    return Check(
+        "Debian/Ubuntu maintainer metadata",
+        PASS,
+        "debian/control does not use the known placeholder maintainer.",
+        "Confirm the maintainer identity matches the sponsor or uploader process.",
     )
 
 
@@ -118,9 +135,39 @@ def fedora_packaging_status() -> Check:
         )
     return Check(
         "Fedora/EPEL source packaging",
-        PASS,
-        "A checked-in RPM spec path exists.",
+        WARN,
+        "A checked-in RPM spec path exists as a draft.",
         "Validate the spec with rpmlint/mock/fedora-review and submit a Fedora package review before EPEL branches.",
+    )
+
+
+def fedora_spec_license_status() -> Check:
+    spec_paths = (
+        "packaging/fedora/sshfling.spec",
+        "packaging/rpm/sshfling.spec",
+        "sshfling.spec",
+    )
+    for path in spec_paths:
+        if exists(path):
+            text = read_text(path)
+            if "LicenseRef-SSHFling-Commercial" in text:
+                return Check(
+                    "Fedora/EPEL spec license metadata",
+                    BLOCKED,
+                    f"{path} records LicenseRef-SSHFling-Commercial.",
+                    "Change the Fedora spec License field only after the project license is changed or a Fedora-acceptable redistribution grant is approved.",
+                )
+            return Check(
+                "Fedora/EPEL spec license metadata",
+                PASS,
+                f"{path} does not use the known commercial LicenseRef marker.",
+                "Confirm the spec License field matches an accepted Fedora license expression.",
+            )
+    return Check(
+        "Fedora/EPEL spec license metadata",
+        BLOCKED,
+        "No checked-in Fedora spec file exists.",
+        "Add a Fedora spec before evaluating Fedora license metadata.",
     )
 
 
@@ -170,8 +217,10 @@ def checks() -> list[Check]:
     return [
         license_status(),
         debian_source_packaging_status(),
+        debian_maintainer_status(),
         generated_deb_status(),
         fedora_packaging_status(),
+        fedora_spec_license_status(),
         generated_rpm_license_status(),
         package_validation_status(),
     ]
