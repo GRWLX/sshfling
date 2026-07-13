@@ -18,15 +18,15 @@ Status meanings:
 | Fedora/EPEL spec license metadata | PASS | packaging/fedora/sshfling.spec records Apache-2.0. | Confirm the spec License field remains a Fedora-accepted license expression during package review. |
 | Generated RPM license metadata | PASS | packaging/build-rpm.sh emits Apache-2.0. | Keep generated upstream RPM metadata aligned with the Fedora review spec where practical. |
 | Package build/test coverage | PASS | Generated DEB/RPM builders, local install validation, and package-install workflow are present. | Keep these as upstream smoke tests while adding distro-native source package tests. |
-| Official distro draft validation | PASS | Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian, rpmlint, and autopkgtest smoke coverage with known review warnings isolated. | Run mock and fedora-review before formal Fedora package review. |
+| Official distro draft validation | PASS | Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian and rpmlint logs plus a submission packet builder for source artifacts and review request drafts. | Run mock and fedora-review before formal Fedora package review, then submit the prepared packet through maintainer accounts. |
 
 ## Submission Path
 
 1. Keep Apache-2.0 metadata consistent across source, generated packages, and distro drafts.
-2. Validate Debian source packaging with `dpkg-buildpackage`, `lintian`, and `autopkgtest`.
-3. File a Debian WNPP/ITP bug, upload to mentors.debian.net, and find a Debian sponsor.
+2. Run `make official-distro-submission-prepare` to build Debian source artifacts, Fedora SRPM/spec artifacts, lint logs, hashes, and request drafts.
+3. File a Debian WNPP/ITP bug, sign and upload the source package to mentors.debian.net, then file an RFS bug and find a Debian sponsor.
 4. Let Ubuntu sync from Debian when possible; otherwise request Ubuntu sponsorship for a source package.
-5. Add a Fedora-compliant spec and SRPM, validate with `rpmlint`, `mock`, and `fedora-review`, then file Fedora package review.
+5. Validate the Fedora SRPM/spec with `mock` and `fedora-review`, then file Fedora package review.
 6. Request EPEL branches only after Fedora package acceptance.
 
 ## Current Decision Gate

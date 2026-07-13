@@ -3,7 +3,6 @@ Section: admin
 Priority: optional
 Maintainer: GRWLX <44076838+GRWLX@users.noreply.github.com>
 Build-Depends:
- bash,
  debhelper-compat (= 13)
 Standards-Version: 4.7.0
 Rules-Requires-Root: no

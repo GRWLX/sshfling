@@ -1,6 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: sshfling
 Source: https://github.com/GRWLX/sshfling
+
 Files: *
 Copyright: 2026 GRWLX
 License: Apache-2.0

@@ -217,6 +217,7 @@ def package_validation_status() -> Check:
 def official_distro_draft_validation_status() -> Check:
     required = (
         "packaging/validate-official-distro-drafts.sh",
+        "packaging/prepare-official-distro-submission.sh",
         "packaging/fedora/rpmlint.toml",
         "tools/validate_official_distro_lint.py",
         ".github/workflows/official-distro-drafts.yml",
@@ -232,8 +233,8 @@ def official_distro_draft_validation_status() -> Check:
     return Check(
         "Official distro draft validation",
         PASS,
-        "Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian, rpmlint, and autopkgtest smoke coverage with known review warnings isolated.",
-        "Run mock and fedora-review before formal Fedora package review.",
+        "Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian and rpmlint logs plus a submission packet builder for source artifacts and review request drafts.",
+        "Run mock and fedora-review before formal Fedora package review, then submit the prepared packet through maintainer accounts.",
     )
 
 
@@ -281,10 +282,10 @@ def render_markdown(items: list[Check]) -> str:
             "## Submission Path",
             "",
             "1. Keep Apache-2.0 metadata consistent across source, generated packages, and distro drafts.",
-            "2. Validate Debian source packaging with `dpkg-buildpackage`, `lintian`, and `autopkgtest`.",
-            "3. File a Debian WNPP/ITP bug, upload to mentors.debian.net, and find a Debian sponsor.",
+            "2. Run `make official-distro-submission-prepare` to build Debian source artifacts, Fedora SRPM/spec artifacts, lint logs, hashes, and request drafts.",
+            "3. File a Debian WNPP/ITP bug, sign and upload the source package to mentors.debian.net, then file an RFS bug and find a Debian sponsor.",
             "4. Let Ubuntu sync from Debian when possible; otherwise request Ubuntu sponsorship for a source package.",
-            "5. Add a Fedora-compliant spec and SRPM, validate with `rpmlint`, `mock`, and `fedora-review`, then file Fedora package review.",
+            "5. Validate the Fedora SRPM/spec with `mock` and `fedora-review`, then file Fedora package review.",
             "6. Request EPEL branches only after Fedora package acceptance.",
             "",
             "## Current Decision Gate",

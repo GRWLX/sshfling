@@ -375,7 +375,9 @@ Some of these can be installed directly from the generated URL, while
 official/community repositories still require a maintainer account, review,
 signing, or a pull request into the upstream repository. For Debian, Ubuntu,
 Fedora, and EPEL specifically, track the current blockers in
-[Official Distro Repository Readiness](official-distro-readiness.md); generated
+[Official Distro Repository Readiness](official-distro-readiness.md) and build
+the sponsor/review packet with
+[Official Distro Submission Runbook](official-distro-submission.md); generated
 DEB/RPM artifacts are upstream package outputs, not official distro source
 packages.
 
