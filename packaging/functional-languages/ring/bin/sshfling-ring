@@ -1,14 +1,11 @@
 #!/usr/bin/env sh
 set -u
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-package_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+package_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 status_file="${TMPDIR:-/tmp}/sshfling-ring-status.$$"
 
-cleanup() {
-    rm -f -- "$status_file"
-}
-trap cleanup EXIT HUP INT TERM
+trap 'rm -f -- "$status_file"' EXIT HUP INT TERM
 
 SSHFLING_RING_STATUS_FILE="$status_file" \
 SSHFLING_PACKAGE_ROOT="${SSHFLING_PACKAGE_ROOT:-$package_root}" \

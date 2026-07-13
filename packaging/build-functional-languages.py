@@ -37,7 +37,7 @@ MANIFESTS = (
     REPO_ROOT / "packaging/scientific-languages/languages.tsv",
     REPO_ROOT / "packaging/beam-languages/languages.tsv",
 )
-EXPECTED_VERSION = "0.1.22"
+EXPECTED_VERSION = "0.1.23"
 DIST_ROOT = REPO_ROOT / "dist"
 DEFAULT_EVIDENCE = DIST_ROOT / f"sshfling-functional-languages-{EXPECTED_VERSION}-validation.tsv"
 EXPECTED_FIELDS = (
@@ -350,7 +350,8 @@ def validate_contract(language: Language, canonical_files: set[str]) -> str:
         require_tokens(root / "test/consumer.pl", "sshfling:run", ":- initialization(main, main).")
     elif identifier == "smalltalk":
         try:
-            tree = ET.parse(root / "package.xml")
+            # package.xml is a checked-in release fixture, not user input.
+            tree = ET.parse(root / "package.xml")  # nosec B314
         except ET.ParseError as error:
             raise ValidationFailure(f"smalltalk: invalid package.xml: {error}") from error
         package = tree.getroot()
@@ -778,7 +779,7 @@ def safe_extract(archive: tarfile.TarFile, destination: Path) -> None:
             raise ValidationFailure(f"archive has unsafe member: {member.name}")
         if member.issym() or member.islnk():
             raise ValidationFailure(f"archive has unsupported link: {member.name}")
-    archive.extractall(destination)
+    archive.extractall(destination, filter="data")
 
 
 def archive_tree(source: Path, archive: Path, root_name: str) -> None:

@@ -622,7 +622,7 @@ Package outputs go to `dist/`.
   host.
 - `sshfling-VERSION-py3-none-any.whl` needs Python 3.10 or newer, pip, and
   optionally pipx for CLI validation.
-- `sshfling-go-VERSION.zip` needs Go 1.22 or newer and installs the embedded
+- `sshfling-go-VERSION.zip` needs Go 1.25.12 or newer and installs the embedded
   launcher with `go install ./cmd/sshfling`.
 - `sshfling-cli-VERSION.crate` needs Rust 1.70 or newer, Cargo, rustfmt, and
   Clippy to build and validate.

@@ -9,7 +9,7 @@ version="$(assert_sshfling_version_matches_source "${SSHFLING_VERSION:-}" "$repo
 
 go_cmd="${GO:-go}"
 if ! command -v "$go_cmd" >/dev/null 2>&1; then
-  echo "Go 1.22 or newer is required to build the SSHFling Go module." >&2
+  echo "Go 1.25.12 or newer is required to build the SSHFling Go module." >&2
   echo "Install Go, or set GO to a Go executable." >&2
   exit 127
 fi

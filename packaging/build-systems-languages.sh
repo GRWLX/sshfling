@@ -470,12 +470,20 @@ detect_language() {
       ;;
     webassembly-wasi)
       local detected_wasi_cc
+      local wasi_link_probe
       detected_wasi_cc="$(find_wasi_cc || true)"
       if [[ -z "$detected_wasi_cc" ]]; then
         GATE_REASON="clang with wasm32-wasip1 support and a WASI sysroot is required"
         return 1
       fi
       WASI_CC="$detected_wasi_cc"
+      wasi_link_probe="$probe_dir/wasi-link-probe.c"
+      printf '%s\n' 'int main(void) { return 0; }' >"$wasi_link_probe"
+      if ! "$WASI_CC" --target=wasm32-wasip1 "$wasi_link_probe" \
+          -o "$probe_dir/wasi-link-probe.wasm" >/dev/null 2>&1; then
+        GATE_REASON="clang with wasm32-wasip1 linker support and a WASI sysroot is required"
+        return 1
+      fi
       command -v node >/dev/null 2>&1 || { GATE_REASON="Node.js with WASI Preview 1 support is required by the host adapter"; return 1; }
       if ! node -e 'require("node:wasi"); new WebAssembly.Module(Uint8Array.from([0,97,115,109,1,0,0,0]))' \
           >/dev/null 2>&1; then

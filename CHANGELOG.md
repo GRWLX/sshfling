@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.23 - 2026-07-13
+
+Status: fixed-forward release-security candidate after the `v0.1.22` tag
+exposed strict optional scanner failures in the GitHub Packages workflow.
+
+### Fixed
+
+- Raised the Go package/toolchain baseline to Go 1.25.12 so OSV no longer flags
+  the Go 1.22 standard library during strict release scans.
+- Tightened shellcheck-clean packaging scripts and configured optional
+  shellcheck to fail on warnings/errors without blocking on informational
+  style hints.
+- Added explicit safety handling for the functional-language XML and tar
+  validation paths flagged by Bandit.
+
 ## v0.1.22 - 2026-07-13
 
 Status: official-distro submission candidate after `v0.1.21` was published

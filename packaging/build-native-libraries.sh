@@ -138,9 +138,10 @@ validate_install() {
   cmake --build "$cpp_build"
   "$cpp_build/sshfling-cpp-consumer" "$version" | grep -Fx "sshfling $version" >/dev/null
 
+  read -r -a pkg_config_flags <<<"$(PKG_CONFIG_PATH="$install_prefix/lib/pkgconfig" pkg-config --cflags --libs sshfling)"
   PKG_CONFIG_PATH="$install_prefix/lib/pkgconfig" \
     gcc "$project_dir/consumers/c/main.c" \
-      $(PKG_CONFIG_PATH="$install_prefix/lib/pkgconfig" pkg-config --cflags --libs sshfling) \
+      "${pkg_config_flags[@]}" \
       -o "$pkg_binary"
   LD_LIBRARY_PATH="$install_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     "$pkg_binary" "$version" | grep -Fx "sshfling $version" >/dev/null

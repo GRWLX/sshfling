@@ -10,7 +10,7 @@ group = "io.sshfling.validation"
 version = "1.0.0"
 
 val clojureVersion = "1.12.5"
-val sshflingVersion = providers.gradleProperty("sshflingVersion").getOrElse("0.1.22")
+val sshflingVersion = providers.gradleProperty("sshflingVersion").getOrElse("0.1.23")
 val sshflingRepository = providers.gradleProperty("sshflingRepository").get()
 val consumerNamespace = "io.sshfling.validation.clojure-gradle-consumer"
 val consumerSourcePath = "io/sshfling/validation/clojure_gradle_consumer.clj"

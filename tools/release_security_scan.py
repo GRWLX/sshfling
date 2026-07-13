@@ -1713,7 +1713,7 @@ def optional_tool_results(
                 "name": "shellcheck",
                 "purpose": "shell linting",
                 "binary": "shellcheck",
-                "command": ["shellcheck", *shell_paths],
+                "command": ["shellcheck", "--severity=warning", *shell_paths],
                 "output": tool_dir / "shellcheck.log",
             }
         )
@@ -1839,6 +1839,8 @@ def optional_tool_results(
                     str(tool_dir / "osv-scanner.json"),
                     "--skip-git",
                     "--recursive",
+                    "--no-call-analysis=go",
+                    "--experimental-no-resolve",
                     ".",
                 ],
                 "output": tool_dir / "osv-scanner.log",

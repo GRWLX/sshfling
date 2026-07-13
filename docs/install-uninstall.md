@@ -553,7 +553,7 @@ and OpenSSH.
 
 The `sshfling-go-VERSION.zip` artifact contains an importable Go module and
 `cmd/sshfling`. The compiled launcher embeds the canonical Python runtime and
-templates. Go 1.22 or newer is required to build it; Python 3 and OpenSSH remain
+templates. Go 1.25.12 or newer is required to build it; Python 3 and OpenSSH remain
 run-time dependencies.
 
 ```bash

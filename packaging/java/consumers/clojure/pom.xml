@@ -10,7 +10,7 @@
 
   <properties>
     <clojure.version>1.12.5</clojure.version>
-    <sshfling.version>0.1.22</sshfling.version>
+    <sshfling.version>0.1.23</sshfling.version>
     <maven.compiler.release>11</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>

@@ -1,3 +1,3 @@
 module github.com/GRWLX/sshfling/packaging/go
 
-go 1.22
+go 1.25.12

@@ -903,7 +903,7 @@ pipx install "\$tmp/sshfling-$version-py3-none-any.whl"</code></pre>
   <p>Uninstall:</p>
   <pre><code>pipx uninstall sshfling</code></pre>
   <h2>Go module</h2>
-  <p>The Go source module provides an importable launcher API and <code>cmd/sshfling</code>. The installed launcher embeds the SSHFling runtime and requires Go 1.22 or newer to build, plus Python 3 and OpenSSH at run time.</p>
+  <p>The Go source module provides an importable launcher API and <code>cmd/sshfling</code>. The installed launcher embeds the SSHFling runtime and requires Go 1.25.12 or newer to build, plus Python 3 and OpenSSH at run time.</p>
   <pre><code>tmp="\$(mktemp -d)"
 curl -fsSL $base_url/downloads/sshfling-go-$version.zip -o "\$tmp/sshfling-go-$version.zip"
 curl -fsSL $base_url/downloads/SHA256SUMS -o "\$tmp/SHA256SUMS"
