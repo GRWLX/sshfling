@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { Component, enableProdMode } from "@angular/core";
 import { bootstrapApplication } from "@angular/platform-browser";
-import { renderApplication } from "@angular/platform-server";
+import { provideServerRendering, renderApplication } from "@angular/platform-server";
 import sshfling from "sshfling";
 
 enableProdMode();
@@ -27,7 +27,11 @@ class SshflingStatusComponent {
 }
 
 const html = await renderApplication(
-  () => bootstrapApplication(SshflingStatusComponent),
+  (context) => bootstrapApplication(
+    SshflingStatusComponent,
+    { providers: [provideServerRendering()] },
+    context,
+  ),
   { document: "<!doctype html><html><body><sshfling-status></sshfling-status></body></html>" },
 );
 

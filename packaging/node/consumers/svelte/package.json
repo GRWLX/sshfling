@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "sshfling": "file:../..",
-    "svelte": "5.35.2"
+    "svelte": "5.56.4"
   },
   "engines": {
     "node": ">=18"
