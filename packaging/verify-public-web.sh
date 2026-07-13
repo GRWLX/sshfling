@@ -555,7 +555,7 @@ require_gzip_contains "apt/Packages.gz" "Version: ${version}"
 require_contains "homebrew/sshfling.rb" 'license "Apache-2.0"'
 require_contains "homebrew/sshfling.rb" 'depends_on "flock"'
 require_contains "arch/PKGBUILD" "Apache-2.0"
-require_contains "nix/flake.nix" "license = licenses.apache2;"
+require_contains "nix/flake.nix" "license = licenses.asl20;"
 require_contains "snap/snapcraft.yaml" "license: Apache-2.0"
 require_contains "scoop/sshfling.json" '"identifier": "Apache-2.0"'
 require_contains "chocolatey/sshfling.nuspec" "<requireLicenseAcceptance>false</requireLicenseAcceptance>"

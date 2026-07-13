@@ -201,7 +201,7 @@ LICENSE_EXPECTATIONS = [
     {
         "name": "Nix Apache-2.0 license marker",
         "path": "flake.nix",
-        "contains": ["license = licenses.apache2;"],
+        "contains": ["license = licenses.asl20;"],
     },
     {
         "name": "RPM license reference",
