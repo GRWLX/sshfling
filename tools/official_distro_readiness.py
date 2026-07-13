@@ -218,6 +218,7 @@ def official_distro_draft_validation_status() -> Check:
     required = (
         "packaging/validate-official-distro-drafts.sh",
         "packaging/prepare-official-distro-submission.sh",
+        "packaging/validate-official-distro-submission.sh",
         "packaging/fedora/rpmlint.toml",
         "tools/validate_official_distro_lint.py",
         ".github/workflows/official-distro-drafts.yml",
@@ -233,7 +234,7 @@ def official_distro_draft_validation_status() -> Check:
     return Check(
         "Official distro draft validation",
         PASS,
-        "Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian and rpmlint logs plus a submission packet builder for source artifacts and review request drafts.",
+        "Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian and rpmlint logs plus a validated submission packet builder for source artifacts and review request drafts.",
         "Run mock and fedora-review before formal Fedora package review, then submit the prepared packet through maintainer accounts.",
     )
 

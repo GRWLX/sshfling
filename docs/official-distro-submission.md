@@ -11,6 +11,7 @@ From a clean committed tree:
 
 ```bash
 make official-distro-submission-prepare
+make official-distro-submission-validate
 ```
 
 The command writes `build/official-distro-submission/` with:
@@ -23,6 +24,9 @@ The command writes `build/official-distro-submission/` with:
   SRPM, `rpmlint-source.log`, `package-review.md`, `mock-command.txt`, and
   `fedora-review-command.txt`.
 - `SHA256SUMS` for the packet.
+
+The validate target checks packet hashes, required Debian and Fedora files,
+lint logs, request drafts, and source tarball exclusions.
 
 Use `SSHFLING_OFFICIAL_SUBMISSION_DIR=/path/to/output` to choose a different
 output directory. Use `SSHFLING_ALLOW_DIRTY=1` only for a local rehearsal, not

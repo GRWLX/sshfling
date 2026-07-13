@@ -18,7 +18,7 @@ Status meanings:
 | Fedora/EPEL spec license metadata | PASS | packaging/fedora/sshfling.spec records Apache-2.0. | Confirm the spec License field remains a Fedora-accepted license expression during package review. |
 | Generated RPM license metadata | PASS | packaging/build-rpm.sh emits Apache-2.0. | Keep generated upstream RPM metadata aligned with the Fedora review spec where practical. |
 | Package build/test coverage | PASS | Generated DEB/RPM builders, local install validation, and package-install workflow are present. | Keep these as upstream smoke tests while adding distro-native source package tests. |
-| Official distro draft validation | PASS | Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian and rpmlint logs plus a submission packet builder for source artifacts and review request drafts. | Run mock and fedora-review before formal Fedora package review, then submit the prepared packet through maintainer accounts. |
+| Official distro draft validation | PASS | Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian and rpmlint logs plus a validated submission packet builder for source artifacts and review request drafts. | Run mock and fedora-review before formal Fedora package review, then submit the prepared packet through maintainer accounts. |
 
 ## Submission Path
 

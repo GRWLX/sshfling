@@ -41,3 +41,5 @@ jobs:
           set -euo pipefail
           version="$(bash packaging/resolve-version.sh "$INPUT_VERSION")"
           make official-distro-draft-validate VERSION="$version"
+          make official-distro-submission-prepare VERSION="$version"
+          make official-distro-submission-validate VERSION="$version"
