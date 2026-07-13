@@ -5,6 +5,10 @@ Fedora, and EPEL submission. It does not replace maintainer accounts, GPG keys,
 Bugzilla/Fedora accounts, Debian sponsor review, Fedora package review, or
 archive maintainers.
 
+For the external signing credentials, repository variables, and maintainer
+account handoff after a candidate tag is published, see
+[release-signing-and-distro-handoff.md](release-signing-and-distro-handoff.md).
+
 ## Build the Packet
 
 From a clean committed tree:

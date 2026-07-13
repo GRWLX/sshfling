@@ -160,7 +160,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=sshfling-${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=sshfling-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=sshfling-${{ matrix.image }},ignore-error=true
 
       - name: Sign image digest
         env:
