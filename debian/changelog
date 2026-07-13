@@ -1,7 +1,6 @@
 sshfling (0.1.21-1) unstable; urgency=medium
 
   * Initial draft Debian source package metadata.
-  * Not ready for official archive upload while the upstream license remains
-    proprietary and redistribution-restricted.
+  * Record Apache-2.0 license metadata for official archive review.
 
- -- SSHFling Maintainers <root@localhost>  Mon, 13 Jul 2026 00:00:00 +0000
+ -- GRWLX <44076838+GRWLX@users.noreply.github.com>  Mon, 13 Jul 2026 00:00:00 +0000

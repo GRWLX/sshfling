@@ -9,10 +9,9 @@ BASE_URL="https://OWNER.github.io/REPO"
 VERSION="0.1.14"
 ```
 
-SSHFling is proprietary commercial software. Installing, running,
-redistributing, or submitting generated manifests to third-party repositories
-requires the rights described in the project LICENSE or a separate written
-agreement from GRWLX.
+SSHFling is licensed under the Apache License, Version 2.0. Redistributing or
+submitting generated manifests to third-party repositories must preserve the
+LICENSE file and any required notices.
 
 ## Enterprise Rules
 

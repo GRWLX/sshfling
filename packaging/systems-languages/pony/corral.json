@@ -5,6 +5,6 @@
     "name": "sshfling",
     "version": "0.0.0",
     "description": "Pony launcher API and CLI for the bundled SSHFling runtime",
-    "license": "LicenseRef-SSHFling-Commercial"
+    "license": "Apache-2.0"
   }
 }

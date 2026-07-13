@@ -185,7 +185,7 @@ pkgrel=1
 pkgdesc="Temporary SSH access broker and CLI"
 arch=('any')
 url="${base_url}"
-license=('LicenseRef-SSHFling-Commercial')
+license=('Apache-2.0')
 depends=('bash' 'python' 'openssh' 'openssl' 'shadow' 'procps-ng' 'util-linux' 'jq')
 optdepends=('docker: Docker Compose test harness')
 backup=('etc/sshfling/policy.json')
@@ -218,7 +218,7 @@ pkgbase = sshfling
 	pkgrel = 1
 	url = ${base_url}
 	arch = any
-	license = LicenseRef-SSHFling-Commercial
+	license = Apache-2.0
 	depends = python
 	depends = bash
 	depends = openssh
@@ -244,7 +244,7 @@ pkgrel=0
 pkgdesc="Temporary SSH access broker and CLI"
 url="${base_url}"
 arch="noarch"
-license="LicenseRef-SSHFling-Commercial"
+license="Apache-2.0"
 depends="bash python3 openssh-client openssl shadow procps util-linux jq"
 options="!check"
 source="\$pkgname-\$pkgver.tar.gz::${base_url}/downloads/${source_tar}"
@@ -280,10 +280,8 @@ MAINTAINER=	44076838+GRWLX@users.noreply.github.com
 COMMENT=	Temporary SSH access broker and CLI
 WWW=		${base_url}
 
-LICENSE=	SSHFLING_COMMERCIAL
-LICENSE_NAME=	SSHFling Commercial License
+LICENSE=	APACHE20
 LICENSE_FILE=	\${WRKSRC}/LICENSE
-LICENSE_PERMS=	no-dist-mirror no-dist-sell no-pkg-mirror no-pkg-sell no-auto-accept
 
 RUN_DEPENDS=	python3:lang/python3 bash:shells/bash jq:textproc/jq
 
@@ -391,9 +389,9 @@ CATEGORIES =	security sysutils
 HOMEPAGE =	${base_url}
 MAINTAINER =	${maintainer}
 
-# SSHFling Commercial License: redistribution requires prior written permission.
-PERMIT_PACKAGE =	requires prior written permission from GRWLX
-PERMIT_DISTFILES =	requires prior written permission from GRWLX
+# Apache-2.0
+PERMIT_PACKAGE =	Yes
+PERMIT_DISTFILES =	Yes
 
 MASTER_SITES =	${base_url}/downloads/
 
@@ -673,7 +671,7 @@ cat >"$public_dir/nix/flake.nix" <<NIX
             meta = with pkgs.lib; {
               description = "Temporary SSH access broker and CLI";
               homepage = "${base_url}";
-              license = licenses.unfree;
+              license = licenses.apache2;
               mainProgram = "sshfling";
               platforms = platforms.unix;
             };
@@ -832,7 +830,7 @@ cat >"$public_dir/guix/sshfling.scm" <<GUIX
     (synopsis "Temporary SSH access broker and CLI")
     (description
      "SSHFling grants short-lived SSH access with default password grants, optional OpenSSH user certificates, and a forced session wrapper so temporary SSH sessions are capped by a server-side wall-clock timeout.")
-    (license #f)))
+    (license license:asl2)))
 
 sshfling
 GUIX
@@ -845,7 +843,7 @@ revision=1
 depends="bash python3 openssh openssl shadow procps-ng util-linux jq"
 short_desc="Temporary SSH access broker and CLI"
 maintainer="${maintainer}"
-license="LicenseRef-SSHFling-Commercial"
+license="Apache-2.0"
 homepage="${base_url}"
 distfiles="${base_url}/downloads/${source_tar}"
 checksum=${source_sha}
@@ -877,7 +875,7 @@ DESCRIPTION="Temporary SSH access broker and CLI"
 HOMEPAGE="${base_url}"
 SRC_URI="${base_url}/downloads/${source_tar}"
 
-LICENSE="LicenseRef-SSHFling-Commercial"
+LICENSE="Apache-2.0"
 SLOT="0"
 KEYWORDS="~amd64 ~arm64"
 REQUIRED_USE="\${PYTHON_REQUIRED_USE}"
@@ -989,7 +987,7 @@ Name:           sshfling
 Version:        ${version}
 Release:        1%{?dist}
 Summary:        Temporary SSH access broker and CLI
-License:        LicenseRef-SSHFling-Commercial
+License:        Apache-2.0
 URL:            ${base_url}
 Source0:        ${base_url}/downloads/${source_tar}
 BuildArch:      noarch
@@ -1047,7 +1045,7 @@ description: |
   SSHFling grants short-lived SSH access with default password grants, optional
   OpenSSH user certificates, and a forced session wrapper so temporary SSH
   sessions are capped by a server-side wall-clock timeout.
-license: Proprietary
+license: Apache-2.0
 grade: stable
 confinement: classic
 
@@ -1091,7 +1089,7 @@ SNAP
 cat >"$public_dir/termux/packages/sshfling/build.sh" <<TERMUX
 TERMUX_PKG_HOMEPAGE=${base_url}
 TERMUX_PKG_DESCRIPTION="Temporary SSH access broker and CLI"
-TERMUX_PKG_LICENSE="LicenseRef-SSHFling-Commercial"
+TERMUX_PKG_LICENSE="Apache-2.0"
 TERMUX_PKG_MAINTAINER="${maintainer}"
 TERMUX_PKG_VERSION=${version}
 TERMUX_PKG_SRCURL=${base_url}/downloads/${source_tar}
@@ -1168,7 +1166,7 @@ if [[ -n "$windows_zip_name" ]]; then
   "description": "Temporary SSH access broker and CLI",
   "homepage": "${base_url}",
   "license": {
-    "identifier": "Proprietary",
+    "identifier": "Apache-2.0",
     "url": "https://github.com/${repository}/blob/main/LICENSE"
   },
   "url": "${base_url}/downloads/${windows_zip_name}",
@@ -1200,7 +1198,7 @@ PackageVersion: ${version}
 PackageLocale: en-US
 Publisher: ${owner}
 PackageName: SSHFling
-License: SSHFling Commercial License
+License: Apache-2.0
 ShortDescription: Temporary SSH access broker and CLI
 PackageUrl: https://github.com/${repository}
 LicenseUrl: https://github.com/${repository}/blob/main/LICENSE
@@ -1250,7 +1248,7 @@ WINGET_INDEX
     <licenseUrl>https://github.com/${repository}/blob/main/LICENSE</licenseUrl>
     <projectUrl>https://github.com/${repository}</projectUrl>
     <packageSourceUrl>https://github.com/${repository}</packageSourceUrl>
-    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <description>Temporary SSH access broker and CLI.</description>
     <summary>Temporary SSH access broker and CLI.</summary>
     <tags>ssh openssh certificate temporary-access cli</tags>
@@ -1315,7 +1313,7 @@ cat >"$public_dir/community.html" <<HTML
 </head>
 <body>
   <h1>SSHFling ${version} community package manifests</h1>
-  <p>SSHFling is proprietary commercial software. Installing, running, redistributing, or submitting these manifests to third-party repositories requires the rights described in the project LICENSE or a separate written agreement from GRWLX.</p>
+  <p>SSHFling is licensed under the Apache License, Version 2.0. Redistributing or submitting these manifests to third-party repositories must preserve the LICENSE file and any required notices.</p>
   <p>These files are generated from the release artifacts. Some ecosystems can install directly from these URLs; official/community repositories such as AUR, FreeBSD Ports, pkgsrc, winget, Chocolatey, Snapcraft, and distro repos still require maintainer account submission and review.</p>
   <p>Dependency ownership remains with the target operating system, package manager, base image, or fleet policy. The manifests declare Python, OpenSSH, account-management, process, and util-linux capabilities where each ecosystem supports that metadata, but package uninstall should not remove or downgrade those shared dependencies or revert host SSH configuration.</p>
   <p>Trust model: review the generated manifest, verify the embedded release checksums or package hashes, and use the ecosystem's normal signed repository or maintainer-submission flow before fleet deployment. The generated helpers do not use insecure package-manager bypass flags.</p>

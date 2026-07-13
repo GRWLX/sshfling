@@ -727,9 +727,8 @@ Windows fleet paths.
 
 ## License
 
-SSHFling is proprietary software owned by GRWLX. Use requires a separate
-written commercial license and payment of any royalties or fees required by
-that agreement. See [LICENSE](LICENSE).
+SSHFling is licensed under the Apache License, Version 2.0. See
+[LICENSE](LICENSE).
 
 ## Common Commands
 

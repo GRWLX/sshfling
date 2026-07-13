@@ -430,7 +430,7 @@ require_file "chocolatey/install.ps1"
 
 require_contains "index.html" "SSHFling ${version} packages"
 require_contains "index.html" "uninstall"
-require_contains "index.html" "proprietary commercial software"
+require_contains "index.html" "licensed under the Apache License, Version 2.0"
 require_contains "index.html" "sudo apt-get remove -y sshfling"
 require_contains "index.html" "/usr/share/keyrings/sshfling-repo.gpg"
 require_contains "index.html" "sudo dnf --setopt=clean_requirements_on_remove=False remove -y sshfling"
@@ -547,19 +547,19 @@ done
 require_contains "community.html" "FreeBSD"
 require_contains "community.html" "OpenBSD"
 require_contains "community.html" "pkgsrc"
-require_contains "community.html" "proprietary commercial software"
+require_contains "community.html" "licensed under the Apache License, Version 2.0"
 require_contains "community.html" "Dependency ownership remains with the target operating system"
 require_contains "community.html" "Trust model: review the generated manifest"
 require_gzip_contains "apt/Packages.gz" "Version: ${version}"
 
-require_contains "homebrew/sshfling.rb" "license :cannot_represent"
+require_contains "homebrew/sshfling.rb" 'license "Apache-2.0"'
 require_contains "homebrew/sshfling.rb" 'depends_on "flock"'
-require_contains "arch/PKGBUILD" "LicenseRef-SSHFling-Commercial"
-require_contains "nix/flake.nix" "license = licenses.unfree;"
-require_contains "snap/snapcraft.yaml" "license: Proprietary"
-require_contains "scoop/sshfling.json" '"identifier": "Proprietary"'
-require_contains "chocolatey/sshfling.nuspec" "<requireLicenseAcceptance>true</requireLicenseAcceptance>"
-require_contains "winget/manifests/g/${owner}/SSHFling/${version}/${owner}.SSHFling.locale.en-US.yaml" "License: SSHFling Commercial License"
+require_contains "arch/PKGBUILD" "Apache-2.0"
+require_contains "nix/flake.nix" "license = licenses.apache2;"
+require_contains "snap/snapcraft.yaml" "license: Apache-2.0"
+require_contains "scoop/sshfling.json" '"identifier": "Apache-2.0"'
+require_contains "chocolatey/sshfling.nuspec" "<requireLicenseAcceptance>false</requireLicenseAcceptance>"
+require_contains "winget/manifests/g/${owner}/SSHFling/${version}/${owner}.SSHFling.locale.en-US.yaml" "License: Apache-2.0"
 require_contains "chocolatey/install.ps1" "Get-FileHash -Algorithm SHA256"
 require_contains "appimage/AppImageBuilder.yml" "deb https://archive.ubuntu.com/ubuntu/ noble main universe"
 require_not_contains "appimage/AppImageBuilder.yml" "deb http://archive.ubuntu.com/ubuntu/"

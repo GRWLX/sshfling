@@ -1,7 +1,7 @@
 Source: sshfling
-Section: non-free/admin
+Section: admin
 Priority: optional
-Maintainer: SSHFling Maintainers <root@localhost>
+Maintainer: GRWLX <44076838+GRWLX@users.noreply.github.com>
 Build-Depends:
  bash,
  debhelper-compat (= 13)
@@ -33,6 +33,5 @@ Description: temporary SSH access broker and CLI
  temporary SSH sessions are capped by a server-side wall-clock timeout.
  Docker Compose files are included as a test harness.
  .
- This draft source package is not ready for official Debian or Ubuntu
- upload while the upstream license remains proprietary and
- redistribution-restricted.
+ This draft source package is Apache-2.0 licensed and intended for
+ Debian/Ubuntu policy review before any official archive upload.

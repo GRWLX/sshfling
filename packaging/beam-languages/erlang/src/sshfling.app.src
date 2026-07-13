@@ -5,6 +5,6 @@
     {applications, [kernel, stdlib]},
     {env, []},
     {modules, [sshfling]},
-    {licenses, ["LicenseRef-Proprietary"]},
+    {licenses, ["Apache-2.0"]},
     {links, [{"GitHub", "https://github.com/GRWLX/sshfling"}]}
 ]}.

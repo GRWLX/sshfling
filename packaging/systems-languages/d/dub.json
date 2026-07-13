@@ -3,7 +3,7 @@
   "description": "D launcher API and CLI for the bundled SSHFling runtime",
   "authors": ["GRWLX"],
   "homepage": "https://github.com/GRWLX/sshfling",
-  "license": "LicenseRef-SSHFling-Commercial",
+  "license": "Apache-2.0",
   "targetType": "library",
   "targetName": "sshfling",
   "sourcePaths": ["source"],

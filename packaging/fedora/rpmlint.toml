@@ -7,7 +7,7 @@ Filters = [
     ".* E: no-packager-tag$",
     ".* E: no-group-tag$",
     ".* W: no-buildroot-tag$",
-    ".* W: invalid-license LicenseRef-SSHFling-Commercial$",
+    ".* W: invalid-license Apache-2.0$",
     ".* W: non-standard-gid /etc/sshfling sshflingd$",
     ".* W: non-standard-gid /etc/sshfling/sshflingd.env sshflingd$",
     ".* E: non-standard-dir-perm /etc/sshfling 750$",

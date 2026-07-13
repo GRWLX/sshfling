@@ -131,7 +131,7 @@ build_source_tarball() {
   write_tiny_cli "$source_dir/production/sshfling-login-shell"
   write_tiny_cli "$source_dir/production/sshfling-session"
   printf 'SSHFling release rehearsal artifact\n' >"$source_dir/README.md"
-  printf 'SSHFling commercial license placeholder for release rehearsal\n' >"$source_dir/LICENSE"
+  printf 'Apache License\nVersion 2.0, January 2004\n' >"$source_dir/LICENSE"
   printf '{}\n' >"$source_dir/packaging/policy.json"
   normalize_tree_timestamps "$source_dir"
   create_deterministic_tarball "$source_parent" "$package_dist/sshfling-$version.tar.gz" "sshfling-$version"
@@ -148,7 +148,7 @@ Version: $version
 Section: utils
 Priority: optional
 Architecture: all
-Maintainer: SSHFling Maintainers <root@localhost>
+Maintainer: GRWLX <44076838+GRWLX@users.noreply.github.com>
 Description: SSHFling release rehearsal package
  Minimal package used only to exercise public package repository metadata.
 CONTROL
@@ -175,7 +175,7 @@ Name: sshfling
 Version: $version
 Release: 1
 Summary: SSHFling release rehearsal package
-License: LicenseRef-SSHFling-Commercial
+License: Apache-2.0
 BuildArch: noarch
 Source0: sshfling-$version.tar.gz
 

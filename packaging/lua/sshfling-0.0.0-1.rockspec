@@ -14,7 +14,7 @@ description = {
     Python runtime with its deployment templates.
   ]],
   homepage = "https://github.com/GRWLX/sshfling",
-  license = "Nonstandard"
+  license = "Apache-2.0"
 }
 
 dependencies = {

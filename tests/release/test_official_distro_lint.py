@@ -31,19 +31,26 @@ def quiet_call(func, *args):
 
 
 class OfficialDistroLintTests(unittest.TestCase):
-    def test_lintian_allows_known_external_blockers(self) -> None:
+    def test_lintian_allows_known_review_warning(self) -> None:
+        text = "W: sshfling: initial-upload-closes-no-bugs [usr/share/doc/sshfling/changelog.Debian.gz:1]\n"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "lintian.log"
+            report.write_text(text, encoding="utf-8")
+            self.assertEqual(quiet_call(validator.validate_lintian, report), 0)
+
+    def test_lintian_rejects_placeholder_maintainer_tags(self) -> None:
         text = "\n".join(
             [
                 "E: sshfling: bogus-mail-host Maintainer root@localhost",
                 "E: sshfling changes: root-in-contact Maintainer \"SSHFling Maintainers\" <root@localhost>",
-                "W: sshfling: initial-upload-closes-no-bugs [usr/share/doc/sshfling/changelog.Debian.gz:1]",
             ]
         )
 
         with tempfile.TemporaryDirectory() as tmp:
             report = Path(tmp) / "lintian.log"
             report.write_text(text, encoding="utf-8")
-            self.assertEqual(quiet_call(validator.validate_lintian, report), 0)
+            self.assertEqual(quiet_call(validator.validate_lintian, report), 1)
 
     def test_lintian_rejects_unexpected_tags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

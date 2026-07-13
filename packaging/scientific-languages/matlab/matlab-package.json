@@ -6,7 +6,7 @@
   "interpreter": "GNU Octave",
   "source": "+sshfling/run.m",
   "project_url": "https://github.com/GRWLX/sshfling",
-  "license": "LicenseRef-Proprietary",
+  "license": "Apache-2.0",
   "minimum_octave_version": "8.4",
   "mathworks_matlab_runtime": "not claimed",
   "assets": ["runtime", "LICENSE", "README.md"]

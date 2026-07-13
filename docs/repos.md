@@ -12,7 +12,7 @@ For public installs, enable GitHub Pages for Actions in the repository settings 
 
 Replace `OWNER` and `REPO` in the examples below with the GitHub organization/user and repository name.
 
-SSHFling is proprietary commercial software. Installing, running, redistributing, or submitting generated manifests to third-party repositories requires the rights described in the project LICENSE or a separate written agreement from GRWLX.
+SSHFling is licensed under the Apache License, Version 2.0. Redistributing or submitting generated manifests to third-party repositories must preserve the LICENSE file and any required notices.
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
@@ -508,7 +508,7 @@ class Sshfling < Formula
   homepage "https://example.com/sshfling"
   url "https://example.com/${TARBALL}"
   sha256 "${TARBALL_SHA256}"
-  license :cannot_represent
+  license "Apache-2.0"
 
   depends_on "python@3"
   depends_on "docker" => :recommended

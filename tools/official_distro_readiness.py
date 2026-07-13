@@ -41,6 +41,7 @@ def exists(relative: str) -> bool:
 def license_status() -> Check:
     text = read_text("LICENSE")
     lowered = text.lower()
+    has_apache_2 = "apache license" in lowered and "version 2.0" in lowered
     proprietary_markers = (
         "not open source",
         "paid use required",
@@ -56,9 +57,9 @@ def license_status() -> Check:
         )
     return Check(
         "License",
-        PASS,
-        "LICENSE does not contain the known proprietary redistribution blockers.",
-        "Confirm the selected license identifier is accepted by Debian, Ubuntu, Fedora, and EPEL.",
+        PASS if has_apache_2 else WARN,
+        "LICENSE declares Apache License, Version 2.0." if has_apache_2 else "LICENSE does not contain the known proprietary redistribution blockers.",
+        "Confirm package metadata preserves Apache-2.0 license files and required notices.",
     )
 
 
@@ -150,17 +151,17 @@ def fedora_spec_license_status() -> Check:
     for path in spec_paths:
         if exists(path):
             text = read_text(path)
-            if "LicenseRef-SSHFling-Commercial" in text:
+            if "License:        Apache-2.0" in text or "License: Apache-2.0" in text:
                 return Check(
                     "Fedora/EPEL spec license metadata",
-                    BLOCKED,
-                    f"{path} records LicenseRef-SSHFling-Commercial.",
-                    "Change the Fedora spec License field only after the project license is changed or a Fedora-acceptable redistribution grant is approved.",
+                    PASS,
+                    f"{path} records Apache-2.0.",
+                    "Confirm the spec License field remains a Fedora-accepted license expression during package review.",
                 )
             return Check(
                 "Fedora/EPEL spec license metadata",
-                PASS,
-                f"{path} does not use the known commercial LicenseRef marker.",
+                WARN,
+                f"{path} does not record Apache-2.0 in the License field.",
                 "Confirm the spec License field matches an accepted Fedora license expression.",
             )
     return Check(
@@ -173,17 +174,17 @@ def fedora_spec_license_status() -> Check:
 
 def generated_rpm_license_status() -> Check:
     text = read_text("packaging/build-rpm.sh")
-    if "License: LicenseRef-SSHFling-Commercial" in text:
+    if "License: Apache-2.0" in text:
         return Check(
             "Generated RPM license metadata",
-            BLOCKED,
-            "packaging/build-rpm.sh emits LicenseRef-SSHFling-Commercial.",
-            "Change RPM license metadata only after the project license is changed or an explicit redistribution grant is approved.",
+            PASS,
+            "packaging/build-rpm.sh emits Apache-2.0.",
+            "Keep generated upstream RPM metadata aligned with the Fedora review spec where practical.",
         )
     return Check(
         "Generated RPM license metadata",
-        PASS,
-        "Generated RPM spec does not use the known commercial LicenseRef marker.",
+        WARN,
+        "Generated RPM spec does not emit Apache-2.0.",
         "Confirm the spec License field matches an accepted Fedora license expression.",
     )
 
@@ -231,8 +232,8 @@ def official_distro_draft_validation_status() -> Check:
     return Check(
         "Official distro draft validation",
         PASS,
-        "Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian, rpmlint, and autopkgtest smoke coverage with known external blockers isolated.",
-        "Run mock and fedora-review after the license and maintainer gates are resolved.",
+        "Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian, rpmlint, and autopkgtest smoke coverage with known review warnings isolated.",
+        "Run mock and fedora-review before formal Fedora package review.",
     )
 
 
@@ -279,8 +280,8 @@ def render_markdown(items: list[Check]) -> str:
             "",
             "## Submission Path",
             "",
-            "1. Resolve the license gate before asking distro maintainers to review the package.",
-            "2. Add Debian source packaging and validate it with `dpkg-buildpackage`, `lintian`, and `autopkgtest`.",
+            "1. Keep Apache-2.0 metadata consistent across source, generated packages, and distro drafts.",
+            "2. Validate Debian source packaging with `dpkg-buildpackage`, `lintian`, and `autopkgtest`.",
             "3. File a Debian WNPP/ITP bug, upload to mentors.debian.net, and find a Debian sponsor.",
             "4. Let Ubuntu sync from Debian when possible; otherwise request Ubuntu sponsorship for a source package.",
             "5. Add a Fedora-compliant spec and SRPM, validate with `rpmlint`, `mock`, and `fedora-review`, then file Fedora package review.",
@@ -288,7 +289,7 @@ def render_markdown(items: list[Check]) -> str:
             "",
             "## Current Decision Gate",
             "",
-            "The repository is not ready for official Debian/Ubuntu/Fedora/EPEL submission while any `BLOCKED` row remains.",
+            "No `BLOCKED` rows remain. Rows with `WARN` still need maintainer or sponsor review before upload.",
             "",
         ]
     )

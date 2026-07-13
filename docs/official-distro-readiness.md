@@ -10,20 +10,20 @@ Status meanings:
 
 | Area | Status | Evidence | Required next action |
 | --- | --- | --- | --- |
-| License | BLOCKED | LICENSE declares SSHFling proprietary, not open source, paid-use, and redistribution-restricted. | Choose an OSI/DFSG/Fedora-acceptable open-source license or obtain a distro-specific redistribution grant before official archive submission. |
+| License | PASS | LICENSE declares Apache License, Version 2.0. | Confirm package metadata preserves Apache-2.0 license files and required notices. |
 | Debian/Ubuntu source packaging | WARN | Required debian/ source package files are present as a draft. | Build and lint the source package, then prepare WNPP/ITP and sponsorship materials. |
-| Debian/Ubuntu maintainer metadata | WARN | debian/control still uses placeholder Maintainer metadata. | Replace placeholder maintainer metadata with the accountable Debian/Ubuntu maintainer or team before upload. |
-| Generated DEB metadata | WARN | packaging/build-deb.sh still emits placeholder Maintainer metadata. | Replace placeholder maintainer metadata in generated packages and keep generated DEBs separate from official Debian source packaging. |
+| Debian/Ubuntu maintainer metadata | PASS | debian/control does not use the known placeholder maintainer. | Confirm the maintainer identity matches the sponsor or uploader process. |
+| Generated DEB metadata | PASS | Generated DEB metadata does not use the known placeholder maintainer. | Keep generated upstream repository packages aligned with official Debian metadata where practical. |
 | Fedora/EPEL source packaging | WARN | A checked-in RPM spec path exists as a draft. | Validate the spec with rpmlint/mock/fedora-review and submit a Fedora package review before EPEL branches. |
-| Fedora/EPEL spec license metadata | BLOCKED | packaging/fedora/sshfling.spec records LicenseRef-SSHFling-Commercial. | Change the Fedora spec License field only after the project license is changed or a Fedora-acceptable redistribution grant is approved. |
-| Generated RPM license metadata | BLOCKED | packaging/build-rpm.sh emits LicenseRef-SSHFling-Commercial. | Change RPM license metadata only after the project license is changed or an explicit redistribution grant is approved. |
+| Fedora/EPEL spec license metadata | PASS | packaging/fedora/sshfling.spec records Apache-2.0. | Confirm the spec License field remains a Fedora-accepted license expression during package review. |
+| Generated RPM license metadata | PASS | packaging/build-rpm.sh emits Apache-2.0. | Keep generated upstream RPM metadata aligned with the Fedora review spec where practical. |
 | Package build/test coverage | PASS | Generated DEB/RPM builders, local install validation, and package-install workflow are present. | Keep these as upstream smoke tests while adding distro-native source package tests. |
-| Official distro draft validation | PASS | Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian, rpmlint, and autopkgtest smoke coverage with known external blockers isolated. | Run mock and fedora-review after the license and maintainer gates are resolved. |
+| Official distro draft validation | PASS | Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian, rpmlint, and autopkgtest smoke coverage with known review warnings isolated. | Run mock and fedora-review before formal Fedora package review. |
 
 ## Submission Path
 
-1. Resolve the license gate before asking distro maintainers to review the package.
-2. Add Debian source packaging and validate it with `dpkg-buildpackage`, `lintian`, and `autopkgtest`.
+1. Keep Apache-2.0 metadata consistent across source, generated packages, and distro drafts.
+2. Validate Debian source packaging with `dpkg-buildpackage`, `lintian`, and `autopkgtest`.
 3. File a Debian WNPP/ITP bug, upload to mentors.debian.net, and find a Debian sponsor.
 4. Let Ubuntu sync from Debian when possible; otherwise request Ubuntu sponsorship for a source package.
 5. Add a Fedora-compliant spec and SRPM, validate with `rpmlint`, `mock`, and `fedora-review`, then file Fedora package review.
@@ -31,4 +31,4 @@ Status meanings:
 
 ## Current Decision Gate
 
-The repository is not ready for official Debian/Ubuntu/Fedora/EPEL submission while any `BLOCKED` row remains.
+No `BLOCKED` rows remain. Rows with `WARN` still need maintainer or sponsor review before upload.

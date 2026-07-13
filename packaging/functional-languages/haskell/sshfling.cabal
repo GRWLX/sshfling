@@ -5,7 +5,7 @@ synopsis:           Haskell launcher for the bundled SSHFling runtime
 description:        Exposes run(args) and a CLI around the canonical SSHFling runtime.
 homepage:           https://github.com/GRWLX/sshfling
 bug-reports:        https://github.com/GRWLX/sshfling/issues
-license:            LicenseRef-Proprietary
+license:            Apache-2.0
 license-file:       LICENSE
 author:             GRWLX
 maintainer:         GRWLX

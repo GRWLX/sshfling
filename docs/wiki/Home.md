@@ -3,10 +3,9 @@
 This wiki is the enterprise release-operator entry point for publishing and
 operating SSHFling packages.
 
-SSHFling is proprietary commercial software. Installing, running,
-redistributing, or submitting generated package manifests to third-party
-repositories requires the rights described in the project `LICENSE` or a
-separate written agreement from GRWLX.
+SSHFling is licensed under the Apache License, Version 2.0. Redistributing or
+submitting generated package manifests to third-party repositories must preserve
+the project `LICENSE` file and any required notices.
 
 ## Start Here
 

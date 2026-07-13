@@ -13,7 +13,7 @@ release.
 | Windows MSI | Build/signing hooks available | Configure Authenticode signing material and attach `signtool` or `Get-AuthenticodeSignature` evidence if required by policy. |
 | Public package site | Source gate available | Enable protected GitHub Pages deployment from Actions and run the public-web workflow. |
 | Community manifests | Generated | Submit manually where ecosystem review or maintainer accounts are required. |
-| License signaling | Source markers available | Confirm commercial license approval before redistribution. |
+| License signaling | Source markers available | Confirm Apache-2.0 metadata, LICENSE inclusion, and any required notices before redistribution. |
 | Release validation | Evidence required | Run package install tests and cross-OS validation for each published version. |
 | Access behavior contract | Source gate available | Confirm docs and release notes state password-by-default with explicit `-t/--time`, explicit certificate mode, access-level classification limits, prune selector requirements, and uninstall cleanup boundaries. |
 | Platform coverage evidence | Partial | Keep a compact evidence-backed declaration for OS versions, Python/OpenSSH versions, CPU architectures, hardware classes, ARM/IoT targets, and FPGA/SoC host control-plane scope. |

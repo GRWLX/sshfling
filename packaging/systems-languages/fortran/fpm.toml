@@ -1,6 +1,6 @@
 name = "sshfling"
 version = "0.0.0"
-license = "LicenseRef-SSHFling-Commercial"
+license = "Apache-2.0"
 author = "GRWLX"
 maintainer = "SSHFling Maintainers"
 description = "Fortran launcher API and CLI for the bundled SSHFling runtime"

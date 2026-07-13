@@ -23,30 +23,31 @@ readiness = load_tool()
 
 
 class OfficialDistroReadinessTests(unittest.TestCase):
-    def test_current_license_blocks_official_distro_submission(self) -> None:
+    def test_current_license_is_apache_2(self) -> None:
         license_check = readiness.license_status()
 
-        self.assertEqual(license_check.status, readiness.BLOCKED)
-        self.assertIn("proprietary", license_check.evidence)
-        self.assertIn("open-source license", license_check.next_action)
+        self.assertEqual(license_check.status, readiness.PASS)
+        self.assertIn("Apache License, Version 2.0", license_check.evidence)
+        self.assertIn("Apache-2.0", license_check.next_action)
 
-    def test_current_generated_rpm_license_is_not_fedora_ready(self) -> None:
+    def test_current_generated_rpm_license_is_apache_2(self) -> None:
         rpm_check = readiness.generated_rpm_license_status()
 
-        self.assertEqual(rpm_check.status, readiness.BLOCKED)
-        self.assertIn("LicenseRef-SSHFling-Commercial", rpm_check.evidence)
+        self.assertEqual(rpm_check.status, readiness.PASS)
+        self.assertIn("Apache-2.0", rpm_check.evidence)
 
     def test_report_records_draft_debian_and_fedora_source_packaging(self) -> None:
         checks = {item.area: item for item in readiness.checks()}
 
         self.assertEqual(checks["Debian/Ubuntu source packaging"].status, readiness.WARN)
         self.assertIn("draft", checks["Debian/Ubuntu source packaging"].evidence)
-        self.assertEqual(checks["Debian/Ubuntu maintainer metadata"].status, readiness.WARN)
-        self.assertIn("placeholder", checks["Debian/Ubuntu maintainer metadata"].evidence)
+        self.assertEqual(checks["Debian/Ubuntu maintainer metadata"].status, readiness.PASS)
+        self.assertIn("does not use", checks["Debian/Ubuntu maintainer metadata"].evidence)
+        self.assertEqual(checks["Generated DEB metadata"].status, readiness.PASS)
         self.assertEqual(checks["Fedora/EPEL source packaging"].status, readiness.WARN)
         self.assertIn("draft", checks["Fedora/EPEL source packaging"].evidence)
-        self.assertEqual(checks["Fedora/EPEL spec license metadata"].status, readiness.BLOCKED)
-        self.assertIn("LicenseRef-SSHFling-Commercial", checks["Fedora/EPEL spec license metadata"].evidence)
+        self.assertEqual(checks["Fedora/EPEL spec license metadata"].status, readiness.PASS)
+        self.assertIn("Apache-2.0", checks["Fedora/EPEL spec license metadata"].evidence)
         self.assertEqual(checks["Official distro draft validation"].status, readiness.PASS)
         self.assertIn("Repeatable", checks["Official distro draft validation"].evidence)
         self.assertIn("lintian", checks["Official distro draft validation"].evidence)
@@ -55,8 +56,9 @@ class OfficialDistroReadinessTests(unittest.TestCase):
         rendered = readiness.render_markdown(readiness.checks())
 
         self.assertIn("# Official Distro Repository Readiness", rendered)
-        self.assertIn("The repository is not ready", rendered)
-        self.assertIn("| License | BLOCKED |", rendered)
+        self.assertIn("No `BLOCKED` rows remain", rendered)
+        self.assertIn("| License | PASS |", rendered)
+        self.assertNotIn("| License | BLOCKED |", rendered)
 
 
 if __name__ == "__main__":

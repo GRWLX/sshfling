@@ -69,7 +69,7 @@
             meta = with pkgs.lib; {
               description = "Temporary SSH access broker and CLI";
               homepage = "https://github.com/GRWLX/sshfling";
-              license = licenses.unfree;
+              license = licenses.apache2;
               mainProgram = "sshfling";
               platforms = platforms.unix;
             };

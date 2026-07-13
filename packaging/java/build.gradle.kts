@@ -39,9 +39,9 @@ publishing {
                 url = "https://github.com/GRWLX/sshfling"
                 licenses {
                     license {
-                        name = "SSHFling Commercial License"
-                        url = "https://github.com/GRWLX/sshfling/blob/main/LICENSE"
-                        distribution = "manual"
+                        name = "Apache License, Version 2.0"
+                        url = "https://www.apache.org/licenses/LICENSE-2.0"
+                        distribution = "repo"
                     }
                 }
                 developers {

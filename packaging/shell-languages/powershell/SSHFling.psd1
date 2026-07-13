@@ -4,7 +4,7 @@
     GUID = 'f7869319-055e-4d28-a695-9aa7f202bb36'
     Author = 'GRWLX'
     CompanyName = 'GRWLX'
-    Copyright = 'Copyright (c) 2026 GRWLX. All rights reserved.'
+    Copyright = 'Copyright (c) 2026 GRWLX'
     Description = 'PowerShell launcher module for the bundled SSHFling runtime and templates.'
     PowerShellVersion = '7.2'
     FunctionsToExport = @(

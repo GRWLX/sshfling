@@ -4,7 +4,7 @@ aPackageInfo = [
     :folder = "sshfling",
     :developer = "GRWLX",
     :email = "",
-    :license = "LicenseRef-Proprietary",
+    :license = "Apache-2.0",
     :version = "0.0.0",
     :ringversion = "1.24",
     :versions = [[:version = "0.0.0", :branch = "main"]],

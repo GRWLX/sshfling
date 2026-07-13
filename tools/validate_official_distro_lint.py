@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Validate official distro lint outputs.
 
-The packaging drafts still have external blockers: the project license,
-placeholder Debian maintainer identity, unsigned local RPMs, and the missing
+The packaging drafts still have known review-time warnings such as the missing
 initial Debian ITP/RFS bug. This tool lets CI fail on any new lint issue while
-keeping those known blockers explicit in the readiness report.
+keeping those known warnings explicit in the readiness report.
 """
 
 from __future__ import annotations
@@ -16,10 +15,7 @@ from pathlib import Path
 
 
 ALLOWED_LINTIAN_TAGS = {
-    "bogus-mail-host",
-    "bogus-mail-host-in-debian-changelog",
     "initial-upload-closes-no-bugs",
-    "root-in-contact",
 }
 
 LINTIAN_LINE = re.compile(r"^[EWIPX]:\s+.+?:\s+([a-z0-9][a-z0-9+.-]*)\b")
@@ -49,7 +45,7 @@ def validate_lintian(path: Path, exit_code: int = 0) -> int:
         for _tag, line in unexpected:
             print(line, file=sys.stderr)
         return 1
-    print(f"lintian validation ok: {len(tags)} known external blocker(s)")
+    print(f"lintian validation ok: {len(tags)} known warning(s)")
     return 0
 
 

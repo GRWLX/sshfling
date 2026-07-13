@@ -127,7 +127,7 @@ Name: sshfling
 Version: $version
 Release: 1%{?dist}
 Summary: Temporary SSH access broker and CLI
-License: LicenseRef-SSHFling-Commercial
+License: Apache-2.0
 BuildArch: noarch
 Requires: python3
 Requires: bash
@@ -624,7 +624,7 @@ exit 0
 /usr/lib/systemd/system/sshflingd.service
 
 %changelog
-* Fri Jul 03 2026 SSHFling Maintainers <root@localhost> - ${version}-1
+* Fri Jul 03 2026 GRWLX <44076838+GRWLX@users.noreply.github.com> - ${version}-1
 - Initial package
 SPEC
 

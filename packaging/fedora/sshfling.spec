@@ -9,7 +9,7 @@ Summary:        Temporary SSH access broker and CLI
 %{!?systemd_postun:%global systemd_postun() %{nil}}
 %{!?systemd_postun_with_restart:%global systemd_postun_with_restart() %{nil}}
 
-License:        LicenseRef-SSHFling-Commercial
+License:        Apache-2.0
 URL:            https://github.com/GRWLX/sshfling
 Source0:        %{url}/archive/refs/tags/v%{version}/%{name}-%{version}.tar.gz
 
@@ -34,8 +34,8 @@ OpenSSH user certificates, and a forced session wrapper so temporary SSH
 sessions are capped by a server-side wall-clock timeout. Docker Compose files
 are included as a test harness.
 
-This draft Fedora spec is not ready for official Fedora or EPEL review while
-the upstream license remains proprietary and redistribution-restricted.
+This draft Fedora spec is Apache-2.0 licensed and intended for Fedora package
+review before any official repository submission.
 
 %prep
 %autosetup
@@ -105,5 +105,5 @@ fi
 %{_datadir}/sshfling
 
 %changelog
-* Mon Jul 13 2026 SSHFling Maintainers <root@localhost> - 0.1.21-1
-- Initial draft Fedora spec; not ready for review until the license gate is resolved.
+* Mon Jul 13 2026 GRWLX <44076838+GRWLX@users.noreply.github.com> - 0.1.21-1
+- Initial draft Fedora spec with Apache-2.0 license metadata.

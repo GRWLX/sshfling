@@ -436,7 +436,7 @@ class Sshfling < Formula
   homepage "$base_url"
   url "$base_url/downloads/$source_tar"
   sha256 "$source_sha"
-  license :cannot_represent
+  license "Apache-2.0"
 
   depends_on "python@3"
   depends_on "jq"
@@ -804,7 +804,7 @@ cat >"$public_dir/index.html" <<HTML
 </head>
 <body>
   <h1>SSHFling $version packages</h1>
-  <p>SSHFling is proprietary commercial software. Installing, running, or redistributing these packages requires the rights described in the project LICENSE or a separate written agreement from GRWLX.</p>
+  <p>SSHFling is licensed under the Apache License, Version 2.0. Redistributing these packages must preserve the LICENSE file and any required notices.</p>
 $signed_repo_html
   <h2>Convenience Linux Installer</h2>
   <p>The saved installer script uses the signed APT/RPM repository paths above when repository signing is enabled. Enterprise fleets should prefer the explicit signed repository commands and treat mutable installer scripts as convenience wrappers.</p>

@@ -19,7 +19,7 @@ defmodule SSHFling.MixProject do
 
   defp package do
     [
-      licenses: ["LicenseRef-Proprietary"],
+      licenses: ["Apache-2.0"],
       links: %{"GitHub" => "https://github.com/GRWLX/sshfling"},
       files: ["lib", "priv/runtime", "mix.exs", "LICENSE", "README.md"]
     ]

@@ -2,7 +2,7 @@
   :name "sshfling"
   :description "Janet launcher for the bundled SSHFling runtime"
   :version "0.0.0"
-  :license "LicenseRef-Proprietary"
+  :license "Apache-2.0"
   :url "https://github.com/GRWLX/sshfling"
   :entry "src/sshfling/init.janet"
   :dependencies @[]

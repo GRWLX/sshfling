@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
   spec.summary = "Temporary SSH access using standard OpenSSH"
   spec.description = "Ruby launcher and CLI package for the bundled SSHFling runtime."
   spec.homepage = "https://github.com/GRWLX/sshfling"
-  spec.licenses = ["Nonstandard"]
+  spec.licenses = ["Apache-2.0"]
   spec.required_ruby_version = Gem::Requirement.new(">= 3.0")
 
   spec.metadata = {

@@ -189,34 +189,34 @@ PLACEHOLDER_SECRET_MARKERS = {
 
 LICENSE_EXPECTATIONS = [
     {
-        "name": "root commercial license",
+        "name": "root Apache-2.0 license",
         "path": "LICENSE",
-        "contains": ["SSHFling Commercial License", "proprietary"],
+        "contains": ["Apache License", "Version 2.0"],
     },
     {
         "name": "README license pointer",
         "path": "README.md",
-        "contains": ["## License", "written commercial license", "LICENSE"],
+        "contains": ["## License", "Apache License, Version 2.0", "LICENSE"],
     },
     {
-        "name": "Nix unfree license marker",
+        "name": "Nix Apache-2.0 license marker",
         "path": "flake.nix",
-        "contains": ["license = licenses.unfree;"],
+        "contains": ["license = licenses.apache2;"],
     },
     {
         "name": "RPM license reference",
         "path": "packaging/build-rpm.sh",
-        "contains": ["License: LicenseRef-SSHFling-Commercial"],
+        "contains": ["License: Apache-2.0"],
     },
     {
         "name": "community package license references",
         "path": "packaging/build-community-manifests.sh",
-        "contains": ["LicenseRef-SSHFling-Commercial", "Proprietary", "SSHFling Commercial License"],
+        "contains": ["Apache-2.0", "APACHE20", "license:asl2"],
     },
     {
         "name": "public package license verification",
         "path": "packaging/verify-public-web.sh",
-        "contains": ["license :cannot_represent", "LicenseRef-SSHFling-Commercial", "requireLicenseAcceptance"],
+        "contains": ['license "Apache-2.0"', "Apache-2.0", "<requireLicenseAcceptance>false</requireLicenseAcceptance>"],
     },
 ]
 
@@ -621,8 +621,8 @@ def scan_license(repo_root: Path) -> dict[str, Any]:
             failures.append(check)
     return {
         "scanner": "builtin-license-marker-checks",
-        "license_id": "LicenseRef-SSHFling-Commercial",
-        "license_name": "SSHFling Commercial License",
+        "license_id": "Apache-2.0",
+        "license_name": "Apache License 2.0",
         "checks": checks,
         "failures": failures,
         "status": "pass" if not failures else "fail",
@@ -1478,9 +1478,9 @@ def generate_spdx_sbom(
             "versionInfo": version,
             "downloadLocation": "NOASSERTION",
             "filesAnalyzed": False,
-            "licenseConcluded": "LicenseRef-SSHFling-Commercial",
-            "licenseDeclared": "LicenseRef-SSHFling-Commercial",
-            "copyrightText": "Copyright (c) 2026 GRWLX. All rights reserved.",
+            "licenseConcluded": "Apache-2.0",
+            "licenseDeclared": "Apache-2.0",
+            "copyrightText": "Copyright (c) 2026 GRWLX",
         }
     ]
     relationships: list[dict[str, str]] = [
@@ -1536,13 +1536,7 @@ def generate_spdx_sbom(
         },
         "packages": packages,
         "relationships": relationships,
-        "hasExtractedLicensingInfos": [
-            {
-                "licenseId": "LicenseRef-SSHFling-Commercial",
-                "extractedText": "SSHFling Commercial License; see LICENSE in the source release.",
-                "name": "SSHFling Commercial License",
-            }
-        ],
+        "hasExtractedLicensingInfos": [],
     }
 
 
@@ -2220,7 +2214,7 @@ def generate(args: argparse.Namespace) -> int:
             generated_at=generated_at,
             control_area="license_compliance",
             check_name="builtin-license-marker-scan",
-            expected_result="Commercial license markers are present in source and package metadata generators.",
+            expected_result="Apache-2.0 license markers are present in source and package metadata generators.",
             actual_result=f"{len(license_report['failures'])} failed license marker checks.",
             evidence_ref=repo_relative(license_path, repo_root),
             evidence_sha256=evidence_hashes["license_scan"],

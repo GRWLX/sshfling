@@ -365,10 +365,10 @@ publication. Debian, Ubuntu, Fedora, and EPEL readiness is tracked separately in
 
 Before submitting to a third-party repository:
 
-- Confirm the commercial license permits that redistribution path.
+- Confirm Apache-2.0 metadata matches the target ecosystem's required format.
 - Confirm the manifest points to the intended release tarball or package URL.
 - Confirm checksums match the published artifact.
-- Confirm the ecosystem accepts proprietary or unfree packages.
+- Confirm required license files or notices are preserved.
 - Record the submitted manifest URL and review ticket in the release notes.
 
 ## Publish Evidence

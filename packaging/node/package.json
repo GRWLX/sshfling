@@ -2,7 +2,7 @@
   "name": "sshfling",
   "version": "0.0.0",
   "description": "Temporary SSH access broker and CLI packaged as a Node.js npm command.",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "Apache-2.0",
   "author": "GRWLX",
   "homepage": "https://github.com/GRWLX/sshfling",
   "repository": {

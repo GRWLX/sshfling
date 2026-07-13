@@ -359,7 +359,7 @@ Control references: SOC 2 CC7.1, CC8.1; ISO 27001 A.8.8, A.8.25, A.8.29; NIST SP
 | Release security evidence | `make release-security-scan-strict`; strict workflow scanner provisioning via `tools/provision-release-scanners.sh` | Baseline and external scanner rows pass, and generated `security-scan-matrix.csv` validates with `security-scan-manifest.json` using `--require-pass`; any override uses `--allow-approved-exceptions` and complete unexpired exception fields |  |
 | SBOM generation | `security-scans/sbom.spdx.json` | SPDX 2.3 SBOM generated from tracked release source dependency inputs |  |
 | Dependency inventory | `security-scans/dependency-inventory.json` | Container base images, apt packages, package runtime requirements, and Nix package references inventoried |  |
-| License scan | `security-scans/license-report.json` | Commercial license markers present in source and package metadata generators |  |
+| License scan | `security-scans/license-report.json` | Apache-2.0 license markers present in source and package metadata generators |  |
 | Package site verification | `packaging/verify-public-web.sh` | Pass and no `trusted=yes`, `gpgcheck=0`, or `repo_gpgcheck=0` |  |
 | Container image tests | `Container image tests` workflow | Pass |  |
 | Package install tests | `Package install tests` workflow | Pass |  |

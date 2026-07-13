@@ -115,7 +115,7 @@ Priority: optional
 Architecture: all
 Depends: bash, python3, openssh-client, openssl, passwd, procps, util-linux, jq
 Suggests: openssh-server, rsync, docker.io | docker-ce | podman-docker
-Maintainer: SSHFling Maintainers <root@localhost>
+Maintainer: GRWLX <44076838+GRWLX@users.noreply.github.com>
 Description: Temporary SSH access broker and CLI
  SSHFling grants short-lived SSH access with default password grants, optional
  OpenSSH user certificates, and a forced session wrapper so temporary SSH

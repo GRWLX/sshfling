@@ -14,8 +14,8 @@
     <PackageTags>ssh;openssh;temporary-access;cli;dotnet-tool</PackageTags>
     <PackageProjectUrl>https://github.com/GRWLX/sshfling</PackageProjectUrl>
     <PackageReadmeFile>tools/$(TargetFramework)/any/templates/README.md</PackageReadmeFile>
-    <PackageLicenseFile>tools/$(TargetFramework)/any/templates/LICENSE</PackageLicenseFile>
-    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <RepositoryUrl>https://github.com/GRWLX/sshfling</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <Deterministic>true</Deterministic>

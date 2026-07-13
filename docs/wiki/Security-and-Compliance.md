@@ -86,16 +86,15 @@ Operational requirements:
 
 ## License and Redistribution
 
-SSHFling is proprietary commercial software. Enterprise publishing must confirm:
+SSHFling is licensed under the Apache License, Version 2.0. Enterprise
+publishing must confirm:
 
-- The release is covered by the project `LICENSE` or a separate written
-  agreement from GRWLX.
-- Third-party package submission is permitted before submitting generated
-  manifests to community repositories.
-- Ecosystem metadata marks the package as proprietary, unfree, or commercial
-  where required.
-- License acceptance requirements are preserved, such as Chocolatey's
-  `requireLicenseAcceptance` metadata.
+- The release artifacts include the project `LICENSE` file.
+- Third-party package submissions use Apache-2.0-compatible metadata for the
+  target ecosystem.
+- Generated manifests preserve any required notices and checksum evidence.
+- License acceptance flags are disabled unless the target ecosystem requires a
+  separate explicit prompt.
 
 ## Host Security Controls
 

@@ -2,7 +2,7 @@
   :description "Common Lisp launcher for the bundled SSHFling runtime"
   :version "0.0.0"
   :author "GRWLX"
-  :license "LicenseRef-Proprietary"
+  :license "Apache-2.0"
   :depends-on ("uiop")
   :serial t
   :components ((:module "src"

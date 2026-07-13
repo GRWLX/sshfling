@@ -6,7 +6,7 @@
   "interpreter": "GNU APL",
   "source": "src/sshfling.apl",
   "project_url": "https://github.com/GRWLX/sshfling",
-  "license": "LicenseRef-Proprietary",
+  "license": "Apache-2.0",
   "minimum_gnu_apl_version": "2.0",
   "assets": ["runtime", "LICENSE", "README.md"]
 }

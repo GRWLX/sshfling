@@ -6,9 +6,9 @@ OpenSSH and adjacent runtime dependency ownership, version, install, uninstall,
 and original-state policy is tracked in
 [openssh-dependencies.md](openssh-dependencies.md).
 
-SSHFling is proprietary commercial software. Installing, running, redistributing,
-or submitting generated manifests to third-party repositories requires the rights
-described in the project LICENSE or a separate written agreement from GRWLX.
+SSHFling is licensed under the Apache License, Version 2.0. Redistributing or
+submitting generated manifests to third-party repositories must preserve the
+LICENSE file and any required notices.
 
 ## Built Release Artifacts
 
