@@ -49,6 +49,7 @@ class OfficialDistroReadinessTests(unittest.TestCase):
         self.assertIn("LicenseRef-SSHFling-Commercial", checks["Fedora/EPEL spec license metadata"].evidence)
         self.assertEqual(checks["Official distro draft validation"].status, readiness.PASS)
         self.assertIn("Repeatable", checks["Official distro draft validation"].evidence)
+        self.assertIn("lintian", checks["Official distro draft validation"].evidence)
 
     def test_markdown_report_has_stable_decision_gate(self) -> None:
         rendered = readiness.render_markdown(readiness.checks())

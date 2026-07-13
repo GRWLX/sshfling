@@ -1,0 +1,113 @@
+.TH SSHFLING 1 "July 2026" "sshfling 0.1.21" "User Commands"
+.SH NAME
+sshfling \- grant and revoke temporary SSH access
+.SH SYNOPSIS
+.B sshfling
+[\fB--json\fR] [\fB--version\fR]
+[\fBsetup\fR]
+[\fB-t\fR \fIDURATION\fR]
+[\fB--username\fR \fINAME\fR]
+[\fB--password\fR|\fB--certificate\fR]
+.br
+.B sshfling
+\fBdoctor\fR [\fB--dependencies\fR]
+.br
+.B sshfling
+\fBshutdown\fR [\fIUSERNAME\fR]
+.br
+.B sshfling
+\fBlist\fR
+.br
+.B sshfling
+\fBpassword prune\fR [\fB--all\fR]
+.br
+.B sshfling
+\fBcert issue\fR [\fIOPTIONS\fR]
+.br
+.B sshfling
+\fBhost install\fR [\fIOPTIONS\fR]
+.br
+.B sshfling
+\fBserve\fR [\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B sshfling
+creates short-lived SSH access grants. It can create temporary password grants,
+issue OpenSSH user certificates, install host policy, run an issuer service,
+and revoke or list active sessions.
+.PP
+Access lifetime, connection count, and access-level limits are enforced by the
+project policy file and forced-session wrapper on configured hosts.
+.SH COMMON COMMANDS
+.TP
+.B doctor
+Check local tools and deployment files. Use
+.B --dependencies
+to report dependency state.
+.TP
+.B setup
+Create temporary SSH access. Password access is the default; use
+.B --certificate
+to issue a certificate instead.
+.TP
+.B shutdown
+Kill active SSHFling SSH sessions.
+.TP
+.B list
+List active SSHFling SSH sessions.
+.TP
+.B password prune
+Remove expired temporary password grants.
+.TP
+.B cert issue
+Sign a public key for temporary SSH access.
+.TP
+.B host install
+Configure a production SSH host to trust the SSHFling CA and forced-session
+wrapper.
+.TP
+.B serve
+Run the temporary SSH certificate issuer service.
+.SH OPTIONS
+.TP
+.B --json
+Emit stable JSON where supported.
+.TP
+.B --version
+Print the installed version.
+.TP
+.BI "-t, --time " DURATION
+Set the access lifetime, for example
+.BR 30s ,
+.BR 5m ,
+.BR 1h ,
+or
+.BR 24h .
+.TP
+.BI "--username " NAME
+Set the temporary SSH username.
+.TP
+.B --password
+Create temporary password SSH access.
+.TP
+.B --certificate
+Create temporary certificate SSH access.
+.SH FILES
+.TP
+.I /etc/sshfling/policy.json
+Host policy file.
+.TP
+.I /etc/sshfling/sshflingd.env
+Issuer service environment file. This file may contain secrets and is installed
+with restricted permissions.
+.TP
+.I /var/lib/sshflingd
+Service state directory for the packaged issuer service.
+.SH EXIT STATUS
+.B sshfling
+exits with status 0 on success and non-zero on validation, dependency, or
+runtime errors.
+.SH SEE ALSO
+.BR ssh (1),
+.BR ssh-keygen (1),
+.BR sshd_config (5),
+.BR systemd.service (5)

@@ -48,6 +48,7 @@ install -d %{buildroot}%{_sysconfdir}/sshfling
 install -d %{buildroot}%{_libexecdir}/sshfling
 install -d %{buildroot}%{_unitdir}
 install -d %{buildroot}%{_docdir}/%{name}
+install -d %{buildroot}%{_mandir}/man1
 install -d %{buildroot}%{_datadir}/sshfling/templates
 
 install -m 0755 bin/sshfling %{buildroot}%{_bindir}/sshfling
@@ -59,6 +60,11 @@ bash -c 'source packaging/copy-templates.sh; copy_sshfling_templates "$PWD" %{bu
 install -m 0644 systemd/sshflingd.service %{buildroot}%{_unitdir}/sshflingd.service
 install -m 0644 systemd/sshfling-prune.service %{buildroot}%{_unitdir}/sshfling-prune.service
 install -m 0644 systemd/sshfling-prune.timer %{buildroot}%{_unitdir}/sshfling-prune.timer
+install -m 0644 debian/sshfling.1 %{buildroot}%{_mandir}/man1/sshfling.1
+
+sed -i '1s|^#!/usr/bin/env python3$|#!/usr/bin/python3|' %{buildroot}%{_bindir}/sshfling
+find %{buildroot}%{_datadir}/sshfling/templates -type f -perm /111 \
+  -exec sed -i '1s|^#!/usr/bin/env bash$|#!/usr/bin/bash|' {} +
 
 %pre
 getent group sshflingd >/dev/null || groupadd -r sshflingd
@@ -89,6 +95,7 @@ fi
 %config(noreplace) %{_sysconfdir}/sshfling/policy.json
 %config(noreplace) %attr(0640,root,sshflingd) %{_sysconfdir}/sshfling/sshflingd.env
 %{_bindir}/sshfling
+%{_mandir}/man1/sshfling.1*
 %dir %{_libexecdir}/sshfling
 %{_libexecdir}/sshfling/sshfling-linux-account
 %{_libexecdir}/sshfling/sshfling-unix-identity

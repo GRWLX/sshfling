@@ -31,11 +31,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential debhelper rpm
+            autopkgtest build-essential debhelper iproute2 lintian rpm rpmlint
 
       - name: Validate packaging drafts
         env:
           INPUT_VERSION: ${{ inputs.version || '' }}
+          SSHFLING_AUTOPKGTEST_BACKEND: null
         run: |
           set -euo pipefail
           version="$(bash packaging/resolve-version.sh "$INPUT_VERSION")"

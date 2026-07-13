@@ -216,6 +216,8 @@ def package_validation_status() -> Check:
 def official_distro_draft_validation_status() -> Check:
     required = (
         "packaging/validate-official-distro-drafts.sh",
+        "packaging/fedora/rpmlint.toml",
+        "tools/validate_official_distro_lint.py",
         ".github/workflows/official-distro-drafts.yml",
     )
     missing = [path for path in required if not exists(path)]
@@ -229,8 +231,8 @@ def official_distro_draft_validation_status() -> Check:
     return Check(
         "Official distro draft validation",
         PASS,
-        "Repeatable local and CI validation exists for Debian and Fedora packaging drafts.",
-        "Run lintian, autopkgtest, rpmlint, mock, and fedora-review after the license and maintainer gates are resolved.",
+        "Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian, rpmlint, and autopkgtest smoke coverage with known external blockers isolated.",
+        "Run mock and fedora-review after the license and maintainer gates are resolved.",
     )
 
 

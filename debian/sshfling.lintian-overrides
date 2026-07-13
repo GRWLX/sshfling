@@ -1,0 +1,5 @@
+# /etc/sshfling contains host policy and service configuration.
+sshfling: non-standard-dir-perm 0750 != 0755 [etc/sshfling/]
+
+# sshflingd.env may contain bearer tokens or hashed credentials.
+sshfling: non-standard-file-perm 0640 != 0644 [etc/sshfling/sshflingd.env]

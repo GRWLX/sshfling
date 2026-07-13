@@ -14,14 +14,13 @@ Vcs-Git: https://github.com/GRWLX/sshfling.git
 Package: sshfling
 Architecture: all
 Depends:
- bash,
+ adduser,
  jq,
  openssh-client,
  openssl,
  passwd,
  procps,
  python3:any,
- util-linux,
  ${misc:Depends}
 Recommends:
  openssh-server,

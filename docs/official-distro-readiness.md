@@ -18,7 +18,7 @@ Status meanings:
 | Fedora/EPEL spec license metadata | BLOCKED | packaging/fedora/sshfling.spec records LicenseRef-SSHFling-Commercial. | Change the Fedora spec License field only after the project license is changed or a Fedora-acceptable redistribution grant is approved. |
 | Generated RPM license metadata | BLOCKED | packaging/build-rpm.sh emits LicenseRef-SSHFling-Commercial. | Change RPM license metadata only after the project license is changed or an explicit redistribution grant is approved. |
 | Package build/test coverage | PASS | Generated DEB/RPM builders, local install validation, and package-install workflow are present. | Keep these as upstream smoke tests while adding distro-native source package tests. |
-| Official distro draft validation | PASS | Repeatable local and CI validation exists for Debian and Fedora packaging drafts. | Run lintian, autopkgtest, rpmlint, mock, and fedora-review after the license and maintainer gates are resolved. |
+| Official distro draft validation | PASS | Repeatable local and CI validation exists for Debian and Fedora packaging drafts, including lintian, rpmlint, and autopkgtest smoke coverage with known external blockers isolated. | Run mock and fedora-review after the license and maintainer gates are resolved. |
 
 ## Submission Path
 
