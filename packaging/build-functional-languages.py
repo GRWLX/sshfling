@@ -37,7 +37,7 @@ MANIFESTS = (
     REPO_ROOT / "packaging/scientific-languages/languages.tsv",
     REPO_ROOT / "packaging/beam-languages/languages.tsv",
 )
-EXPECTED_VERSION = "0.1.21"
+EXPECTED_VERSION = "0.1.22"
 DIST_ROOT = REPO_ROOT / "dist"
 DEFAULT_EVIDENCE = DIST_ROOT / f"sshfling-functional-languages-{EXPECTED_VERSION}-validation.tsv"
 EXPECTED_FIELDS = (

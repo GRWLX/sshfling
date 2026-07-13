@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.1.22 - 2026-07-13
+
+Status: official-distro submission candidate after `v0.1.21` was published
+before the Debian/Fedora Apache-2.0 packaging and submission packet work landed.
+
+### Added
+
+- Added Debian/Ubuntu and Fedora/EPEL official-distro packaging drafts,
+  readiness evidence, source package validation, and a generated submission
+  packet for maintainer handoff.
+- Added packet validation for hashes, required artifacts, lint logs, request
+  drafts, source tarball exclusions, and release-tag/source-commit alignment.
+
+### Changed
+
+- Bumped package and evidence references to `0.1.22` so official distro review
+  can use a public source tag that includes the Apache-2.0 and distro packaging
+  changes without moving `v0.1.21`.
+
 ## v0.1.21 - 2026-07-11
 
 Status: language-catalog publication candidate after `v0.1.20` exposed a

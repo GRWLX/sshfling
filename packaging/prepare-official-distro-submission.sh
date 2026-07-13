@@ -11,6 +11,7 @@ debian_version="${version}-${debian_revision}"
 rpm_release="${SSHFLING_RPM_RELEASE:-1}"
 maintainer="GRWLX <44076838+GRWLX@users.noreply.github.com>"
 output_dir="${SSHFLING_OFFICIAL_SUBMISSION_DIR:-$repo_root/build/official-distro-submission}"
+release_tag="v$version"
 
 usage() {
   cat <<USAGE
@@ -100,6 +101,20 @@ write_hash_manifest() {
       | sort -z \
       | xargs -0 sha256sum
   ) >"$output_dir/SHA256SUMS"
+}
+
+release_tag_status() {
+  local source_commit="$1"
+  local tag_commit
+
+  tag_commit="$(git -C "$repo_root" rev-parse -q --verify "refs/tags/$release_tag^{commit}" 2>/dev/null || true)"
+  if [ -z "$tag_commit" ]; then
+    printf 'missing\n'
+  elif [ "$tag_commit" = "$source_commit" ]; then
+    printf 'matches source commit\n'
+  else
+    printf 'points at %s, not source commit\n' "$tag_commit"
+  fi
 }
 
 write_debian_request_text() {
@@ -213,6 +228,7 @@ Summary: Temporary SSH access broker and CLI
   grants, optional OpenSSH user certificates, and a forced session wrapper so
   temporary SSH sessions are capped by a server-side wall-clock timeout.
 - Koji scratch build: <KOJI_SCRATCH_BUILD_URL>
+- Upstream source URL: https://github.com/GRWLX/sshfling/archive/refs/tags/v$version/sshfling-$version.tar.gz
 - rpmlint: see rpmlint-source.log in this packet.
 - mock: run the command in mock-command.txt and attach the result.
 - fedora-review: run the command in fedora-review-command.txt and attach the result.
@@ -318,12 +334,17 @@ if [ "${SSHFLING_RUN_FEDORA_REVIEW:-}" = "1" ]; then
   ) >"$output_dir/fedora/fedora-review.log" 2>&1
 fi
 
+source_commit="$(git -C "$repo_root" rev-parse HEAD)"
+tag_status="$(release_tag_status "$source_commit")"
+
 cat >"$output_dir/README.md" <<README
 # SSHFling Official Distro Submission Packet
 
 Version: $version
 Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-Source commit: $(git -C "$repo_root" rev-parse HEAD)
+Source commit: $source_commit
+Release tag: $release_tag
+Release tag status: $tag_status
 
 ## Debian/Ubuntu
 

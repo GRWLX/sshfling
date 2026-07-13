@@ -28,6 +28,16 @@ The command writes `build/official-distro-submission/` with:
 The validate target checks packet hashes, required Debian and Fedora files,
 lint logs, request drafts, and source tarball exclusions.
 
+For the final maintainer handoff after creating and pushing the matching
+version tag, run the strict tag gate:
+
+```bash
+SSHFLING_REQUIRE_RELEASE_TAG=1 make official-distro-submission-validate
+```
+
+Strict mode requires the packet README to show that `vVERSION` points at the
+same source commit as the generated Debian and Fedora artifacts.
+
 Use `SSHFLING_OFFICIAL_SUBMISSION_DIR=/path/to/output` to choose a different
 output directory. Use `SSHFLING_ALLOW_DIRTY=1` only for a local rehearsal, not
 for an actual submission packet.
