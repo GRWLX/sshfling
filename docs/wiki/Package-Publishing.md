@@ -69,7 +69,7 @@ the release notes call out an intentional breaking change:
 
 - A reviewed release commit on the branch used for release tags.
 - A semantic package version with exactly three numeric components, such as
-  `0.1.14`.
+  `0.1.24`.
 - GitHub Pages configured to deploy from GitHub Actions.
 - GitHub Actions permissions for Pages deployments: `contents: read`,
   `pages: write`, and `id-token: write`.
@@ -89,11 +89,11 @@ the release notes call out an intentional breaking change:
 Validate the package version before a release run:
 
 ```bash
-bash packaging/resolve-version.sh 0.1.14
+bash packaging/resolve-version.sh 0.1.24
 ```
 
 The version must match `^[0-9]+[.][0-9]+[.][0-9]+$`. Tags use the same value
-with a leading `v`, for example `v0.1.14`.
+with a leading `v`, for example `v0.1.24`.
 
 ## Signing Setup
 
@@ -156,7 +156,7 @@ Release security evidence requires a clean worktree:
 
 ```bash
 tools/provision-release-scanners.sh
-make release-security-scan-strict VERSION=0.1.14
+make release-security-scan-strict VERSION=0.1.24
 make release-security-evidence-validate RELEASE_MATRIX_VALIDATE_FLAGS=--require-pass
 ```
 
@@ -166,7 +166,7 @@ use the explicit dirty-tree target. It writes ignored evidence under
 evidence:
 
 ```bash
-make release-security-scan-local VERSION=0.1.14
+make release-security-scan-local VERSION=0.1.24
 ```
 
 Build local Linux packages when you are validating packaging changes from a
@@ -218,8 +218,8 @@ For a tag-based release, create and push an annotated version tag from the
 reviewed release commit:
 
 ```bash
-git tag -a v0.1.14 -m "SSHFling 0.1.14"
-git push origin v0.1.14
+git tag -a v0.1.24 -m "SSHFling 0.1.24"
+git push origin v0.1.24
 ```
 
 For a manual workflow dispatch, use the same version value without the leading
@@ -246,13 +246,13 @@ uses and ensure `package-dist/` contains the Linux, .NET, macOS, Windows, and
 source artifacts:
 
 ```bash
-VERSION=0.1.14 \
+VERSION=0.1.24 \
 REPOSITORY=GRWLX/sshfling \
 OWNER=GRWLX \
 SSHFLING_GENERATE_REPO_SIGNING_KEY=1 \
 bash packaging/build-public-web.sh package-dist public
 
-VERSION=0.1.14 \
+VERSION=0.1.24 \
 REPOSITORY=GRWLX/sshfling \
 bash packaging/verify-public-web.sh public
 ```

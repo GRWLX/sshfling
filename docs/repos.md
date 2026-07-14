@@ -8,7 +8,7 @@ The repo includes two GitHub Actions release paths:
   a GitHub Pages package site with APT, RPM, Homebrew, direct language-package
   downloads, macOS pkg, Windows MSI, and additional community manifests.
 
-For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.14`.
+For public installs, enable GitHub Pages for Actions in the repository settings and run the `Release packages with public web` workflow from a version tag such as `v0.1.24`.
 
 Replace `OWNER` and `REPO` in the examples below with the GitHub organization/user and repository name.
 
@@ -227,7 +227,7 @@ Invoke-WebRequest -Uri "$BaseUrl/windows/install.ps1" -OutFile $Installer
 Uninstall:
 
 ```powershell
-$Version = "0.1.14"
+$Version = "0.1.24"
 $UninstallRoots = @(
   "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
   "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
@@ -464,7 +464,7 @@ dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz
 For local smoke tests from the source checkout root, install the package file directly:
 
 ```bash
-sudo apt install ./dist/sshfling_0.1.14_all.deb
+sudo apt install ./dist/sshfling_0.1.24_all.deb
 ```
 
 For client repo registration, sign the repo metadata with GPG, publish the public key, and use an APT source with `signed-by=`.
@@ -482,7 +482,7 @@ createrepo_c repo/rpm
 For local smoke tests from the source checkout root, install the package file directly:
 
 ```bash
-sudo dnf install ./dist/sshfling-0.1.14-1.noarch.rpm
+sudo dnf install ./dist/sshfling-0.1.24-1.noarch.rpm
 ```
 
 For client repo registration, sign RPMs and repo metadata, publish the public key, and use a Yum/DNF repo with `gpgcheck=1` and `repo_gpgcheck=1`.
@@ -492,7 +492,7 @@ For client repo registration, sign RPMs and repo metadata, publish the public ke
 For direct `.pkg` distribution:
 
 ```bash
-sudo installer -pkg dist/sshfling-0.1.14.pkg -target /
+sudo installer -pkg dist/sshfling-0.1.24.pkg -target /
 ```
 
 For Homebrew distribution, publish a source tarball and add a generated formula
@@ -500,7 +500,7 @@ to a tap. Build the formula from the release `SHA256SUMS` file so the committed
 tap contains the exact tarball hash:
 
 ```bash
-VERSION="0.1.14"
+VERSION="0.1.24"
 TARBALL="sshfling-${VERSION}.tar.gz"
 TARBALL_SHA256="$(awk -v file="$TARBALL" '$2 == file {print $1}' dist/SHA256SUMS)"
 test -n "$TARBALL_SHA256"
@@ -561,7 +561,7 @@ MSI files are not installed from APT/YUM-style repos. Common registration paths:
 Silent install:
 
 ```powershell
-msiexec /i sshfling-0.1.14.msi /qn
+msiexec /i sshfling-0.1.24.msi /qn
 ```
 
 For production, sign the MSI with an Authenticode certificate.
@@ -569,7 +569,7 @@ For production, sign the MSI with an Authenticode certificate.
 Silent uninstall:
 
 ```powershell
-msiexec /x sshfling-0.1.14.msi /qn /norestart
+msiexec /x sshfling-0.1.24.msi /qn /norestart
 ```
 
 MSI uninstall removes files and installer-managed PATH state only. It does not

@@ -6,7 +6,7 @@ owner, repository name, and package version from the approved release record.
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 ```
 
 SSHFling is licensed under the Apache License, Version 2.0. Redistributing or
@@ -454,7 +454,7 @@ checksum:
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "${BASE_URL}/downloads/SSHFling.Tool.${VERSION}.nupkg" -o "$tmp/SSHFling.Tool.${VERSION}.nupkg"
@@ -509,7 +509,7 @@ checksum:
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 tmp="$(mktemp -d)"
 curl -fsSL "${BASE_URL}/downloads/sshfling-cli-${VERSION}.jar" -o "$tmp/sshfling-cli-${VERSION}.jar"
 curl -fsSL "${BASE_URL}/downloads/sshfling-cli-${VERSION}-javadoc.jar" -o "$tmp/sshfling-cli-${VERSION}-javadoc.jar"
@@ -544,7 +544,7 @@ checksum:
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "${BASE_URL}/downloads/sshfling-${VERSION}.tgz" -o "$tmp/sshfling-${VERSION}.tgz"
@@ -574,7 +574,7 @@ and `sshfling` console command. Python 3.10 or newer is required.
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 wheel="sshfling-${VERSION}-py3-none-any.whl"
@@ -599,7 +599,7 @@ run-time dependencies.
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 archive="sshfling-go-${VERSION}.zip"
@@ -624,7 +624,7 @@ build it; Python 3 and OpenSSH remain run-time dependencies.
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 crate="sshfling-cli-${VERSION}.crate"
@@ -649,7 +649,7 @@ Composer, Python 3, and OpenSSH are required.
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 tmp="$(mktemp -d)"
 app="$HOME/.local/share/sshfling-composer"
 archive="sshfling-php-${VERSION}.zip"
@@ -674,7 +674,7 @@ and `sshfling` executable. Ruby 3.0 or newer, Python 3, and OpenSSH are required
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 tmp="$(mktemp -d)"
 gem_home="$HOME/.local/share/sshfling-gems"
 package="sshfling-${VERSION}.gem"
@@ -704,7 +704,7 @@ and C/C++ compilers; running still requires Python 3 and OpenSSH.
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 tmp="$(mktemp -d)"
 prefix="$HOME/.local/share/sshfling-native"
 archive="sshfling-native-${VERSION}.tar.gz"
@@ -734,7 +734,7 @@ and OpenSSH are required.
 
 ```bash
 BASE_URL="https://OWNER.github.io/REPO"
-VERSION="0.1.14"
+VERSION="0.1.24"
 tmp="$(mktemp -d)"
 prefix="$HOME/.local/share/sshfling-perl"
 archive="sshfling-perl-${VERSION}.tar.gz"
@@ -769,7 +769,7 @@ Install a downloaded MSI directly:
 
 ```powershell
 $BaseUrl = "https://OWNER.github.io/REPO"
-$Version = "0.1.14"
+$Version = "0.1.24"
 $Msi = Join-Path $env:TEMP "sshfling-$Version.msi"
 $Sums = Join-Path $env:TEMP "sshfling-SHA256SUMS"
 Invoke-WebRequest -Uri "$BaseUrl/downloads/sshfling-$Version.msi" -OutFile $Msi
@@ -798,7 +798,7 @@ Invoke-WebRequest -Uri "$BaseUrl/windows/uninstall.ps1" -OutFile $Uninstaller
 Uninstall by MSI product registration:
 
 ```powershell
-$Version = "0.1.14"
+$Version = "0.1.24"
 $UninstallRoots = @(
   "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
   "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
@@ -831,7 +831,7 @@ Install for the current user:
 
 ```powershell
 $BaseUrl = "https://OWNER.github.io/REPO"
-$Version = "0.1.14"
+$Version = "0.1.24"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\SSHFling"
 $Zip = Join-Path $env:TEMP "sshfling-$Version-windows.zip"
 $Sums = Join-Path $env:TEMP "sshfling-SHA256SUMS"
