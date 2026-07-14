@@ -721,6 +721,10 @@ for bad_principal in ["ticket,root", "ticket\nroot", "-ticket", "ticket root"]:
     else:
         raise AssertionError(f"invalid certificate principal was accepted: {bad_principal!r}")
 
+if sys.platform == "win32":
+    print("Windows client package import checks passed; Unix host lifecycle checks are POSIX-only.")
+    sys.exit(0)
+
 with tempfile.TemporaryDirectory() as marker_tmp:
     marker_root = Path(marker_tmp)
     original_delete_user = getattr(sshfling, "delete_password_user")
