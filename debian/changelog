@@ -1,6 +1,7 @@
-sshfling (0.1.23-1) unstable; urgency=medium
+sshfling (0.1.24-1) unstable; urgency=medium
 
+  * Refresh release candidate after Windows package validation hardening.
   * Initial draft Debian source package metadata.
   * Record Apache-2.0 license metadata for official archive review.
 
- -- GRWLX <44076838+GRWLX@users.noreply.github.com>  Mon, 13 Jul 2026 00:00:00 +0000
+ -- GRWLX <44076838+GRWLX@users.noreply.github.com>  Tue, 14 Jul 2026 00:00:00 +0000

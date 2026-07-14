@@ -1,5 +1,5 @@
 Name:           sshfling
-Version:        0.1.23
+Version:        0.1.24
 Release:        1%{?dist}
 Summary:        Temporary SSH access broker and CLI
 
@@ -105,5 +105,8 @@ fi
 %{_datadir}/sshfling
 
 %changelog
+* Tue Jul 14 2026 GRWLX <44076838+GRWLX@users.noreply.github.com> - 0.1.24-1
+- Refresh release candidate after Windows package validation hardening.
+
 * Mon Jul 13 2026 GRWLX <44076838+GRWLX@users.noreply.github.com> - 0.1.23-1
 - Initial draft Fedora spec with Apache-2.0 license metadata.
