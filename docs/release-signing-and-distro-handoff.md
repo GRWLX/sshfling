@@ -5,22 +5,33 @@ the source, package drafts, and official-distro submission packet are ready.
 
 ## Current Candidate
 
-- Release tag: `v0.1.23`
-- Source commit: `d4d16d80b484f7f4fb7eb2c698887288a1918e32`
-- GitHub prerelease: `https://github.com/GRWLX/sshfling/releases/tag/v0.1.23`
-- Official distro packet asset: `sshfling-0.1.23-official-distro-submission.tar.gz`
+- Release tag: `v0.1.24`
+- Source commit: `fddb69753572540c8a048f375dd3dcb2919cd048`
+- GitHub prerelease: `https://github.com/GRWLX/sshfling/releases/tag/v0.1.24`
+- Official distro packet asset: `sshfling-0.1.24-official-distro-submission.tar.gz`
 - Production signing tracker: `https://github.com/GRWLX/sshfling/issues/2`
 - Official distro submission tracker: `https://github.com/GRWLX/sshfling/issues/3`
 
-The tag has passing Java package, GHCR image, official distro draft, language
-runtime, and container validation evidence. The full Windows/macOS release
-package workflows remain blocked until signing credentials are configured.
+The tag has passing Java package publication, GHCR image publication, official
+distro draft validation, language runtime validation, and container validation
+evidence:
 
-Main commit `e67f1241d75673945d7e08ce077a7d360995cd3b` fixes the Windows package
-validation path and has a passing public package-site dry run:
-`https://github.com/GRWLX/sshfling/actions/runs/29295249469`. Cut a new patch
-candidate from `main` after signing credentials are configured; do not move the
-existing `v0.1.23` tag.
+- Java package: `https://github.com/GRWLX/sshfling/actions/runs/29301204832`
+- GitHub Packages / GHCR images: `https://github.com/GRWLX/sshfling/actions/runs/29301204814`
+- Public package-site dry run with generated test signing key: `https://github.com/GRWLX/sshfling/actions/runs/29300731419`
+- Official distro drafts: `https://github.com/GRWLX/sshfling/actions/runs/29300728065`
+- Language runtime validation: `https://github.com/GRWLX/sshfling/actions/runs/29300728064`
+- Container image tests: `https://github.com/GRWLX/sshfling/actions/runs/29300728052`
+
+The release-package workflows for the `v0.1.24` tag are intentionally
+fail-closed at the Windows/macOS signing gates until production signing and
+notarization credentials are configured:
+
+- With public web: `https://github.com/GRWLX/sshfling/actions/runs/29301204872`
+- Without web: `https://github.com/GRWLX/sshfling/actions/runs/29301204877`
+
+After signing credentials are configured, cut a new patch candidate from `main`;
+do not move the existing `v0.1.24` tag.
 
 ## GitHub Signing Configuration
 
@@ -58,15 +69,15 @@ Do not move an already-pushed tag.
 
 ## Debian and Ubuntu
 
-Use the `v0.1.23` release assets as the current submission packet.
+Use the `v0.1.24` release assets as the current submission packet.
 
-1. Download and review `sshfling-0.1.23-official-distro-submission.tar.gz`.
+1. Download and review `sshfling-0.1.24-official-distro-submission.tar.gz`.
 2. File the Debian WNPP/ITP bug using `debian/ITP.txt`.
 3. Replace `#ITP_BUG_NUMBER` in `debian/RFS.txt` and the package changelog if a
    sponsor asks for the exact bug closure before upload.
 4. Rebuild from a new patch commit if the ITP bug number is committed into
    packaging.
-5. Sign `debian/sshfling_0.1.23-1_source.changes` on the maintainer machine.
+5. Sign `debian/sshfling_0.1.24-1_source.changes` on the maintainer machine.
 6. Upload to mentors with the generated `debian/dput.cf.example` and
    `debian/upload-commands.txt`.
 7. File the RFS bug using `debian/RFS.txt` after the mentors package page is
@@ -78,18 +89,18 @@ unless Ubuntu-specific packaging is required.
 
 ## Fedora and EPEL
 
-Use these `v0.1.23` release assets for Fedora package review:
+Use these `v0.1.24` release assets for Fedora package review:
 
 - `sshfling.spec`
-- `sshfling-0.1.23-1.src.rpm`
-- `fedora-package-review-v0.1.23.md`
+- `sshfling-0.1.24-1.src.rpm`
+- `fedora-package-review-v0.1.24.md`
 
 Expected account and review flow:
 
 1. Confirm Fedora Account System and Bugzilla access.
-2. Run `mock -r fedora-rawhide-x86_64 --rebuild sshfling-0.1.23-1.src.rpm` on a
+2. Run `mock -r fedora-rawhide-x86_64 --rebuild sshfling-0.1.24-1.src.rpm` on a
    Fedora packaging host.
-3. Run `fedora-review -n sshfling --rpm-spec sshfling.spec --srpm sshfling-0.1.23-1.src.rpm`
+3. Run `fedora-review -n sshfling --rpm-spec sshfling.spec --srpm sshfling-0.1.24-1.src.rpm`
    if `fedora-review` is available.
 4. File the Fedora package review with the generated draft.
 5. Respond to reviewer comments with new commits and new patch tags.
