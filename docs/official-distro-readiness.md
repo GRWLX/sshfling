@@ -4,8 +4,7 @@ This evidence is for publication through official Debian, Ubuntu, Fedora, and EP
 
 Current candidate: `v0.1.24`.
 
-Current public release packet:
-`https://github.com/GRWLX/sshfling/releases/tag/v0.1.24`
+Current public release packet: `https://github.com/GRWLX/sshfling/releases/tag/v0.1.24`
 
 Status meanings:
 

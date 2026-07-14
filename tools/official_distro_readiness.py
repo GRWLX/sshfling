@@ -10,6 +10,7 @@ license accepted by the target archive.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,6 +39,11 @@ def exists(relative: str) -> bool:
     return (REPO_ROOT / relative).exists()
 
 
+def current_version() -> str:
+    match = re.search(r'^VERSION = "([^"]+)"', read_text("bin/sshfling"), flags=re.MULTILINE)
+    return match.group(1) if match else "VERSION"
+
+
 def license_status() -> Check:
     text = read_text("LICENSE")
     lowered = text.lower()
@@ -64,6 +70,7 @@ def license_status() -> Check:
 
 
 def debian_source_packaging_status() -> Check:
+    version = current_version()
     required = (
         "debian/control",
         "debian/rules",
@@ -82,8 +89,8 @@ def debian_source_packaging_status() -> Check:
     return Check(
         "Debian/Ubuntu source packaging",
         WARN,
-        "Required debian/ source package files are present as a draft.",
-        "Build and lint the source package, then prepare WNPP/ITP and sponsorship materials.",
+        f"`v{version}` source package assets, lintian log, ITP draft, RFS draft, dput example, and upload commands are in the official distro submission packet.",
+        "File WNPP/ITP, sign/upload to mentors from a maintainer machine, file RFS, and respond to sponsor review.",
     )
 
 
@@ -122,6 +129,7 @@ def generated_deb_status() -> Check:
 
 
 def fedora_packaging_status() -> Check:
+    version = current_version()
     spec_paths = (
         "packaging/fedora/sshfling.spec",
         "packaging/rpm/sshfling.spec",
@@ -137,8 +145,8 @@ def fedora_packaging_status() -> Check:
     return Check(
         "Fedora/EPEL source packaging",
         WARN,
-        "A checked-in RPM spec path exists as a draft.",
-        "Validate the spec with rpmlint/mock/fedora-review and submit a Fedora package review before EPEL branches.",
+        f"`v{version}` spec, SRPM, source tarball, rpmlint log, mock command, fedora-review command, and package-review draft are in the official distro submission packet.",
+        "Run mock and fedora-review on a Fedora packaging host, then submit Fedora package review before EPEL branches.",
     )
 
 
@@ -254,10 +262,15 @@ def checks() -> list[Check]:
 
 
 def render_markdown(items: list[Check]) -> str:
+    version = current_version()
     lines = [
         "# Official Distro Repository Readiness",
         "",
         "This evidence is for publication through official Debian, Ubuntu, Fedora, and EPEL repositories. It is separate from the upstream signed APT/DNF repository.",
+        "",
+        f"Current candidate: `v{version}`.",
+        "",
+        f"Current public release packet: `https://github.com/GRWLX/sshfling/releases/tag/v{version}`",
         "",
         "Status meanings:",
         "",
