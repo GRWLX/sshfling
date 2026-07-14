@@ -9,10 +9,18 @@ the source, package drafts, and official-distro submission packet are ready.
 - Source commit: `d4d16d80b484f7f4fb7eb2c698887288a1918e32`
 - GitHub prerelease: `https://github.com/GRWLX/sshfling/releases/tag/v0.1.23`
 - Official distro packet asset: `sshfling-0.1.23-official-distro-submission.tar.gz`
+- Production signing tracker: `https://github.com/GRWLX/sshfling/issues/2`
+- Official distro submission tracker: `https://github.com/GRWLX/sshfling/issues/3`
 
 The tag has passing Java package, GHCR image, official distro draft, language
 runtime, and container validation evidence. The full Windows/macOS release
 package workflows remain blocked until signing credentials are configured.
+
+Main commit `e67f1241d75673945d7e08ce077a7d360995cd3b` fixes the Windows package
+validation path and has a passing public package-site dry run:
+`https://github.com/GRWLX/sshfling/actions/runs/29295249469`. Cut a new patch
+candidate from `main` after signing credentials are configured; do not move the
+existing `v0.1.23` tag.
 
 ## GitHub Signing Configuration
 
